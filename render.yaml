@@ -1,6 +1,6 @@
 # Render Blueprint: New > Blueprint > pick this repository.
-# Free plans for the trial. Before relying on it, switch the web service to Starter and the database to Basic:
-# the free database is deleted 30 days after it is created (14-day grace), and the free web service sleeps after 15 idle minutes.
+# The data lives in Neon (free plan, no 30-day expiry). Paste Neon's connection string as DATABASE_URL when Render asks.
+# The free web service sleeps after 15 idle minutes; switch it to Starter for instant start-up.
 services:
   - type: web
     name: wmf-community
@@ -18,9 +18,7 @@ services:
       - key: APP_TIMEZONE
         value: Asia/Dubai
       - key: DATABASE_URL
-        fromDatabase:
-          name: wmf-db
-          property: connectionString
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_EMAIL
@@ -28,10 +26,3 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
 
-databases:
-  - name: wmf-db
-    plan: free
-    region: frankfurt
-    databaseName: wmf
-    user: wmf
-    ipAllowList: []

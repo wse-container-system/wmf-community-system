@@ -5,9 +5,13 @@ types.setTypeParser(1114, (s) => s.replace(" ", "T").slice(0, 19));
 types.setTypeParser(1082, (s) => s);
 
 const url = process.env.DATABASE_URL || "postgres://postgres@localhost:5432/wmf";
-// Render's internal connection string needs no SSL; an external one (…render.com) does.
-const ssl = process.env.PGSSL === "require" || /render\.com/.test(url) ? { rejectUnauthorized: false } : false;
-const pool = new Pool({ connectionString: url, ssl, max: 5 });
+// Neon (and any connection string with sslmode=require) uses verified SSL; Render's external URL needs SSL too.
+const needsSsl = process.env.PGSSL === "require" || /neon\.tech|sslmode=require/.test(url);
+const ssl = needsSsl ? true : /render\.com/.test(url) ? { rejectUnauthorized: false } : false;
+// pg reads sslmode from the URL and would override our setting, so pass the URL without it
+const connectionString = url.replace(/([?&])(sslmode|channel_binding)=[^&]*&?/g, "$1").replace(/([?&])(sslmode|channel_binding)=[^&]*&?/g, "$1").replace(/[?&]$/, "");
+const pool = new Pool({ connectionString, ssl, max: 5, idleTimeoutMillis: 30000, connectionTimeoutMillis: 15000 });
+pool.on("error", (e) => console.error("Database connection dropped (it reconnects on the next request):", e.message));
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (

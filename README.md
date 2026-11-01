@@ -8,7 +8,7 @@ Women Moving Forward's community management and reporting system. It covers:
 - the member list, with a change history;
 - the dashboard.
 
-It runs on **Render**: a Node.js web service plus a Postgres database.
+It runs on **Render** (the web app) with its data in **Neon** (Postgres).
 
 ## What it does
 
@@ -31,26 +31,31 @@ Each code holds the member's ID, for example `WMF-000123`. The import keeps ever
 - **The app sends no email.**
 - Dashboard figures follow the counting rules agreed on 1–2 Oct 2026. The test `test/reconcile.test.js` imports the 30 Sep workbook and checks that the agreed figures come out exactly.
 
-## Deploy on Render
+## Deploy on Render (data stored in Neon)
 
-1. Push this repository to GitHub.
-2. In Render, go to **New → Blueprint** and pick the repository. Render reads `render.yaml` and creates:
-   - the web service `wmf-community`;
-   - the database `wmf-db`.
-   Both use the free plans and the Frankfurt region. **The region can't be changed later.**
-3. When Render asks, fill in:
+1. In **Neon**, create a project:
+   - Name it `wmf` and pick the region closest to the UAE (e.g. AWS Frankfurt or Singapore).
+   - Copy the **direct** connection string from the Neon dashboard ("Connect" → turn "Connection pooling" off). It looks like `postgresql://user:password@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`.
+2. Push this repository to GitHub.
+3. In Render, go to **New → Blueprint** and pick the repository. Render creates the web service `wmf-community`.
+4. When Render asks, fill in:
+   - `DATABASE_URL`: the Neon connection string.
    - `ADMIN_EMAIL`: your email.
    - `ADMIN_PASSWORD`: a temporary password. You'll be asked to choose a new one at first sign-in.
-4. Open the site address Render gives you and sign in.
-5. Go to **Admin → Import** and choose `WMF_Community_Master_System_Integrated.xlsx`. Check the preview, then confirm.
-6. Go to **Admin → Staff accounts** and add the ride leads (Coordinator), managers (Viewer) and sponsors.
-7. Go to **Rides & events** and check that each weekday ride you run is listed and marked Active.
+5. Open the site address Render gives you and sign in. The app creates its tables in Neon on first start.
+6. Go to **Admin → Import** and choose `WMF_Community_Master_System_Integrated.xlsx`. Check the preview, then confirm.
+7. Go to **Admin → Staff accounts** and add the ride leads (Coordinator), managers (Viewer) and sponsors.
+8. Go to **Rides & events** and check that each weekday ride you run is listed and marked Active.
+
+### Keeping the data safe
+
+- Every check-in, registration and edit is saved in Neon the moment it happens.
+- Neon's free plan doesn't expire after 30 days the way Render's free database does. It can also undo changes from the last 6 hours ("instant restore").
+- Still download the Excel backup from **Admin** every week, and keep it in SharePoint. That copy is yours whatever happens to either service.
+- Neon's free plan pauses the database after 5 minutes with nothing happening. The first request afterwards waits a second or two while it wakes, and no data is lost.
 
 ### Free plan limits
 
-- **The free database is deleted 30 days after it is created** (plus 14 days' grace).
-  - Download a backup from **Admin** regularly.
-  - Before you rely on the system, upgrade the database to **Basic (about $6/month)**.
 - **The free web service sleeps after 15 minutes with no visitors.** The first visit then takes about a minute.
   - Open `/scan` a few minutes before each ride.
   - Or upgrade the web service to **Starter ($7/month)**.
