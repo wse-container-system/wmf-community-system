@@ -1,0 +1,27 @@
+{
+  "name": "wmf-community-system",
+  "version": "1.0.0",
+  "description": "Women Moving Forward community management and reporting system",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "postinstall": "node -e \"require('fs').copyFileSync(require.resolve('html5-qrcode/html5-qrcode.min.js'),'public/vendor/html5-qrcode.min.js')\""
+  },
+  "author": "Women Moving Forward",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.22.3",
+    "express-session": "^1.19.0",
+    "html5-qrcode": "^2.3.8",
+    "multer": "^2.5.0",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WMF Community Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
+<link rel="stylesheet" href="/app.css">
+</head><body>
+
+<a class="skip" href="#main">Skip to content</a>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">WMF</div>
+      <div>
+        <h1>Community Dashboard</h1>
+        <p class="sub">Women Moving Forward · UAE Team ADQ</p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="pill pill-live" id="modePill">Live data</span>
+      <span class="refreshed" id="refreshed">Last refreshed —</span>
+      <a class="btn" href="/">← WMF app</a>
+    </div>
+  </header>
+
+  <nav class="nav" aria-label="Pages" id="nav"></nav>
+
+  <section class="filters" aria-label="Filters" id="filters">
+    <div class="frow">
+      <label class="f"><span>Period</span>
+        <select id="fPeriodType">
+          <option value="month">Month</option>
+          <option value="quarter">Quarter</option>
+          <option value="year">Year</option>
+          <option value="last12">Last 12 months</option>
+          <option value="all">All time</option>
+          <option value="custom">Date range</option>
+        </select>
+      </label>
+      <label class="f" id="fPeriodWrap"><span id="fPeriodLabel">Month</span><select id="fPeriod"></select></label>
+      <label class="f" id="fFromWrap" hidden><span>From</span><input type="date" id="fFrom"></label>
+      <label class="f" id="fToWrap" hidden><span>To</span><input type="date" id="fTo"></label>
+      <label class="f"><span>Location</span><select id="fLocation"><option value="">All locations</option><option>Abu Dhabi</option><option>Dubai</option></select></label>
+      <label class="f"><span>Activity type</span><select id="fKind"><option value="">Rides and events</option><option value="ride">Rides</option><option value="event">Events</option><option value="registration">Member registrations</option></select></label>
+      <label class="f"><span>Activity</span><select id="fActivity"><option value="">All activities</option></select></label>
+      <button class="btn ghost" id="moreBtn" aria-expanded="false" aria-controls="more">More filters</button>
+      <button class="btn ghost" id="resetBtn">Clear filters</button>
+    </div>
+    <div class="frow more" id="more" hidden>
+      <label class="f"><span>Record type</span><select id="fRecordType"><option value="">All record types</option><option>Attendance</option><option>Event Registration</option><option>Member Registration</option></select></label>
+      <label class="f"><span>Participation status</span><select id="fStatus"><option value="">All statuses</option><option>Attended</option><option>Registered</option></select></label>
+      <label class="f"><span>Active status</span><select id="fActive"><option value="">Active and inactive</option><option>Active</option><option>Inactive</option></select></label>
+      <label class="f"><span>New or returning</span><select id="fMemberType"><option value="">New and returning</option><option>New</option><option>Returning</option></select></label>
+      <label class="f"><span>Data source</span><select id="fSource"><option value="">All sources</option></select></label>
+    </div>
+    <p class="fnote" id="fnote"></p>
+  </section>
+
+  <main id="main" tabindex="-1">
+    <div id="banner"></div>
+    <div id="page"></div>
+  </main>
+
+  <footer class="foot">
+    <span>Dashboard figures are read-only and calculated from the WMF database using the agreed counting rules.</span>
+    <span id="footMeta"></span>
+  </footer>
+</div>
+<div class="tip" id="tip" role="status" aria-live="polite" hidden></div>
+<script src="/engine.js"></script>
+<script src="/api/snapshot.js"></script>
+<script src="/dashboard.js"></script>
+</body></html>
