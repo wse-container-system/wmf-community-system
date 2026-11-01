@@ -66,7 +66,7 @@ async function buildData() {
  * Viewers and sponsors get the same figures without anyone's identity: names become "Member 0001",
  * email local parts and keys are replaced by stable codes (the domain is kept so the email checks still count).
  */
-function anonymise(data, secret) {
+function anonymise(data, secret, { keepNames = false } = {}) {
   const code = (s) => crypto.createHmac("sha256", secret).update(String(s).toLowerCase()).digest("hex").slice(0, 12);
   // valid emails: replace the part before @; anything malformed keeps its shape (so the data-quality counts match) with every word coded
   const mail = (e) => !e ? e : /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(String(e).trim().toLowerCase())
@@ -77,7 +77,7 @@ function anonymise(data, secret) {
   return {
     ...data,
     config: { ...data.config, excludeEmails: [...testEmails].map(mail) },
-    members: data.members.map((m) => ({ ...m, label: ids.get(m.memberId), email: mail(m.email), altEmails: String(m.altEmails || "").split(/[;,\s]+/).filter(Boolean).map(mail).join(";"), memberKey: keyOut(m.memberKey) })),
+    members: data.members.map((m) => ({ ...m, label: keepNames ? m.label : ids.get(m.memberId), email: mail(m.email), altEmails: String(m.altEmails || "").split(/[;,\s]+/).filter(Boolean).map(mail).join(";"), memberKey: keyOut(m.memberKey) })),
     activity: data.activity.map((r) => ({ ...r, email: mail(r.email), memberKey: keyOut(r.memberKey) })),
   };
 }

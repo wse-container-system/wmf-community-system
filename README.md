@@ -29,6 +29,12 @@ Each code holds the member's ID, for example `WMF-000123`. The import keeps ever
 - Every edit, merge, void, import and export is written to the audit log, along with who did it and why.
 - Nothing is changed automatically. Data-quality issues show on the dashboard's Data quality page for review.
 - **The app sends no email.**
+- **Contact details are protected:**
+  - Only administrators see members' full email addresses and phone numbers. They press "Show contact details" on a member's page, and each view is logged.
+  - Ride leads (Coordinators) see masked details (for example `ma•••@gmail.com`, `•••• 939`) and can't change them.
+  - Managers and sponsors never receive names or contact details.
+  - Each ride lead can open up to 300 member pages or searches an hour, which stops anyone copying the whole list.
+  - The Excel backup needs the administrator's password and is logged.
 - Dashboard figures follow the counting rules agreed on 1–2 Oct 2026. The test `test/reconcile.test.js` imports the 30 Sep workbook and checks that the agreed figures come out exactly.
 
 ## Deploy on Render (data stored in Neon)

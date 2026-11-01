@@ -63,6 +63,27 @@ function slotForTitle(title) {
   return null;
 }
 
+/** Contact details are shown in full to administrators only; everyone else sees a masked version. */
+const CONTACT_FIELDS = ["primary_email", "alt_emails", "mobile", "emergency_name", "emergency_number", "email", "member_email", "phone"];
+const maskEmail = (e) => { e = clean(e); if (!e) return ""; const at = e.indexOf("@"); return at > 0 ? e.slice(0, Math.min(2, at)) + "•••" + e.slice(at) : "•••"; };
+const maskPhone = (p) => { const d = clean(p).replace(/\D/g, ""); return d ? "•••• " + d.slice(-3) : ""; };
+const maskName = (n) => clean(n) ? clean(n).split(" ").map((w) => w[0] + "•••").join(" ") : "";
+function maskContact(k, v) {
+  if (v == null || v === "") return v;
+  if (k === "mobile" || k === "phone" || k === "emergency_number") return maskPhone(v);
+  if (k === "emergency_name") return maskName(v);
+  if (k === "alt_emails") return String(v).split(/[;,\s]+/).filter(Boolean).map(maskEmail).join("; ");
+  return maskEmail(v);
+}
+/** Mask contact fields anywhere inside an audit before/after record. */
+function maskDeep(o) {
+  if (!o || typeof o !== "object") return o;
+  if (Array.isArray(o)) return o.map(maskDeep);
+  const out = {};
+  for (const [k, v] of Object.entries(o)) out[k] = CONTACT_FIELDS.includes(k) && typeof v === "string" ? maskContact(k, v) : maskDeep(v);
+  return out;
+}
+
 const memberKeyFor = (email, phone, name) => (email ? "E|" + email : phone ? "P|" + phone : "N|" + clean(name).toLowerCase());
 
 /** Find one live member by Member ID, email (primary or alternative) or phone. */
@@ -154,5 +175,5 @@ async function alreadyRode(c, member, isoDate, series) {
   }) || null;
 }
 
-module.exports = { CORE_RIDES, ensureCoreRides, slotForTitle, TZ, EMAIL_RE, clean, normEmail, normPhone, nowLocal, todayLocal, weekdayOf, memberIdFromScan, formatMemberId,
+module.exports = { CONTACT_FIELDS, maskEmail, maskPhone, maskContact, maskDeep, CORE_RIDES, ensureCoreRides, slotForTitle, TZ, EMAIL_RE, clean, normEmail, normPhone, nowLocal, todayLocal, weekdayOf, memberIdFromScan, formatMemberId,
   seriesFor, memberKeyFor, findMember, createMember, addParticipation, alreadyRode };

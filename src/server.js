@@ -48,9 +48,10 @@ app.use((req, res, next) => {
 
 // ---------- tiny rate limiter for public forms and sign-in ----------
 const hits = new Map();
-function limit(name, max, windowMs) {
+function limit(name, max, windowMs, { perUser = false, skip } = {}) {
   return (req, res, next) => {
-    const k = name + "|" + req.ip, now = Date.now();
+    if (skip && skip(req)) return next();
+    const k = name + "|" + (perUser && req.session.user ? "u" + req.session.user.id : req.ip), now = Date.now();
     const arr = (hits.get(k) || []).filter((t) => now - t < windowMs);
     arr.push(now); hits.set(k, arr);
     if (arr.length > max) return res.status(429).send(layout("Slow down", `<section class="card"><h2>Too many attempts</h2><p class="lead">Please wait a few minutes and try again.</p></section>`, { wide: false }));
@@ -162,7 +163,8 @@ app.get("/dashboard", need(), (req, res) => res.sendFile(path.join(__dirname, ".
 app.get("/api/snapshot.js", need(), wrap(async (req, res) => {
   const u = user(req);
   let data = await buildData();
-  if (!STAFF.includes(u.role)) data = anonymise(data, SECRET);
+  // only administrators' browsers receive real email addresses; coordinators keep names, viewers and sponsors get neither
+  if (u.role !== "admin") data = anonymise(data, SECRET, { keepNames: u.role === "coordinator" });
   res.set("Cache-Control", "no-store").type("js")
     .send(`window.WMF_ROLE=${JSON.stringify(u.role)};window.WMF_DATA=${JSON.stringify(data).replace(/</g, "\\u003c")};`);
 }));
@@ -276,7 +278,8 @@ app.post("/api/walkin", need(...STAFF), wrap(async (req, res) => {
   }).catch((e) => { if (e.expose) return { status: "error", message: e.message }; throw e; });
   res.json({ ...scanReply(out), created: out.created });
 }));
-app.get("/api/members/search", need(...STAFF), wrap(async (req, res) => {
+const browseLimit = limit("browse", 300, 3600e3, { perUser: true, skip: (req) => req.session.user && req.session.user.role === "admin" });
+app.get("/api/members/search", need(...STAFF), browseLimit, wrap(async (req, res) => {
   const q = R.clean(req.query.q);
   if (q.length < 2) return res.json([]);
   const r = await pool.query(`SELECT member_id, full_name, primary_email, mobile FROM members
@@ -410,8 +413,9 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
 }));
 
 // ======================= members =======================
-app.get("/members", need(...STAFF), wrap(async (req, res) => {
+app.get("/members", need(...STAFF), browseLimit, wrap(async (req, res) => {
   const q = R.clean(req.query.q), pg = Math.max(1, +req.query.page || 1), per = 50;
+  const showContacts = false; // the list never shows full contact details; administrators open a member to see them
   const where = ["merged_into IS NULL"], args = [];
   if (q) { args.push("%" + q.replace(/[%_]/g, "") + "%"); where.push(`(full_name ILIKE $1 OR primary_email ILIKE $1 OR alt_emails ILIKE $1 OR mobile ILIKE $1 OR member_id ILIKE $1)`); }
   const order = req.query.sort === "new" ? "first_seen DESC NULLS LAST" : "member_id";
@@ -427,7 +431,7 @@ app.get("/members", need(...STAFF), wrap(async (req, res) => {
     <form class="toolbar" method="get"><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email, phone or Member ID" style="max-width:360px"><button class="btn">Search</button>
       <a class="btn ghost" href="/members?sort=new">Newest first</a></form>
     <div class="tw"><table><thead><tr><th>Member ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>First seen</th><th>Last activity</th><th>QR</th></tr></thead><tbody>
-    ${rows.rows.map((m) => `<tr><td><a href="/members/${encodeURIComponent(m.member_id)}">${h(m.member_id)}</a></td><td>${h(m.full_name)}</td><td>${h(m.primary_email || "—")}</td><td>${h(m.mobile || "—")}</td>
+    ${rows.rows.map((m) => `<tr><td><a href="/members/${encodeURIComponent(m.member_id)}">${h(m.member_id)}</a></td><td>${h(m.full_name)}</td><td>${h((showContacts ? m.primary_email : R.maskEmail(m.primary_email)) || "—")}</td><td>${h((showContacts ? m.mobile : R.maskPhone(m.mobile)) || "—")}</td>
       <td>${fmtDate(m.first_seen && m.first_seen.slice(0, 10))}</td><td>${fmtDate(m.last_seen && m.last_seen.slice(0, 10))}</td><td>${h(m.qr_status || "")}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No members found.</td></tr>`}
     </tbody></table></div>
     <div class="pager">${pg > 1 ? `<a class="btn" href="${link(pg - 1)}">Previous</a>` : ""}<span>Page ${pg} of ${pages}</span>${pg < pages ? `<a class="btn" href="${link(pg + 1)}">Next</a>` : ""}</div>
@@ -461,7 +465,7 @@ app.post("/members/new", need(...STAFF), wrap(async (req, res) => {
   res.redirect("/members/" + encodeURIComponent(out.m.member_id));
 }));
 
-app.get("/members/:id", need(...STAFF), wrap(async (req, res) => {
+app.get("/members/:id", need(...STAFF), browseLimit, wrap(async (req, res) => {
   const m = (await pool.query("SELECT * FROM members WHERE member_id = $1", [req.params.id])).rows[0];
   if (!m) return res.status(404).send(page(req, "Not found", `<section class="card"><h2>Member not found</h2></section>`));
   const emails = [m.primary_email, ...String(m.alt_emails || "").split(/[;,\s]+/)].map(R.normEmail).filter(Boolean);
@@ -469,6 +473,13 @@ app.get("/members/:id", need(...STAFF), wrap(async (req, res) => {
   const parts = await pool.query(`SELECT * FROM participation WHERE member_id = ANY($1) OR lower(member_email) = ANY($2) ORDER BY record_date DESC, id DESC LIMIT 300`, [[m.member_id, ...merged], emails]);
   const log = await pool.query("SELECT * FROM audit_log WHERE entity = 'member' AND entity_id = $1 ORDER BY at DESC LIMIT 50", [m.member_id]);
   const isAdmin = user(req).role === "admin";
+  // contact details: administrators press "Show contact details" (logged); coordinators never see them in full
+  const reveal = isAdmin && req.query.contact === "show";
+  if (reveal) await audit(pool, actor(req), "member.contact_view", "member", m.member_id, null, null, "Viewed contact details");
+  const fieldHtml = ([k, l]) => {
+    if (!R.CONTACT_FIELDS.includes(k) || reveal) return `<label>${h(l)}<input name="${k}" value="${h(m[k])}" maxlength="200"></label>`;
+    return `<label>${h(l)}<input value="${h(R.maskContact(k, m[k]) || "—")}" disabled title="Hidden to protect members' contact details"></label>`;
+  };
   const img = await qrDataUrl(m.qr_value || m.member_id);
   res.send(page(req, m.full_name || m.member_id, `
     ${m.merged_into ? `<div class="alert warn"><span class="ic">!</span><span>This record was merged into <a href="/members/${encodeURIComponent(m.merged_into)}">${h(m.merged_into)}</a>.</span></div>` : ""}
@@ -476,7 +487,8 @@ app.get("/members/:id", need(...STAFF), wrap(async (req, res) => {
       <section class="card c8"><h2>${h(m.full_name || "(no name)")} <span class="badge">${h(m.member_id)}</span></h2>
         <p class="lead">First seen ${fmtDate(m.first_seen)} · Sources: ${h(m.sources || "—")}${merged.length ? " · Merged records: " + merged.map(h).join(", ") : ""}</p>
         <form class="form" method="post" action="/members/${encodeURIComponent(m.member_id)}/edit">
-          <div class="row2">${EDITABLE.map(([k, l]) => `<label>${h(l)}<input name="${k}" value="${h(m[k])}" maxlength="200"></label>`).join("")}</div>
+          <p class="muted" style="margin:0;font-size:13px">${reveal ? "Contact details are visible and this view was logged. They hide again when you leave the page." : isAdmin ? `Contact details are hidden. <a href="?contact=show">Show contact details</a> (logged in the audit log)` : "Contact details are hidden. An administrator can see or change them."}</p>
+          <div class="row2">${EDITABLE.map(fieldHtml).join("")}</div>
           <label>Reason for the change <span class="hint">(kept in the audit log)</span><input name="reason" required maxlength="200"></label>
           <button class="btn primary">Save changes</button></form></section>
       <section class="card c4"><h2>QR code</h2><p class="lead">Same code as the one already sent: it holds ${h(m.qr_value || m.member_id)}.</p>
@@ -495,7 +507,7 @@ app.get("/members/:id", need(...STAFF), wrap(async (req, res) => {
         </tbody></table></div></section>
       <section class="card c12"><h2>Change history</h2>
         <div class="tw"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Reason</th><th>Before</th><th>After</th></tr></thead><tbody>
-        ${log.rows.map((a) => `<tr><td>${fmtTs(a.at)}</td><td>${h(a.actor)}</td><td>${h(a.action)}</td><td>${h(a.reason || "")}</td><td><pre class="json">${h(a.before ? JSON.stringify(a.before, null, 1) : "")}</pre></td><td><pre class="json">${h(a.after ? JSON.stringify(a.after, null, 1) : "")}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="muted">No changes recorded in the app yet.</td></tr>`}
+        ${log.rows.map((a) => `<tr><td>${fmtTs(a.at)}</td><td>${h(a.actor)}</td><td>${h(a.action)}</td><td>${h(a.reason || "")}</td><td><pre class="json">${h(a.before ? JSON.stringify(reveal ? a.before : R.maskDeep(a.before), null, 1) : "")}</pre></td><td><pre class="json">${h(a.after ? JSON.stringify(reveal ? a.after : R.maskDeep(a.after), null, 1) : "")}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="muted">No changes recorded in the app yet.</td></tr>`}
         </tbody></table></div></section>
     </div>`, { active: "/members" }));
 }));
@@ -508,8 +520,10 @@ app.post("/members/:id/edit", need(...STAFF), wrap(async (req, res) => {
     const m = (await c.query("SELECT * FROM members WHERE member_id = $1 FOR UPDATE", [id])).rows[0];
     if (!m) return "Member not found.";
     const before = {}, after = {};
+    const isAdmin = user(req).role === "admin";
     for (const [k] of EDITABLE) {
       if (!(k in b)) continue;
+      if (R.CONTACT_FIELDS.includes(k) && !isAdmin) continue; // only administrators change contact details
       let v = R.clean(b[k]) || null;
       if (k === "primary_email" && v) { v = R.normEmail(v); if (!R.EMAIL_RE.test(v)) return "That email doesn't look right."; }
       if ((m[k] || null) !== v) { before[k] = m[k]; after[k] = v; }

@@ -261,6 +261,28 @@ test("full flow", async (t) => {
     assert.match(scan.text, /Monday Madness/); assert.doesNotMatch(scan.text, /Sunday Stamina/);
   });
 
+  await t.test("contact details protected", async () => {
+    // a coordinator never receives a member's full email or phone
+    const coord = client();
+    await login(coord, "coordinator@test.local", "Role-Password-123");
+    const m1 = (await pool.query("SELECT * FROM members WHERE member_id = 'WMF-000001'")).rows[0];
+    const local = m1.primary_email.split("@")[0];
+    for (const path of ["/members", "/members?q=" + encodeURIComponent(m1.full_name.split(" ")[0]), "/members/WMF-000001", "/api/members/search?q=" + encodeURIComponent(m1.full_name.split(" ")[0]), "/api/snapshot.js"]) {
+      const r = await coord(path);
+      assert.equal(r.status, 200, path);
+      assert.ok(!r.text.includes(local + "@"), "no full email on " + path);
+      assert.ok(!r.text.includes(String(m1.mobile)), "no full phone on " + path);
+    }
+    assert.ok((await coord("/api/snapshot.js")).text.includes(m1.full_name), "coordinators keep names for follow-ups");
+    // a coordinator can't change contact details
+    await coord("/members/WMF-000001/edit", { method: "POST", form: { primary_email: "hijack@example.org", reason: "test" } });
+    assert.equal((await pool.query("SELECT primary_email FROM members WHERE member_id = 'WMF-000001'")).rows[0].primary_email, m1.primary_email);
+    // an administrator sees them only after asking, and that view is logged
+    assert.ok(!(await admin("/members/WMF-000001")).text.includes(local + "@"));
+    assert.ok((await admin("/members/WMF-000001?contact=show")).text.includes(m1.primary_email));
+    assert.ok((await pool.query("SELECT 1 FROM audit_log WHERE action = 'member.contact_view' AND entity_id = 'WMF-000001'")).rows[0]);
+  });
+
   await t.test("security: cross-site posts refused, login required", async () => {
     const r = await fetch(base + "/api/scan", { method: "POST", headers: { origin: "https://evil.example", "content-type": "application/json", cookie: await cookieOf(admin) }, body: "{}" });
     assert.equal(r.status, 403);
@@ -271,7 +293,8 @@ test("full flow", async (t) => {
   });
 
   await t.test("backup export re-imports with the same counts", async () => {
-    const r = await admin("/admin/export.xlsx", { raw: true });
+    assert.equal((await admin("/admin/export.xlsx", { method: "POST", form: { password: "wrong" } })).location, "/admin", "wrong password refused");
+    const r = await admin("/admin/export.xlsx", { method: "POST", form: { password: "Second-Password-2" }, raw: true });
     assert.equal(r.status, 200);
     const parsed = await parseWorkbook(r.text);
     const n = (await pool.query("SELECT (SELECT count(*) FROM members) m, (SELECT count(*) FROM participation) p")).rows[0];

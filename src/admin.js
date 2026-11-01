@@ -19,7 +19,8 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
       (SELECT max(at) FROM audit_log WHERE action = 'export') exp, (SELECT count(*) FROM users WHERE active) u`)).rows[0];
     res.send(page(req, "Admin", `<div class="grid">
       <section class="card c6"><h2>Backup</h2><p class="lead">Download everything as an Excel workbook: members, all activity rows, history, rides & events, and the audit log. Do this weekly. On Render's free plan the database is deleted 30 days after it was created.</p>
-        <p><a class="btn primary" href="/admin/export.xlsx">Download backup (.xlsx)</a></p><p class="muted">Last backup: ${fmtTs(c.exp)}</p></section>
+        <form class="toolbar" method="post" action="/admin/export.xlsx" style="align-items:center"><input class="inp" type="password" name="password" required autocomplete="current-password" placeholder="Your password" style="max-width:220px"><button class="btn primary">Download backup (.xlsx)</button></form>
+        <p class="muted" style="font-size:13px">The backup holds every member's contact details. Keep it in a restricted SharePoint folder, never email it, and delete local copies.</p><p class="muted">Last backup: ${fmtTs(c.exp)}</p></section>
       <section class="card c6"><h2>Import the workbook</h2><p class="lead">One-time move from WMF_Community_Master_System_Integrated.xlsx. Shows a preview first; nothing is written until you confirm.</p>
         <p><a class="btn" href="/admin/import">Import…</a></p><p class="muted">${Number(c.m).toLocaleString("en-GB")} members and ${Number(c.p).toLocaleString("en-GB")} activity rows in the database. Last import: ${fmtTs(c.imp)}</p></section>
       <section class="card c4"><h2>Staff accounts</h2><p class="lead">${c.u} active accounts.</p><a class="btn" href="/admin/users">Manage accounts</a></section>
@@ -71,7 +72,14 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
   }));
 
   // ---------- export ----------
-  app.get("/admin/export.xlsx", A, wrap(async (req, res) => {
+  app.post("/admin/export.xlsx", A, wrap(async (req, res) => {
+    // the full contact list leaves the system only after the administrator confirms their password
+    const u = (await pool.query("SELECT password_hash FROM users WHERE id = $1", [user(req).id])).rows[0];
+    if (!u || !(await bcrypt.compare(String(req.body.password || ""), u.password_hash))) {
+      await audit(pool, actor(req), "export.refused", "workbook", null, null, null, "Wrong password");
+      setFlash(req, "err", "Password not right. The backup was not downloaded.");
+      return res.redirect("/admin");
+    }
     const buf = await exportWorkbook();
     await audit(pool, actor(req), "export", "workbook", null, null, null, null);
     const stamp = R.nowLocal().slice(0, 16).replace(/[-:T]/g, "");
@@ -159,7 +167,7 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
       <form class="toolbar" method="get"><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Action, record or person" style="max-width:320px"><button class="btn">Filter</button></form>
       <div class="tw"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Reason</th><th>Details</th></tr></thead><tbody>
       ${r.rows.slice(0, per).map((a) => `<tr><td>${fmtTs(a.at)}</td><td>${h(a.actor)}</td><td>${h(a.action)}</td><td>${a.entity === "member" ? `<a href="/members/${encodeURIComponent(a.entity_id)}">${h(a.entity_id)}</a>` : h(a.entity_id || "")}</td><td>${h(a.reason || "")}</td>
-        <td><pre class="json">${h(a.after ? JSON.stringify(a.after) : "")}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Nothing yet.</td></tr>`}
+        <td><pre class="json">${h(a.after ? JSON.stringify(R.maskDeep(a.after)) : "")}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Nothing yet.</td></tr>`}
       </tbody></table></div>
       <div class="pager">${pg > 1 ? `<a class="btn" href="?page=${pg - 1}&q=${encodeURIComponent(q)}">Newer</a>` : ""}${more ? `<a class="btn" href="?page=${pg + 1}&q=${encodeURIComponent(q)}">Older</a>` : ""}</div></section>`, { active: "/admin" }));
   }));
