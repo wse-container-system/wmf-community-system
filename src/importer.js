@@ -197,6 +197,7 @@ async function commitImport(parsed, actor, { replace = false, fileName = "" } = 
       REG: maxNum(parsed.activity.map((a) => a.record_id), /^REG-(\d+)$/i),
     };
     for (const [k, v] of Object.entries(counters)) await c.query("INSERT INTO counters (name, value) VALUES ($1,$2) ON CONFLICT (name) DO UPDATE SET value = GREATEST(counters.value, $2)", [k, v]);
+    await require("./rules").ensureCoreRides(c); // the six scanner rides survive a re-import
     await audit(c, actor, replace ? "import.replace" : "import", "workbook", fileName || null, null, { ...parsed.summary, counters, warnings: parsed.warnings });
     return { ...parsed.summary, counters };
   });

@@ -15,7 +15,7 @@ process.env.ADMIN_EMAIL = "admin@test.local";
 process.env.ADMIN_PASSWORD = "first-Password-1";
 
 const { pool } = require("../src/db");
-const { app, migrate, ensureAdmin } = require("../src/server");
+const { app, init } = require("../src/server");
 const { parseWorkbook } = require("../src/importer");
 const R = require("../src/rules");
 const E = require("../src/engine");
@@ -43,8 +43,7 @@ async function login(c, email, pw) {
 
 test.before(async () => {
   await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
-  await migrate();
-  await ensureAdmin();
+  await init();
   await new Promise((ok) => { server = app.listen(0, ok); });
   base = "http://127.0.0.1:" + server.address().port;
 });
@@ -91,7 +90,8 @@ test("full flow", async (t) => {
   let rideId;
   await t.test("scanner: existing QR codes check in once per ride per day", async () => {
     const acts = (await pool.query("SELECT * FROM activities WHERE kind = 'ride' AND status = 'Active'")).rows;
-    rideId = acts.find((a) => a.name === "Saturday Ride").activity_id;
+    assert.deepEqual(acts.filter((a) => a.core).map((a) => a.name).sort(), ["Monday Madness", "Monday Maintenance", "Morning Ride", "Mountain Ride", "Wednesday Social", "Weekend Long Ride"]);
+    rideId = "RIDE-WEEKEND-LONG";
     const today = R.todayLocal();
     // a member with no ride today
     const r1 = (await admin("/api/scan", { method: "POST", json: { code: "WMF-000005", activityId: rideId, date: today } })).json();
@@ -226,6 +226,39 @@ test("full flow", async (t) => {
     const a = E.compute(E.prepare(d), f, asOf).kpis, b = E.compute(E.prepare(anonymise(d, "s")), f, asOf).kpis;
     for (const k of ["uniqueMembers", "newMembers", "activeMembers", "rideAttendance", "rideSessions", "participants", "eventRegistrations", "recordsWithErrors"]) assert.deepEqual(b[k], a[k], k);
     assert.ok(a.rideAttendance >= 3, "today's scans are counted");
+  });
+
+  await t.test("calendar: seeded, public, linked to scanner and event sign-up", async () => {
+    const pub = client();
+    const j = (await pub("/api/calendar.json")).json();
+    assert.equal(j.items.length, 57, "all entries from the WMF calendar");
+    assert.ok(!("slot" in j.items[0]) && !("id" in j.items[0]), "internal fields not public");
+    assert.equal((await pub("/calendar")).status, 200);
+    const C = require("../public/calendar-core");
+    // Monday Madness repeats every Monday from 12 Oct 2026
+    const mon = C.on(j.items, "2026-11-02").map((o) => o.a.t);
+    assert.ok(mon.includes("Monday Madness"), mon.join());
+    const { ridesOn } = require("../src/calendar");
+    assert.equal((await ridesOn("2026-11-02")).find((r) => r.title === "Monday Madness").slot, "RIDE-MONDAY-MADNESS");
+    // the training camp (27–29 Nov) got a linked event, closed for sign-up until a coordinator opens it
+    const camp = (await pool.query("SELECT * FROM calendar_items WHERE title LIKE 'WMF Training Camp%'")).rows[0];
+    assert.ok(camp.activity_id);
+    assert.ok(!j.items.find((x) => x.t.startsWith("WMF Training Camp")).signup);
+    let r = await admin("/calendar/items/" + camp.id, { method: "POST", form: { title: camp.title, category: "wmf_event", status: "Confirmed", start_date: "2026-11-27", end_date: "2026-11-29", location: "Liwa", open: "1", capacity: "40" } });
+    assert.equal(r.location, "/calendar/manage");
+    const j2 = (await pub("/api/calendar.json")).json();
+    const it = j2.items.find((x) => x.t.startsWith("WMF Training Camp"));
+    assert.equal(it.signup, "/events/" + encodeURIComponent(camp.activity_id));
+    assert.match((await pub(it.signup)).text, /WMF Training Camp/);
+    // a new weekly ride shows on the scanner for its day
+    r = await admin("/calendar/items/new", { method: "POST", form: { title: "Friday Coffee Ride", category: "wmf_ride", status: "Confirmed", start_date: "2026-11-06", start_time: "06:00", location: "YMC", weekdays: "5", interval: "1", ride_slot: "RIDE-MORNING", cancelled: "2026-11-13" } });
+    assert.equal((await ridesOn("2026-11-20")).find((x) => x.title === "Friday Coffee Ride").slot, "RIDE-MORNING");
+    assert.ok(!(await ridesOn("2026-11-13")).some((x) => x.title === "Friday Coffee Ride"), "cancelled date skipped");
+    // bad input refused, viewers can't edit
+    r = await admin("/calendar/items/new", { method: "POST", form: { title: "X", category: "wmf_ride", start_date: "nope" } });
+    assert.equal(r.location, "/calendar/items/new");
+    const scan = await admin("/scan");
+    assert.match(scan.text, /Monday Madness/); assert.doesNotMatch(scan.text, /Sunday Stamina/);
   });
 
   await t.test("security: cross-site posts refused, login required", async () => {

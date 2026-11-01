@@ -35,6 +35,34 @@ function seriesFor(activity, isoDate) {
   return weekdayOf(isoDate) + " Ride"; // no weekday in the name: use the day of the session
 }
 
+/** The rides offered on the scanner. Fixed list; the calendar says which of them run on a given day. */
+const CORE_RIDES = [
+  { activity_id: "RIDE-MONDAY-MADNESS", name: "Monday Madness" },
+  { activity_id: "RIDE-MONDAY-MAINTENANCE", name: "Monday Maintenance" },
+  { activity_id: "RIDE-WEDNESDAY-SOCIAL", name: "Wednesday Social" },
+  { activity_id: "RIDE-MORNING", name: "Morning Ride" },
+  { activity_id: "RIDE-WEEKEND-LONG", name: "Weekend Long Ride" },
+  { activity_id: "RIDE-MOUNTAIN", name: "Mountain Ride" },
+];
+async function ensureCoreRides(c) {
+  for (const [i, r] of CORE_RIDES.entries()) {
+    await c.query(`INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, core, sort_order)
+      VALUES ($1, $2, 'Community Ride', 'Ride Initiative', 'ride', 'Abu Dhabi', 'Active', TRUE, $3)
+      ON CONFLICT (activity_id) DO UPDATE SET core = TRUE, sort_order = $3, kind = 'ride'`, [r.activity_id, r.name, i + 1]);
+  }
+}
+/** Which scanner ride a calendar entry belongs to, guessed from its title. */
+function slotForTitle(title) {
+  const t = clean(title).toLowerCase();
+  if (/madness/.test(t)) return "RIDE-MONDAY-MADNESS";
+  if (/maintenance/.test(t)) return "RIDE-MONDAY-MAINTENANCE";
+  if (/social/.test(t)) return "RIDE-WEDNESDAY-SOCIAL";
+  if (/mountain|jebel|hafeet/.test(t)) return "RIDE-MOUNTAIN";
+  if (/long ride/.test(t)) return "RIDE-WEEKEND-LONG";
+  if (/open ride|morning/.test(t)) return "RIDE-MORNING";
+  return null;
+}
+
 const memberKeyFor = (email, phone, name) => (email ? "E|" + email : phone ? "P|" + phone : "N|" + clean(name).toLowerCase());
 
 /** Find one live member by Member ID, email (primary or alternative) or phone. */
@@ -126,5 +154,5 @@ async function alreadyRode(c, member, isoDate, series) {
   }) || null;
 }
 
-module.exports = { TZ, EMAIL_RE, clean, normEmail, normPhone, nowLocal, todayLocal, weekdayOf, memberIdFromScan, formatMemberId,
+module.exports = { CORE_RIDES, ensureCoreRides, slotForTitle, TZ, EMAIL_RE, clean, normEmail, normPhone, nowLocal, todayLocal, weekdayOf, memberIdFromScan, formatMemberId,
   seriesFor, memberKeyFor, findMember, createMember, addParticipation, alreadyRode };

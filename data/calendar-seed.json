@@ -1,0 +1,756 @@
+[
+ {
+  "t": "Social Ride",
+  "c": "wmf_ride",
+  "s": "2026-09-02",
+  "e": "2026-09-02",
+  "st": "19:00",
+  "et": "",
+  "loc": "YMC",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "weekdays": [
+    3
+   ]
+  },
+  "x": null,
+  "u": "https://strava.app.link/WPvQLwbzD7b"
+ },
+ {
+  "t": "Open Ride",
+  "c": "wmf_ride",
+  "s": "2026-09-04",
+  "e": "2026-09-04",
+  "st": "06:00",
+  "et": "",
+  "loc": "YMC",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "until": "2026-10-09",
+   "weekdays": [
+    5
+   ]
+  },
+  "x": null
+ },
+ {
+  "t": "Long Ride",
+  "c": "wmf_ride",
+  "s": "2026-09-05",
+  "e": "2026-09-05",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "until": "2026-10-10",
+   "weekdays": [
+    6
+   ]
+  },
+  "x": {
+   "2026-10-17": "cancelled",
+   "2026-10-24": "cancelled",
+   "2026-10-31": "cancelled"
+  }
+ },
+ {
+  "t": "Emirati Women’s Day",
+  "c": "wmf_event",
+  "s": "2026-09-07",
+  "e": "2026-09-07",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Completed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Monday Maintenance",
+  "c": "wmf_ride",
+  "s": "2026-09-07",
+  "e": "2026-09-07",
+  "st": "19:00",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "until": "2026-10-05",
+   "weekdays": [
+    1
+   ]
+  },
+  "x": null
+ },
+ {
+  "t": "DXB Spinneys Build-up – 37 km",
+  "c": "generic_event",
+  "s": "2026-09-13",
+  "e": "2026-09-13",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Learn to Ride",
+  "c": "wmf_ride",
+  "s": "2026-09-14",
+  "e": "2026-09-14",
+  "st": "18:00",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Madinat Zayed Cycling Race",
+  "c": "generic_event",
+  "s": "2026-09-20",
+  "e": "2026-09-20",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "She Rides",
+  "c": "generic_event",
+  "s": "2026-10-01",
+  "e": "2026-10-01",
+  "st": "18:00",
+  "et": "20:00",
+  "loc": "",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "until": "2026-12-31",
+   "weekdays": [
+    4
+   ]
+  },
+  "x": null
+ },
+ {
+  "t": "Falcon Daman Series – Race 1",
+  "c": "generic_event",
+  "s": "2026-10-06",
+  "e": "2026-10-06",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Summer Workshop - Bike maintenance basics & Tyre Workshop",
+  "c": "wmf_event",
+  "s": "2026-10-08",
+  "e": "2026-10-08",
+  "st": "19:00",
+  "et": "",
+  "loc": "Colnago Caffe",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Monday Madness",
+  "c": "wmf_ride",
+  "s": "2026-10-12",
+  "e": "2026-10-12",
+  "st": "19:00",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "weekdays": [
+    1
+   ]
+  },
+  "x": null,
+  "u": "https://strava.app.link/0dAFNP9yD7b"
+ },
+ {
+  "t": "Learn to Ride",
+  "c": "wmf_ride",
+  "s": "2026-10-12",
+  "e": "2026-10-12",
+  "st": "18:00",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": {
+   "freq": "custom",
+   "interval": 2,
+   "weekdays": [
+    1
+   ]
+  },
+  "x": {
+   "2026-09-07": "cancelled"
+  },
+  "u": "https://strava.app.link/VXjzT2czD7b"
+ },
+ {
+  "t": "Mountain Ride – Jebel Hafeet",
+  "c": "wmf_event",
+  "s": "2026-10-17",
+  "e": "2026-10-17",
+  "st": "",
+  "et": "",
+  "loc": "Jebel Hafeet",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "DXB Spinneys Build-up – 45 km",
+  "c": "generic_event",
+  "s": "2026-10-18",
+  "e": "2026-10-18",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "ZMU Foundation Day",
+  "c": "generic_event",
+  "s": "2026-10-24",
+  "e": "2026-10-24",
+  "st": "05:00",
+  "et": "12:00",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Colnago Community - Al Wathba Ride",
+  "c": "wmf_ride",
+  "s": "2026-10-25",
+  "e": "2026-10-25",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Hudayriyat Women’s Cycle Series – Race 1",
+  "c": "generic_event",
+  "s": "2026-10-25",
+  "e": "2026-10-25",
+  "st": "05:00",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Halloween Ride",
+  "c": "wmf_event",
+  "s": "2026-10-31",
+  "e": "2026-10-31",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "UAE Team L’IMAD Exclusive Women’s Ride",
+  "c": "wmf_event",
+  "s": "2026-10-31",
+  "e": "2026-10-31",
+  "st": "17:00",
+  "et": "17:30",
+  "loc": "",
+  "status": "Cancelled",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "#WeAreUAE Community Ride-Along",
+  "c": "wmf_event",
+  "s": "2026-10-31",
+  "e": "2026-10-31",
+  "st": "20:00",
+  "et": "21:00",
+  "loc": "",
+  "status": "Cancelled",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "HUD Full Track closure (5-2pm)",
+  "c": "track_closure",
+  "s": "2026-11-01",
+  "e": "2026-11-01",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "WMF Long Ride",
+  "c": "wmf_ride",
+  "s": "2026-11-01",
+  "e": "2026-11-01",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "weekdays": [
+    0
+   ]
+  },
+  "x": {
+   "2026-10-25": "cancelled"
+  }
+ },
+ {
+  "t": "Falcon Daman Race 2 🚴",
+  "c": "generic_event",
+  "s": "2026-11-03",
+  "e": "2026-11-03",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "YMC Closure",
+  "c": "track_closure",
+  "s": "2026-11-04",
+  "e": "2026-11-04",
+  "st": "",
+  "et": "",
+  "loc": "YMC",
+  "status": "Confirmed",
+  "r": {
+   "freq": "weekly",
+   "interval": 1,
+   "until": "2026-11-25",
+   "weekdays": [
+    3
+   ]
+  },
+  "x": null
+ },
+ {
+  "t": "Hudayriyat Women’s Race 2 🚴",
+  "c": "generic_event",
+  "s": "2026-11-08",
+  "e": "2026-11-08",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "HUD All Day closure",
+  "c": "track_closure",
+  "s": "2026-11-09",
+  "e": "2026-11-23",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "DXB T100  🏊🚴 🏃",
+  "c": "generic_event",
+  "s": "2026-11-13",
+  "e": "2026-11-15",
+  "st": "",
+  "et": "",
+  "loc": "Dubai",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "WTCS / WTMC 🏊🚴 🏃",
+  "c": "generic_event",
+  "s": "2026-11-13",
+  "e": "2026-11-22",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "AUH → DXB → AUH (Colnago Community Ride) 🚴",
+  "c": "wmf_ride",
+  "s": "2026-11-22",
+  "e": "2026-11-22",
+  "st": "06:00",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Spinneys Race – 65 km 🚴",
+  "c": "generic_event",
+  "s": "2026-11-22",
+  "e": "2026-11-22",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "HUD Full Track closure (4–9pm)",
+  "c": "track_closure",
+  "s": "2026-11-26",
+  "e": "2026-11-26",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "WMF Training Camp ❤️",
+  "c": "wmf_event",
+  "s": "2026-11-27",
+  "e": "2026-11-29",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Hudayriyat Women’s Race 3 🚴",
+  "c": "generic_event",
+  "s": "2026-11-29",
+  "e": "2026-11-29",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Jebel Jais Race",
+  "c": "generic_event",
+  "s": "2026-12-05",
+  "e": "2026-12-05",
+  "st": "",
+  "et": "",
+  "loc": "Ras Al Khaimah",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "AUH – DXB– AUH Ride (WMF)",
+  "c": "wmf_event",
+  "s": "2026-12-06",
+  "e": "2026-12-06",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Hudayriyat Women’s Race 4 FINAL",
+  "c": "generic_event",
+  "s": "2026-12-06",
+  "e": "2026-12-06",
+  "st": "",
+  "et": "",
+  "loc": "Hudayriyat",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Falcon Daman Race 3 🚴",
+  "c": "generic_event",
+  "s": "2026-12-08",
+  "e": "2026-12-08",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "School Winter Break",
+  "c": "generic_event",
+  "s": "2026-12-14",
+  "e": "2027-01-04",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Tentative",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Ride It Forward ❤️",
+  "c": "wmf_event",
+  "s": "2026-12-20",
+  "e": "2026-12-20",
+  "st": "06:00",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Gran Fondo 🚴",
+  "c": "generic_event",
+  "s": "2026-12-20",
+  "e": "2026-12-20",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Festive Ride 🎁",
+  "c": "wmf_event",
+  "s": "2026-12-25",
+  "e": "2026-12-25",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Jebel Hafeet - (Colnago Community ride)",
+  "c": "generic_event",
+  "s": "2026-12-27",
+  "e": "2026-12-27",
+  "st": "06:00",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Falcon Daman Race 4 🚴",
+  "c": "generic_event",
+  "s": "2027-01-05",
+  "e": "2027-01-05",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Spinneys race 85 km 🚴",
+  "c": "generic_event",
+  "s": "2027-01-09",
+  "e": "2027-01-09",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Mountain Ride – Musandam ⛰️",
+  "c": "wmf_event",
+  "s": "2027-01-16",
+  "e": "2027-01-16",
+  "st": "",
+  "et": "",
+  "loc": "Al Ain",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Dayqah Challenge 🚴",
+  "c": "generic_event",
+  "s": "2027-01-23",
+  "e": "2027-01-23",
+  "st": "",
+  "et": "",
+  "loc": "Oman",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Cyber Run & Ride 🚴",
+  "c": "generic_event",
+  "s": "2027-01-31",
+  "e": "2027-01-31",
+  "st": "06:00",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Falcon Daman Race 5 🚴",
+  "c": "generic_event",
+  "s": "2027-02-02",
+  "e": "2027-02-02",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "UAE Tour Women 🚴",
+  "c": "generic_event",
+  "s": "2027-02-03",
+  "e": "2027-02-06",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Mountain Ride – Jebel Hafeet ⛰️",
+  "c": "wmf_event",
+  "s": "2027-02-06",
+  "e": "2027-02-06",
+  "st": "",
+  "et": "",
+  "loc": "Jebel Hafeet",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Spinneys Race – 92 km 🚴",
+  "c": "generic_event",
+  "s": "2027-02-07",
+  "e": "2027-02-07",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Ramadan 🌙",
+  "c": "generic_event",
+  "s": "2027-02-08",
+  "e": "2027-03-10",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Tentative",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "UAE Tour Men 🚴",
+  "c": "generic_event",
+  "s": "2027-02-15",
+  "e": "2027-02-21",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Falcon Daman Race 6 🚴",
+  "c": "generic_event",
+  "s": "2027-03-02",
+  "e": "2027-03-02",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Confirmed",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Eid",
+  "c": "generic_event",
+  "s": "2027-03-11",
+  "e": "2027-03-11",
+  "st": "",
+  "et": "",
+  "loc": "",
+  "status": "Tentative",
+  "r": null,
+  "x": null
+ },
+ {
+  "t": "Liwa Training Camp ❤️",
+  "c": "wmf_event",
+  "s": "2027-03-20",
+  "e": "2027-03-21",
+  "st": "",
+  "et": "",
+  "loc": "Liwa",
+  "status": "Tentative",
+  "r": null,
+  "x": null
+ }
+]

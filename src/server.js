@@ -148,6 +148,7 @@ app.get("/", need(), wrap(async (req, res) => {
       ${tile("/scan", "Ride check-ins today", s.today, fmtDate(today))}
       ${tile("/members?sort=new", "New members, last 30 days", s.new30, "Registrations")}
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
+      ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
     </div>
     <section class="card"><h2>Links to share with the community</h2>
@@ -168,14 +169,19 @@ app.get("/api/snapshot.js", need(), wrap(async (req, res) => {
 
 // ======================= QR scanner (ride leads) =======================
 async function rideActivities() {
-  const r = await pool.query("SELECT * FROM activities WHERE kind = 'ride' AND status = 'Active' ORDER BY name, activity_id");
+  // the scanner offers only the six fixed WMF rides
+  const r = await pool.query("SELECT * FROM activities WHERE kind = 'ride' AND core AND status = 'Active' ORDER BY sort_order, name");
   return r.rows;
 }
+const WEEKDAY_DEFAULT = { Monday: "RIDE-MONDAY-MADNESS", Wednesday: "RIDE-WEDNESDAY-SOCIAL", Saturday: "RIDE-WEEKEND-LONG", Sunday: "RIDE-WEEKEND-LONG" };
 app.get("/scan", need(...STAFF), wrap(async (req, res) => {
   const acts = await rideActivities();
   const today = R.todayLocal(), wd = R.weekdayOf(today);
-  // default: the generic ride for today's weekday ("Saturday Ride"), else any ride naming the weekday
-  const def = acts.find((a) => a.name.toLowerCase() === (wd + " ride").toLowerCase()) || acts.find((a) => a.name.toLowerCase().includes(wd.toLowerCase())) || acts[0];
+  // default: the ride on today's WMF calendar, else the usual ride for this weekday
+  const onCal = await require("./calendar").ridesOn(today);
+  const defId = (onCal[0] && onCal[0].slot) || WEEKDAY_DEFAULT[wd] || "RIDE-MORNING";
+  const def = acts.find((a) => a.activity_id === defId) || acts[0];
+  const slotName = Object.fromEntries(acts.map((a) => [a.activity_id, a.name]));
   res.send(page(req, "Scan QR", `
     <section class="card narrow">
       <h2>Ride attendance</h2>
@@ -184,7 +190,7 @@ app.get("/scan", need(...STAFF), wrap(async (req, res) => {
         <label class="f"><span>Ride</span><select id="activity" class="inp">${acts.map((a) => `<option value="${h(a.activity_id)}" ${def && a.activity_id === def.activity_id ? "selected" : ""}>${h(a.name)}${a.location && a.location !== "Abu Dhabi" ? " · " + h(a.location) : ""}</option>`).join("")}</select></label>
         <label class="f"><span>Ride date</span><input id="date" class="inp" type="date" value="${today}" max="${today}"></label>
       </div>
-      ${acts.length ? "" : `<div class="alert warn"><span class="ic">!</span><span>No active rides. <a href="/activities">Add a ride</a> first.</span></div>`}
+      ${onCal.length ? `<div class="today-rides" style="margin-top:10px"><span class="muted" style="font-size:13px">On the WMF calendar today:</span>${onCal.map((o) => `<button type="button" class="btn" data-slot="${h(o.slot)}">${o.time ? h(o.time) + " · " : ""}${h(o.title)}${o.location ? " · " + h(o.location) : ""} <span class="badge">${h(slotName[o.slot] || "")}</span></button>`).join("")}</div>` : `<p class="muted" style="font-size:13px;margin:8px 0 0">No WMF ride on the calendar today. <a href="/calendar">Open the calendar</a></p>`}
     </section>
     <section class="card narrow" style="display:grid;gap:12px">
       <div id="reader" aria-label="Camera"></div>
@@ -347,7 +353,7 @@ app.get("/events", wrap(async (req, res) => {
   const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
   res.send(page(req, "Events", `<section class="card"><h2>Upcoming WMF events</h2><p class="lead">Choose an event to sign up.</p>
     ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
-    <p style="margin-top:14px"><a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
+    <p style="margin-top:14px"><a href="/calendar">See the full WMF calendar</a> · <a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
 }));
 function eventForm(e, v = {}, err) {
   return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.notes ? "<br>" + h(e.notes) : ""}</p>
@@ -561,8 +567,8 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
 // ======================= activities =======================
 app.get("/activities", need(...STAFF), wrap(async (req, res) => {
   const r = await pool.query(`SELECT a.*, (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL) AS n
-    FROM activities a ORDER BY (a.status = 'Active') DESC, a.kind, a.name`);
-  const row = (a) => `<tr><td><b>${h(a.name)}</b><br><span class="muted">${h(a.activity_id)}</span></td><td>${h(a.kind)}</td><td>${a.n}</td>
+    FROM activities a ORDER BY a.core DESC, a.sort_order, (a.status = 'Active') DESC, a.kind, a.name`);
+  const row = (a) => `<tr><td><b>${h(a.name)}</b><br><span class="muted">${h(a.activity_id)}</span></td><td>${h(a.kind)}${a.core ? ' <span class="badge good">Scanner</span>' : ""}</td><td>${a.n}</td>
     <td colspan="2"><form method="post" action="/activities/${encodeURIComponent(a.activity_id)}" class="toolbar" style="margin:0;align-items:center">
       <select class="inp" name="location" style="width:auto;min-height:32px;font-size:14px">${["Abu Dhabi", "Dubai", "Other"].map((l) => `<option ${a.location === l ? "selected" : ""}>${l}</option>`).join("")}</select>
       <select class="inp" name="status" style="width:auto;min-height:32px;font-size:14px">${["Active", "Inactive"].map((l) => `<option ${a.status === l ? "selected" : ""}>${l}</option>`).join("")}</select>
@@ -571,12 +577,12 @@ app.get("/activities", need(...STAFF), wrap(async (req, res) => {
       <label class="check" style="display:inline-flex;gap:4px;font-size:14px"><input type="checkbox" name="registration_open" value="1" ${a.registration_open ? "checked" : ""}> Sign-up open</label>` : ""}
       <button class="btn tblbtn">Save</button>${a.kind === "event" && a.registration_open ? ` <a href="/events/${encodeURIComponent(a.activity_id)}">Public link</a>` : ""}</form></td></tr>`;
   res.send(page(req, "Rides & events", `<div class="grid">
-    <section class="card c8"><h2>Rides and events</h2><p class="lead">Rides are counted by weekday series (Monday Ride, Saturday Ride …). Location is Abu Dhabi unless set to Dubai.</p>
+    <section class="card c8"><h2>Rides and events</h2><p class="lead">The scanner offers the six WMF rides marked “Scanner”. Older ride names from the workbook stay here for history. Location is Abu Dhabi unless set to Dubai.</p>
       <div class="tw"><table><thead><tr><th>Activity</th><th>Kind</th><th class="n">Rows</th><th colspan="2">Settings</th></tr></thead><tbody>${r.rows.map(row).join("")}</tbody></table></div></section>
-    <section class="card c4"><h2>Add a ride or event</h2>
+    <section class="card c4"><h2>Add an event</h2><p class="lead">Rides are the six fixed WMF rides. Events added on the <a href="/calendar/manage">calendar</a> appear here automatically.</p>
       <form class="form" method="post" action="/activities">
         <label>Name<input name="name" required maxlength="120" placeholder="e.g. Saturday Ride or Gran Fondo Briefing"></label>
-        <label>Kind<select name="kind"><option value="ride">Ride (QR attendance)</option><option value="event">Event (sign-up)</option></select></label>
+        <input type="hidden" name="kind" value="event">
         <label>Location<select name="location"><option>Abu Dhabi</option><option>Dubai</option><option>Other</option></select></label>
         <label>Event date <span class="hint">(events only)</span><input type="date" name="event_date"></label>
         <label>Capacity <span class="hint">(optional)</span><input type="number" min="0" name="capacity"></label>
@@ -618,6 +624,7 @@ app.post("/activities/:id", need(...STAFF), wrap(async (req, res) => {
 
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
+require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 
 // ======================= errors =======================
 app.use((req, res) => res.status(404).send(page(req, "Not found", `<section class="card"><h2>Page not found</h2><p class="lead"><a href="/">Back to the start</a></p></section>`, { wide: false })));
@@ -627,6 +634,12 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   res.status(500).send(layout("Error", `<section class="card"><h2>Something went wrong</h2><p class="lead">Nothing was half-saved: changes are all-or-nothing. <a href="/">Back to the start</a></p></section>`, { user: user(req) }));
 });
 
+async function init() {
+  await migrate();
+  await tx((c) => R.ensureCoreRides(c));
+  await require("./calendar").seed();
+  await ensureAdmin();
+}
 async function ensureAdmin() {
   const n = Number((await pool.query("SELECT count(*) AS n FROM users")).rows[0].n);
   if (n) return;
@@ -639,10 +652,9 @@ async function ensureAdmin() {
 
 if (require.main === module) {
   (async () => {
-    await migrate();
-    await ensureAdmin();
+    await init();
     const port = +process.env.PORT || 3000;
     app.listen(port, () => console.log(`WMF Community System on port ${port}`));
   })().catch((e) => { console.error(e); process.exit(1); });
 }
-module.exports = { app, migrate, ensureAdmin, crypto, ROLE_TEXT };
+module.exports = { app, init, migrate, ensureAdmin, crypto, ROLE_TEXT };

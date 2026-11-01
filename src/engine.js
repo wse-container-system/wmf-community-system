@@ -44,7 +44,9 @@
     if (name === "workshop") return { kind: "event", series: null, activity: "Summer Workshop" };   // moved to events, 1 Oct
     if (type.includes("ride") || r.recordType === "Attendance") {
       const s = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].find((w) => name.includes(w) || id.includes(w));
-      const series = s ? s[0].toUpperCase() + s.slice(1) + " Ride" : "Other ride";
+      // no weekday in the name (Morning Ride, Weekend Long Ride, Mountain Ride): use the weekday of the ride date, as for the history
+      const wd = s || (r.date ? ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][new Date(String(r.date).slice(0, 10) + "T12:00:00Z").getUTCDay()] : null);
+      const series = wd ? wd[0].toUpperCase() + wd.slice(1) + " Ride" : "Other ride";
       return { kind: "ride", series, activity: series };
     }
     return { kind: "other", series: null, activity: clean(r.activityName) };

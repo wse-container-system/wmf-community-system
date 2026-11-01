@@ -130,6 +130,28 @@ CREATE TABLE IF NOT EXISTS scan_log (
   actor TEXT, scanned TEXT, activity_id TEXT, session_date DATE, result TEXT, member_id TEXT
 );
 
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS core BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS sort_order INTEGER;
+
+CREATE TABLE IF NOT EXISTS calendar_items (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('wmf_ride','wmf_event','generic_event','track_closure')),
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  start_time TEXT,
+  end_time TEXT,
+  location TEXT,
+  status TEXT NOT NULL DEFAULT 'Confirmed',
+  recur JSONB,
+  exceptions JSONB,
+  url TEXT,
+  ride_slot TEXT,
+  activity_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS "session" (
   "sid" varchar NOT NULL COLLATE "default" PRIMARY KEY,
   "sess" json NOT NULL,

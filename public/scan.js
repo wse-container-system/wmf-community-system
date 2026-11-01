@@ -59,6 +59,9 @@
   setInterval(flush, 20000);
   showQ(); flush();
 
+  // today's calendar rides: tap to choose that ride
+  document.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => { $("#activity").value = b.dataset.slot; }));
+
   // ---------- camera ----------
   function onScan(text) {
     const now = Date.now();

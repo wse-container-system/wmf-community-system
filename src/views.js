@@ -8,6 +8,7 @@ const NAV = [
   ["/scan", "Scan QR", ["admin", "coordinator"]],
   ["/members", "Members", ["admin", "coordinator"]],
   ["/activities", "Rides & events", ["admin", "coordinator"]],
+  ["/calendar", "Calendar", ["admin", "coordinator", "viewer", "sponsor"]],
   ["/dashboard", "Dashboard", ["admin", "coordinator", "viewer", "sponsor"]],
   ["/admin", "Admin", ["admin"]],
 ];
