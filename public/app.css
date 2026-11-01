@@ -1,18 +1,23 @@
 /* Layout: app shell — header, page nav, one filter row, then summary-before-detail cards on a 12-column grid.
    Brand colours are placeholders until the approved WMF / UAE Team ADQ palette arrives. */
 :root {
-  --bg: #f4f6f8;          /* page plane, slightly cool */
-  --surface: #fcfcfb;     /* cards and chart surface */
-  --ink: #101828;         /* primary text */
-  --ink-2: #475467;       /* secondary text */
-  --muted: #5d6676;       /* labels, axis text (4.5:1 on surface) */
-  --line: #e2e5ea;        /* hairlines, gridlines */
-  --axis: #c3c7cf;
-  --accent: #1c5cab;      /* controls, links, focus */
-  --accent-wash: #e8f0fb;
-  --s1: #2a78d6;          /* series 1 (validated categorical order) */
-  --s2: #eb6834;          /* series 2 */
-  --s3: #1baf7a;          /* series 3 */
+  /* WMN Moving FWD brand: sky #80C0F9 → lavender #979FE7 → mauve #BE91B2 → coral #F59082.
+     The pure brand colours are too light for text on white, so text, controls and chart marks use deeper tones of the same hues. */
+  --brand-sky: #80c0f9; --brand-lavender: #979fe7; --brand-mauve: #be91b2; --brand-coral: #f59082;
+  --brand-grad: linear-gradient(90deg, #80c0f9 0%, #979fe7 38%, #be91b2 68%, #f59082 100%);
+  --brand-grad-deep: linear-gradient(90deg, #2f6fc0 0%, #6a55b8 55%, #b04a62 100%); /* white text ≥ 5:1 at every stop */
+  --bg: #f7f6fb;          /* page plane, faint lavender */
+  --surface: #ffffff;     /* cards and chart surface */
+  --ink: #151320;         /* primary text */
+  --ink-2: #4a4660;       /* secondary text */
+  --muted: #5f5a74;       /* labels, axis text */
+  --line: #e7e4f0;        /* hairlines, gridlines */
+  --axis: #c9c4d8;
+  --accent: #4d5ac2;      /* controls, links, focus (deep lavender, 5.9:1) */
+  --accent-wash: #eef0fb;
+  --s1: #2f7fd6;          /* series 1: sky, deepened */
+  --s2: #d9634f;          /* series 2: coral, deepened */
+  --s3: #7b62cf;          /* series 3: lavender, deepened */
   --good: #0ca30c; --good-ink: #006300; --warn: #fab219; --warn-ink: #7a5200; --crit: #d03b3b; --crit-ink: #a12727;
   --warn-wash: #fff6e0; --crit-wash: #fdecec; --good-wash: #e9f7e9;
   --shadow: 0 1px 2px rgba(16, 24, 40, .06);
@@ -22,15 +27,15 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1013; --surface: #17191d; --ink: #f2f4f7; --ink-2: #c5cad3; --muted: #9ba3b0; --line: #2a2e35; --axis: #3a3f47;
-    --accent: #7fb2ef; --accent-wash: #1a2a40; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --bg: #12101a; --surface: #1c1a26; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
+    --accent: #979fe7; --accent-wash: #262744; --s1: #80c0f9; --s2: #f59082; --s3: #be91b2;
     --good-ink: #3fc23f; --warn-ink: #f5c04a; --crit-ink: #f08a8a; --warn-wash: #2e2510; --crit-wash: #331b1b; --good-wash: #13281a;
     --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1013; --surface: #17191d; --ink: #f2f4f7; --ink-2: #c5cad3; --muted: #9ba3b0; --line: #2a2e35; --axis: #3a3f47;
-  --accent: #7fb2ef; --accent-wash: #1a2a40; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --bg: #12101a; --surface: #1c1a26; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
+    --accent: #979fe7; --accent-wash: #262744; --s1: #80c0f9; --s2: #f59082; --s3: #be91b2;
   --good-ink: #3fc23f; --warn-ink: #f5c04a; --crit-ink: #f08a8a; --warn-wash: #2e2510; --crit-wash: #331b1b; --good-wash: #13281a;
   --shadow: none; color-scheme: dark;
 }
@@ -244,3 +249,21 @@ a { color: var(--accent); }
 .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); }
 .badge.warn { background: var(--warn-wash); color: var(--warn-ink); } .badge.good { background: var(--good-wash); color: var(--good-ink); } .badge.crit { background: var(--crit-wash); color: var(--crit-ink); }
 pre.json { white-space: pre-wrap; font-size: 12px; margin: 0; max-height: 160px; overflow: auto; }
+
+/* ---------- brand ---------- */
+body::before { content: ""; display: block; height: 4px; background: var(--brand-grad); }
+.brand { gap: 14px; }
+.brand-logo { height: 46px; width: auto; display: block; }
+.brand-logo img { height: 46px; width: auto; display: block; }
+.brand-name { border-left: 1px solid var(--line); padding-left: 14px; }
+.brand-name h1 { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 560px) { .brand-logo, .brand-logo img { height: 34px; } .brand-name { display: none; } }
+.btn.primary { background: var(--brand-grad-deep); border-color: transparent; color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); background: var(--brand-grad-deep); }
+.nav button[aria-current="page"] { border-bottom-color: transparent; border-image: var(--brand-grad) 1; }
+.shell-nav a[aria-current="page"] { background: var(--accent-wash); color: var(--accent); box-shadow: inset 0 -2px 0 var(--brand-lavender); }
+.hero-num { background: var(--brand-grad-deep); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.qrbox { border: 2px solid transparent; background: linear-gradient(#fff, #fff) padding-box, var(--brand-grad) border-box; }
+.welcome-band { height: 6px; border-radius: 6px; background: var(--brand-grad); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --brand-grad-deep: linear-gradient(90deg, #80c0f9 0%, #979fe7 50%, #f59082 100%); }
+  :root:not([data-theme="light"]) .btn.primary { color: #12101a; } }

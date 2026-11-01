@@ -18,24 +18,25 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true } 
   const fl = flash ? `<div class="flash ${h(flash.type || "info")}" role="status">${h(flash.text)}</div>` : "";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${h(title)} · WMF Community</title>
+<title>${h(title)} · WMN Moving FWD</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
 <link rel="stylesheet" href="/app.css">
+<link rel="icon" type="image/png" href="/brand/favicon.png"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="theme-color" content="#979fe7">
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
 <div class="app">
   <header class="top">
     <a class="brand" href="/" style="text-decoration:none;color:inherit">
-      <div class="brand-mark" aria-hidden="true">WMF</div>
-      <div><h1>${user ? "Community System" : "Women Moving Forward"}</h1><p class="sub">Women Moving Forward · UAE Team ADQ</p></div>
+      <picture class="brand-logo"><source srcset="/brand/wmf-logo-dark.png" media="(prefers-color-scheme: dark)"><img src="/brand/wmf-logo.png" alt="WMN Moving FWD, powered by Aurora" width="640" height="142"></picture>
+      ${user ? `<div class="brand-name"><h1>Community System</h1></div>` : ""}
     </a>
     ${user ? `<nav class="shell-nav" aria-label="Main">${nav}
       <a href="/account/password" title="${h(user.email)}">${h(ROLE_TEXT[user.role])}</a>
       <form method="post" action="/logout"><button class="btn ghost">Sign out</button></form></nav>` : ""}
   </header>
   <main id="main" tabindex="-1" class="${wide ? "" : "narrow"}" style="display:grid;gap:14px">${fl}${body}</main>
-  <footer class="foot"><span>WMF Community System</span><span>Times shown in UAE time</span></footer>
+  <footer class="foot"><span>WMN Moving FWD · Powered by Aurora</span><span>Times shown in UAE time</span></footer>
 </div>
 ${scripts}
 </body></html>`;

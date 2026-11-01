@@ -293,7 +293,7 @@ app.get("/members/:id/qr.png", need(...STAFF), wrap(async (req, res) => {
 // ======================= public: registration =======================
 const consentText = `I take part in WMF rides and events at my own risk, will follow the ride leader's instructions and road safety rules, and confirm I am fit to ride.`;
 function joinForm(v = {}, err) {
-  return `<section class="card"><h2>Join Women Moving Forward</h2>
+  return `<section class="card"><h2>Join WMN Moving FWD</h2>
     <p class="lead">Register once. You'll get your personal QR code on the next screen: show it to the ride leader at every ride.</p>
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     <form class="form" method="post" action="/join">
