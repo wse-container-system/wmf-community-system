@@ -84,6 +84,27 @@ test("cycling development hub", async (t) => {
     ok200(await admin("/dashboard"), "dashboard");
   });
 
+  await t.test("WMF members: details to spot the same person twice", async () => {
+    await tx(async (c) => {
+      await R.createMember(c, { full_name: "Rhea Sevilla", email: "rhea.s@example.org", mobile: "0507770001", waiver_consent: true }, "test", "WMF App Registration");
+      await R.createMember(c, { full_name: "Sevilla  Rhéa", email: "rhea.work@example.org", mobile: "0507770002", waiver_consent: true }, "test", "WMF Staff Entry");
+    });
+    const d = ok200(await admin("/admin/duplicates"), "duplicates");
+    assert.match(d.text, /Rhea Sevilla/); assert.match(d.text, /Sevilla \s*Rh/);
+    assert.doesNotMatch(d.text, /rhea\.work@example\.org/, "hidden until asked");
+    const shown = ok200(await admin("/admin/duplicates?contact=show"), "duplicates with contacts");
+    assert.match(shown.text, /rhea\.work@example\.org/); assert.match(shown.text, /971507770002|0507770002/);
+    const list = ok200(await admin("/members?sort=name&contact=show"), "members list");
+    assert.match(list.text, /Possible duplicate/); assert.match(list.text, /rhea\.s@example\.org/);
+    assert.ok((await pool.query("SELECT count(*)::int n FROM audit_log WHERE action = 'member.contact_view'")).rows[0].n >= 2, "views are logged");
+    // a ride lead never sees full contact details on the list
+    await admin("/admin/users", { method: "POST", form: { email: "lead@test.local", name: "Ride Lead", role: "coordinator" } });
+    await pool.query("UPDATE users SET password_hash = $2, must_change = false WHERE email = $1", ["lead@test.local", await require("bcryptjs").hash("Lead-Password-1", 4)]);
+    const lead = client(); await login(lead, "lead@test.local", "Lead-Password-1");
+    const ll = ok200(await lead("/members?sort=name&contact=show"), "lead list");
+    assert.doesNotMatch(ll.text, /rhea\.s@example\.org/); assert.match(ll.text, /Possible duplicate/);
+  });
+
   let co;
   await t.test("corporate import commit (direct)", { skip: !TRACKER && "set TEST_TRACKER" }, async () => {
     const { parseTracker, commitTracker } = require("../src/corpimport");

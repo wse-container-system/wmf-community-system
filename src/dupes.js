@@ -10,7 +10,7 @@ const { h, fmtDate } = require("./views");
 
 const pair = (x, y) => (x < y ? [x, y] : [y, x]);
 const emailsOf = (m) => [m.primary_email, ...String(m.alt_emails || "").split(/[;,\s]+/)].map(R.normEmail).filter((e) => e.includes("@"));
-const nameKey = (n) => { const s = R.clean(n).toLowerCase().replace(/[^\p{L}\s]/gu, "").replace(/\s+/g, " ").trim(); return s.split(" ").length >= 2 ? s : ""; };
+const nameKey = (n) => { const w = R.clean(n).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(Boolean); return w.length >= 2 ? w.sort().join(" ") : ""; };
 /** The record to keep: the one seen first (its Member ID is the oldest). */
 const oldestFirst = (a, b) => String(a.first_seen || "9999").localeCompare(String(b.first_seen || "9999")) || a.member_id.localeCompare(b.member_id);
 
@@ -95,30 +95,48 @@ async function autoMergeEmails(actor) {
   });
 }
 
+/** Extra facts per member for telling records apart: activity count, last activity, community, where the record came from. */
+async function memberFacts(ids) {
+  if (!ids.length) return new Map();
+  const r = await pool.query(`SELECT m.member_id, m.community, m.gender, m.sources, m.alt_emails,
+      count(p.id) FILTER (WHERE p.record_type <> 'Member Registration')::int AS n, max(p.record_date) FILTER (WHERE p.record_type <> 'Member Registration') AS last
+    FROM members m LEFT JOIN participation p ON p.member_id = m.member_id AND p.voided_at IS NULL WHERE m.member_id = ANY($1) GROUP BY m.member_id`, [ids]);
+  return new Map(r.rows.map((x) => [x.member_id, x]));
+}
+
 module.exports = function routes(app, { need, page, setFlash, actor, wrap }) {
   const A = need("admin");
-  const mask = (m) => `${h(R.maskEmail(m.primary_email) || "no email")} · ${h(R.maskPhone(m.mobile) || "no phone")}`;
-  const groupHtml = (g, kind) => `<div class="card" style="padding:12px 14px;display:grid;gap:8px">
+  const contact = (m, show) => show
+    ? `${h(m.primary_email || "no email")}${m.alt_emails ? ` <span class="muted">(also ${h(m.alt_emails)})</span>` : ""} · ${h(m.mobile || "no phone")}`
+    : `${h(R.maskEmail(m.primary_email) || "no email")} · ${h(R.maskPhone(m.mobile) || "no phone")}`;
+  const groupHtml = (g, kind, facts, show) => `<div class="card" style="padding:12px 14px;display:grid;gap:8px">
     <form method="post" action="/admin/duplicates/merge" class="form" style="gap:8px">
-      ${g.map((m, i) => `<label class="check" style="align-items:center"><input type="radio" name="keep" value="${h(m.member_id)}" ${i === 0 ? "checked" : ""}>
-        <span><a href="/members/${encodeURIComponent(m.member_id)}"><b>${h(m.member_id)}</b></a> ${h(m.full_name)} <span class="muted">· ${mask(m)} · first seen ${fmtDate(m.first_seen && String(m.first_seen).slice(0, 10))}</span></span></label>`).join("")}
+      <div class="tw"><table><thead><tr><th>Keep</th><th>Member ID</th><th>Name</th><th>Email · phone</th><th>Community</th><th>First seen</th><th class="n">Activities</th><th>Last activity</th><th>Came from</th></tr></thead><tbody>
+      ${g.map((m, i) => { const f = facts.get(m.member_id) || {}; return `<tr><td><input type="radio" name="keep" value="${h(m.member_id)}" ${i === 0 ? "checked" : ""} aria-label="Keep ${h(m.member_id)}" style="width:20px;height:20px"></td>
+        <td><a href="/members/${encodeURIComponent(m.member_id)}"><b>${h(m.member_id)}</b></a></td><td>${h(m.full_name)}</td><td style="overflow-wrap:anywhere">${contact({ ...m, alt_emails: f.alt_emails }, show)}</td>
+        <td>${h([f.community, f.gender].filter(Boolean).join(" · ") || "—")}</td><td>${fmtDate(m.first_seen && String(m.first_seen).slice(0, 10))}</td><td class="n">${f.n || 0}</td>
+        <td>${fmtDate(f.last && String(f.last).slice(0, 10))}</td><td class="muted" style="font-size:13px">${h(f.sources || "—")}</td></tr>`; }).join("")}</tbody></table></div>
       <input type="hidden" name="ids" value="${h(g.map((m) => m.member_id).join(","))}">
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Merge into the ticked record</button>
         <button class="btn" formaction="/admin/duplicates/dismiss">Not the same person</button></div>
-      <p class="hint" style="margin:0">${kind === "phone" ? "Same phone number. A parent or friend may have registered several people with one number." : "Same full name. Check the email and phone before merging."}</p>
+      <p class="hint" style="margin:0">${kind === "phone" ? "Same phone number. A parent or friend may have registered several people with one number." : "Same name (word order, capitals and accents ignored). Check the email and phone before merging."}</p>
     </form></div>`;
 
   app.get("/admin/duplicates", A, wrap(async (req, res) => {
     const g = await findGroups();
     const recent = (await pool.query("SELECT * FROM merges ORDER BY id DESC LIMIT 40")).rows;
+    const show = req.query.contact === "show";
+    if (show) await audit(pool, actor(req), "member.contact_view", "duplicates", null, null, null, "Viewed contact details on the duplicates page");
+    const facts = await memberFacts([...g.phone, ...g.name].flat().map((m) => m.member_id));
     res.send(page(req, "Duplicates", `
       <section class="card"><h2>Duplicate members</h2>
         <p class="lead">One person should have one member record. Records with the same email address are merged automatically into the oldest record.
         Records that only share a phone number or a name are listed below for you to decide. Merged Member IDs and their QR codes keep working.</p>
+        <p style="margin:0 0 10px">${show ? `Full emails and phone numbers are showing (this view is logged). <a href="/admin/duplicates">Hide them</a>` : `Emails and phone numbers are partly hidden. <a href="?contact=show">Show full contact details</a> to compare them (logged in the audit log).`}</p>
         ${g.email.length ? `<form method="post" action="/admin/duplicates/auto"><button class="btn primary">Merge ${g.email.length} same-email group${g.email.length > 1 ? "s" : ""} now</button></form>` : `<p><span class="badge good">No same-email duplicates</span></p>`}
       </section>
-      <section class="card"><h2>Same phone number <span class="badge">${g.phone.length}</span></h2><div style="display:grid;gap:10px;margin-top:10px">${g.phone.map((x) => groupHtml(x, "phone")).join("") || `<p class="muted">Nothing to review.</p>`}</div></section>
-      <section class="card"><h2>Same full name <span class="badge">${g.name.length}</span></h2><div style="display:grid;gap:10px;margin-top:10px">${g.name.map((x) => groupHtml(x, "name")).join("") || `<p class="muted">Nothing to review.</p>`}</div></section>
+      <section class="card"><h2>Same phone number <span class="badge">${g.phone.length}</span></h2><div style="display:grid;gap:10px;margin-top:10px">${g.phone.map((x) => groupHtml(x, "phone", facts, show)).join("") || `<p class="muted">Nothing to review.</p>`}</div></section>
+      <section class="card"><h2>Same name <span class="badge">${g.name.length}</span></h2><div style="display:grid;gap:10px;margin-top:10px">${g.name.map((x) => groupHtml(x, "name", facts, show)).join("") || `<p class="muted">Nothing to review.</p>`}</div></section>
       <section class="card"><h2>Recent merges</h2><div class="tw"><table><thead><tr><th>When</th><th>Kept</th><th>Merged</th><th>Why</th><th></th></tr></thead><tbody>
         ${recent.map((m) => `<tr ${m.undone_at ? 'style="opacity:.55"' : ""}><td>${fmtDate(new Date(m.at).toISOString().slice(0, 10))}</td><td><a href="/members/${encodeURIComponent(m.kept)}">${h(m.kept)}</a></td><td>${h(m.merged)}</td><td>${h(m.reason || "")}</td>
           <td>${m.undone_at ? "Undone" : `<form method="post" action="/admin/duplicates/undo/${m.id}"><button class="btn tblbtn">Undo</button></form>`}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No merges yet.</td></tr>`}
@@ -157,4 +175,5 @@ module.exports = function routes(app, { need, page, setFlash, actor, wrap }) {
 module.exports.mergeMembers = mergeMembers;
 module.exports.undoMerge = undoMerge;
 module.exports.findGroups = findGroups;
+module.exports.nameKey = nameKey;
 module.exports.autoMergeEmails = autoMergeEmails;

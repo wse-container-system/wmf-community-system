@@ -464,26 +464,40 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
 // ======================= members =======================
 app.get("/members", need(...STAFF), browseLimit, wrap(async (req, res) => {
   const q = R.clean(req.query.q), pg = Math.max(1, +req.query.page || 1), per = 50;
-  const showContacts = false; // the list never shows full contact details; administrators open a member to see them
+  // administrators can show full emails and phones on the list to compare records (each view is logged); coordinators always see them masked
+  const isAdmin = user(req).role === "admin", showContacts = isAdmin && req.query.contact === "show";
   const where = ["merged_into IS NULL"], args = [];
   if (q) { args.push("%" + q.replace(/[%_]/g, "") + "%"); where.push(`(full_name ILIKE $1 OR primary_email ILIKE $1 OR alt_emails ILIKE $1 OR mobile ILIKE $1 OR member_id ILIKE $1)`); }
-  const order = req.query.sort === "new" ? "first_seen DESC NULLS LAST" : "member_id";
-  const [rows, cnt] = await Promise.all([
-    pool.query(`SELECT m.*, (SELECT max(record_date) FROM participation p WHERE p.member_id = m.member_id AND p.voided_at IS NULL AND p.record_type <> 'Member Registration') AS last_seen
+  const sort = ["new", "name"].includes(req.query.sort) ? req.query.sort : "";
+  const order = sort === "new" ? "first_seen DESC NULLS LAST" : sort === "name" ? "lower(full_name), member_id" : "member_id";
+  const [rows, cnt, groups] = await Promise.all([
+    pool.query(`SELECT m.*, (SELECT max(record_date) FROM participation p WHERE p.member_id = m.member_id AND p.voided_at IS NULL AND p.record_type <> 'Member Registration') AS last_seen,
+      (SELECT count(*) FROM participation p WHERE p.member_id = m.member_id AND p.voided_at IS NULL AND p.record_type <> 'Member Registration')::int AS acts
       FROM members m WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ${per} OFFSET ${(pg - 1) * per}`, args),
-    pool.query(`SELECT count(*) AS n FROM members WHERE ${where.join(" AND ")}`, args)]);
+    pool.query(`SELECT count(*) AS n FROM members WHERE ${where.join(" AND ")}`, args),
+    require("./dupes").findGroups()]);
+  if (showContacts) await audit(pool, actor(req), "member.contact_view", "member_list", `page ${pg}`, null, null, "Viewed contact details on the member list");
+  // which records look like someone else's (same email, phone or name)
+  const dup = new Map();
+  for (const [kind, list] of [["same email", groups.email], ["same phone", groups.phone], ["same name", groups.name]]) for (const g of list) for (const m of g) if (!dup.has(m.member_id)) dup.set(m.member_id, { kind, others: g.filter((x) => x.member_id !== m.member_id).map((x) => x.member_id) });
   const n = Number(cnt.rows[0].n), pages = Math.max(1, Math.ceil(n / per));
-  const link = (p) => `/members?${new URLSearchParams({ ...(q ? { q } : {}), ...(req.query.sort ? { sort: req.query.sort } : {}), page: p })}`;
+  const qs = (o) => new URLSearchParams(Object.entries({ q, sort, contact: showContacts ? "show" : "", page: pg, ...o }).filter(([, v]) => v !== "" && v != null)).toString();
+  const nDup = new Set([...groups.email, ...groups.phone, ...groups.name].flat().map((m) => m.member_id)).size;
   res.send(page(req, "Members", `<section class="card">
-    <div class="card-head"><div><h2>Members</h2><p class="lead">${n.toLocaleString("en-GB")} unique member records. The QR codes members already have hold their Member ID.</p></div>
+    <div class="card-head"><div><h2>Members</h2><p class="lead">${n.toLocaleString("en-GB")} unique member records. The QR codes members already have hold their Member ID.${nDup ? ` <b>${nDup} records look like someone else's</b> (same email, phone or name)${isAdmin ? `: <a href="/admin/duplicates">review and merge them</a>` : ""}.` : ""}</p></div>
     <a class="btn primary" href="/members/new">Add member</a></div>
-    <form class="toolbar" method="get"><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email, phone or Member ID" style="max-width:360px"><button class="btn">Search</button>
-      <a class="btn ghost" href="/members?sort=new">Newest first</a></form>
-    <div class="tw"><table><thead><tr><th>Member ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>First seen</th><th>Last activity</th><th>QR</th></tr></thead><tbody>
-    ${rows.rows.map((m) => `<tr><td><a href="/members/${encodeURIComponent(m.member_id)}">${h(m.member_id)}</a></td><td>${h(m.full_name)}</td><td>${h((showContacts ? m.primary_email : R.maskEmail(m.primary_email)) || "—")}</td><td>${h((showContacts ? m.mobile : R.maskPhone(m.mobile)) || "—")}</td>
-      <td>${fmtDate(m.first_seen && m.first_seen.slice(0, 10))}</td><td>${fmtDate(m.last_seen && m.last_seen.slice(0, 10))}</td><td>${h(m.qr_status || "")}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">No members found.</td></tr>`}
+    <form class="toolbar" method="get"><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email, phone or Member ID" style="max-width:360px">
+      <label class="f"><span>Sort</span><select class="inp" name="sort" data-autosubmit>${[["", "Member ID"], ["name", "Name A–Z (look-alikes together)"], ["new", "Newest first"]].map(([v, l]) => `<option value="${v}" ${sort === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      ${showContacts ? `<input type="hidden" name="contact" value="show">` : ""}<button class="btn">Search</button></form>
+    ${isAdmin ? `<p class="muted" style="font-size:13px;margin:0 0 8px">${showContacts ? `Full emails and phone numbers are showing; this view is logged. <a href="/members?${qs({ contact: "", page: pg })}">Hide them</a>` : `Emails and phones are partly hidden. <a href="/members?${qs({ contact: "show" })}">Show full contact details</a> (logged in the audit log).`}</p>` : ""}
+    <div class="tw"><table><thead><tr><th>Member ID</th><th>Name</th><th>Email</th><th>Mobile</th><th>Community</th><th>First seen</th><th class="n">Activities</th><th>Last activity</th><th>Came from</th><th></th></tr></thead><tbody>
+    ${rows.rows.map((m) => { const d = dup.get(m.member_id); return `<tr><td><a href="/members/${encodeURIComponent(m.member_id)}">${h(m.member_id)}</a></td><td>${h(m.full_name)}</td>
+      <td style="overflow-wrap:anywhere">${h((showContacts ? m.primary_email : R.maskEmail(m.primary_email)) || "—")}${showContacts && m.alt_emails ? `<br><span class="muted" style="font-size:12px">also ${h(m.alt_emails)}</span>` : ""}</td><td>${h((showContacts ? m.mobile : R.maskPhone(m.mobile)) || "—")}</td>
+      <td>${h([m.community, m.gender].filter(Boolean).join(" · ") || "—")}</td><td>${fmtDate(m.first_seen && m.first_seen.slice(0, 10))}</td><td class="n">${m.acts}</td><td>${fmtDate(m.last_seen && m.last_seen.slice(0, 10))}</td>
+      <td class="muted" style="font-size:13px">${h(m.sources || "")}</td>
+      <td>${d ? `<span class="badge warn" title="${h(d.kind)} as ${h(d.others.join(", "))}">Possible duplicate: ${h(d.others.join(", "))}</span>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="10" class="muted">No members found.</td></tr>`}
     </tbody></table></div>
-    <div class="pager">${pg > 1 ? `<a class="btn" href="${link(pg - 1)}">Previous</a>` : ""}<span>Page ${pg} of ${pages}</span>${pg < pages ? `<a class="btn" href="${link(pg + 1)}">Next</a>` : ""}</div>
+    <div class="pager">${pg > 1 ? `<a class="btn" href="/members?${qs({ page: pg - 1 })}">Previous</a>` : ""}<span>Page ${pg} of ${pages}</span>${pg < pages ? `<a class="btn" href="/members?${qs({ page: pg + 1 })}">Next</a>` : ""}</div>
   </section>`, { active: "/members" }));
 }));
 
