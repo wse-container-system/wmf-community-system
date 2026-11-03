@@ -26,6 +26,8 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
       <section class="card c4"><h2>Staff accounts</h2><p class="lead">${c.u} active accounts.</p><a class="btn" href="/admin/users">Manage accounts</a></section>
       <section class="card c4"><h2>Counting settings</h2><p class="lead">Test entries to leave out, and large events reported separately.</p><a class="btn" href="/admin/settings">Settings</a></section>
       <section class="card c4"><h2>Audit log</h2><p class="lead">Every change, check-in, import and export.</p><a class="btn" href="/admin/audit">Open audit log</a></section>
+      <section class="card c6"><h2>Corporate programme</h2><p class="lead">Import the corporate tracker, and set each partner's name, ride days and colour.</p><a class="btn" href="/corporate/admin">Corporate settings</a></section>
+      <section class="card c6"><h2>Department</h2><p class="lead">Team list, public holidays, attendance and leave.</p><a class="btn" href="/department/staff">Staff & holidays</a></section>
       <section class="card c12"><h2>Email</h2><p class="lead">The app sends no email. New members get their QR code on screen at registration, and staff can download any member's code from the member page.</p></section>
     </div>`, { active: "/admin" }));
   }));
@@ -89,15 +91,18 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
   // ---------- users ----------
   app.get("/admin/users", A, wrap(async (req, res) => {
     const r = await pool.query("SELECT * FROM users ORDER BY active DESC, role, email");
+    const cos = (await pool.query("SELECT code, name FROM corp_companies ORDER BY sort_order, name")).rows;
+    const coSel = (cur) => `<select class="inp" name="company" style="width:auto;min-height:32px;font-size:14px" aria-label="Limit to one partner"><option value="">Everything</option>${cos.map((c) => `<option value="${h(c.code)}" ${cur === c.code ? "selected" : ""}>Only ${h(c.name)}</option>`).join("")}</select>`;
     const temp = req.session.tempPassword; delete req.session.tempPassword;
     res.send(page(req, "Accounts", `
       ${temp ? `<div class="flash ok" role="status">Temporary password for ${h(temp.email)}: <b style="font-family:monospace;font-size:16px">${h(temp.pw)}</b>. Share it privately. They choose their own at first sign-in. It won't be shown again.</div>` : ""}
       <div class="grid"><section class="card c8"><h2>Staff accounts</h2>
-      <p class="lead">Administrator: everything. Coordinator (ride leads): scan, check-in, members, rides & events, named dashboard. Viewer (managers): dashboard without names. Sponsor: aggregate dashboard, small counts shown as &lt;5.</p>
+      <p class="lead">Administrator: everything. Coordinator (ride leads and department staff): WMF and corporate scanning, attendance, members, events, and their own attendance & leave. Viewer (managers): dashboards and reports without names. Sponsor: aggregate dashboards, small WMF counts shown as &lt;5. “Only &lt;partner&gt;” limits a viewer or sponsor to that company's corporate dashboard and report.</p>
       <div class="tw"><table><thead><tr><th>Email</th><th>Role</th><th>Last sign-in</th><th></th></tr></thead><tbody>
-      ${r.rows.map((u) => `<tr ${u.active ? "" : 'style="opacity:.55"'}><td>${h(u.email)}<br><span class="muted">${h(u.name)}</span></td><td>${h(ROLE_TEXT[u.role])}${u.active ? "" : " (disabled)"}</td><td>${fmtTs(u.last_login)}</td>
+      ${r.rows.map((u) => `<tr ${u.active ? "" : 'style="opacity:.55"'}><td>${h(u.email)}<br><span class="muted">${h(u.name)}</span></td><td>${h(ROLE_TEXT[u.role])}${u.company ? " · only " + h(u.company) : ""}${u.active ? "" : " (disabled)"}</td><td>${fmtTs(u.last_login)}</td>
         <td><form method="post" action="/admin/users/${u.id}" class="toolbar" style="margin:0">
           <select class="inp" name="role" style="width:auto;min-height:32px;font-size:14px">${Object.entries(ROLE_TEXT).map(([k, l]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+          ${coSel(u.company)}
           <select class="inp" name="active" style="width:auto;min-height:32px;font-size:14px"><option value="1" ${u.active ? "selected" : ""}>Active</option><option value="0" ${u.active ? "" : "selected"}>Disabled</option></select>
           <label class="check" style="display:inline-flex;gap:4px;font-size:14px"><input type="checkbox" name="reset" value="1"> New password</label>
           <button class="btn tblbtn">Save</button></form></td></tr>`).join("")}
@@ -105,17 +110,21 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
       <section class="card c4"><h2>Add an account</h2><form class="form" method="post" action="/admin/users">
         <label>Email<input name="email" type="email" required></label><label>Name<input name="name" maxlength="80"></label>
         <label>Role<select name="role">${Object.entries(ROLE_TEXT).map(([k, l]) => `<option value="${k}" ${k === "coordinator" ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>Access <span class="hint">(for a company's sponsor or manager)</span>${coSel("").replace(/ style="[^"]*"/, "")}</label>
         <button class="btn primary">Create with a temporary password</button></form></section></div>`, { active: "/admin" }));
   }));
+  // only viewers and sponsors can be limited to one partner; staff roles always see everything
+  const companyFor = async (code, role) => (["viewer", "sponsor"].includes(role) && code && (await pool.query("SELECT 1 FROM corp_companies WHERE code = $1", [code])).rows[0] ? code : null);
   const tempPw = () => crypto.randomBytes(9).toString("base64").replace(/[+/=]/g, "x");
   app.post("/admin/users", A, wrap(async (req, res) => {
     const email = R.normEmail(req.body.email), role = req.body.role;
+    const company = await companyFor(req.body.company, role);
     if (!R.EMAIL_RE.test(email) || !ROLE_TEXT[role]) { setFlash(req, "err", "Enter an email and a role."); return res.redirect("/admin/users"); }
     const pw = tempPw();
     try {
-      await pool.query("INSERT INTO users (email, name, role, password_hash) VALUES ($1,$2,$3,$4)", [email, R.clean(req.body.name), role, await bcrypt.hash(pw, 11)]);
+      await pool.query("INSERT INTO users (email, name, role, password_hash, company) VALUES ($1,$2,$3,$4,$5)", [email, R.clean(req.body.name), role, await bcrypt.hash(pw, 11), company]);
     } catch (e) { setFlash(req, "err", "That email already has an account."); return res.redirect("/admin/users"); }
-    await audit(pool, actor(req), "user.create", "user", email, null, { role }, null);
+    await audit(pool, actor(req), "user.create", "user", email, null, { role, company }, null);
     req.session.tempPassword = { email, pw };
     res.redirect("/admin/users");
   }));
@@ -124,14 +133,15 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
     if (!u) return res.redirect("/admin/users");
     const role = ROLE_TEXT[req.body.role] ? req.body.role : u.role, active = req.body.active !== "0";
     if (u.id === user(req).id && (role !== "admin" || !active)) { setFlash(req, "err", "You can't remove your own administrator access."); return res.redirect("/admin/users"); }
-    await pool.query("UPDATE users SET role = $2, active = $3 WHERE id = $1", [u.id, role, active]);
-    if (!active || role !== u.role) await pool.query(`DELETE FROM "session" WHERE (sess->'user'->>'id')::int = $1`, [u.id]); // sign them out everywhere
+    const company = await companyFor(req.body.company, role);
+    await pool.query("UPDATE users SET role = $2, active = $3, company = $4 WHERE id = $1", [u.id, role, active, company]);
+    if (!active || role !== u.role || company !== u.company) await pool.query(`DELETE FROM "session" WHERE (sess->'user'->>'id')::int = $1`, [u.id]); // sign them out everywhere
     if (req.body.reset) {
       const pw = tempPw();
       await pool.query("UPDATE users SET password_hash = $2, must_change = true WHERE id = $1", [u.id, await bcrypt.hash(pw, 11)]);
       req.session.tempPassword = { email: u.email, pw };
     }
-    await audit(pool, actor(req), "user.update", "user", u.email, { role: u.role, active: u.active }, { role, active, passwordReset: !!req.body.reset }, null);
+    await audit(pool, actor(req), "user.update", "user", u.email, { role: u.role, active: u.active, company: u.company }, { role, active, company, passwordReset: !!req.body.reset }, null);
     if (!req.body.reset) setFlash(req, "ok", "Saved.");
     res.redirect("/admin/users");
   }));

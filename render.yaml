@@ -25,4 +25,7 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      # optional: switches on the HR CSV feed (Department → HR export). Any long random text; give it only to HR.
+      - key: HR_FEED_TOKEN
+        sync: false
 

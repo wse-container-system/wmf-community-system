@@ -158,6 +158,118 @@ CREATE TABLE IF NOT EXISTS "session" (
   "expire" timestamp(6) NOT NULL
 );
 CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+
+-- ===== Cycling Development hub =====
+-- a sponsor or viewer can be limited to one corporate partner (NULL = everything their role allows)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT;
+
+-- ----- Corporate cycling programme -----
+CREATE TABLE IF NOT EXISTS corp_companies (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  ride_days TEXT NOT NULL DEFAULT 'Thu',
+  ride_time TEXT,
+  location TEXT,
+  contact TEXT,
+  checkin_token TEXT UNIQUE NOT NULL,
+  color TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS corp_participants (
+  id SERIAL PRIMARY KEY,
+  pid TEXT UNIQUE NOT NULL,
+  company TEXT NOT NULL REFERENCES corp_companies(code),
+  full_name TEXT NOT NULL,
+  name_key TEXT NOT NULL,
+  email TEXT,
+  gender TEXT,
+  community TEXT,
+  bike_size TEXT,
+  status TEXT NOT NULL DEFAULT 'Active',
+  joined DATE,
+  source TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (company, name_key);
+CREATE TABLE IF NOT EXISTS corp_sessions (
+  id SERIAL PRIMARY KEY,
+  company TEXT NOT NULL REFERENCES corp_companies(code),
+  session_date DATE NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'Weekly ride',
+  title TEXT NOT NULL DEFAULT '',
+  location TEXT,
+  status TEXT NOT NULL DEFAULT 'Held' CHECK (status IN ('Scheduled','Held','Cancelled')),
+  headcount INTEGER,
+  headcount_expat INTEGER,
+  headcount_emirati INTEGER,
+  headcount_new INTEGER,
+  remarks TEXT,
+  imported BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company, session_date, kind, title)
+);
+CREATE INDEX IF NOT EXISTS corp_sessions_date ON corp_sessions (session_date);
+CREATE TABLE IF NOT EXISTS corp_attendance (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES corp_sessions(id) ON DELETE CASCADE,
+  participant_id INTEGER NOT NULL REFERENCES corp_participants(id) ON DELETE CASCADE,
+  method TEXT NOT NULL,
+  at TIMESTAMP NOT NULL,
+  created_by TEXT,
+  UNIQUE (session_id, participant_id)
+);
+CREATE INDEX IF NOT EXISTS corp_attendance_participant ON corp_attendance (participant_id);
+
+-- ----- Cycling Development department (staff admin) -----
+CREATE TABLE IF NOT EXISTS dept_staff (
+  id SERIAL PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT UNIQUE,
+  employee_no TEXT,
+  job_title TEXT,
+  team TEXT,
+  start_date DATE,
+  leave_entitlement NUMERIC(5,1) NOT NULL DEFAULT 22,
+  carry_over NUMERIC(5,1) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS dept_leave (
+  id SERIAL PRIMARY KEY,
+  staff_id INTEGER NOT NULL REFERENCES dept_staff(id),
+  leave_type TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  days NUMERIC(5,1) NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Approved','Rejected','Cancelled')),
+  requested_by TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_by TEXT,
+  decided_at TIMESTAMPTZ,
+  decision_note TEXT
+);
+CREATE INDEX IF NOT EXISTS dept_leave_staff ON dept_leave (staff_id, start_date);
+CREATE TABLE IF NOT EXISTS dept_attendance (
+  id SERIAL PRIMARY KEY,
+  staff_id INTEGER NOT NULL REFERENCES dept_staff(id),
+  work_date DATE NOT NULL,
+  status TEXT NOT NULL,
+  check_in TEXT,
+  check_out TEXT,
+  location TEXT,
+  notes TEXT,
+  source TEXT,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (staff_id, work_date)
+);
+CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NOT NULL);
 `;
 
 const DEFAULT_SETTINGS = {
