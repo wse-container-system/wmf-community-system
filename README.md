@@ -1,3 +1,47 @@
+# Cycling Development hub
+
+One web app for the Cycling Development department, with three areas reached from the **Hub** (`/`):
+
+| Area | Where | What it does |
+|---|---|---|
+| **WMF** (WMN Moving FWD) | `/wmf`, `/scan`, `/members`, `/dashboard` … | The community system described below, plus **Export monthly (Excel)** on the dashboard. |
+| **Corporate** (L'IMAD, NMDC, Aurora) | `/corporate` | QR self check-in, attendance register, event tracker, participants, staff scanner, dashboard, reports for management and sponsors. |
+| **Department** | `/department` | Team attendance, annual leave requests and approvals, balances, public holidays, exports and a feed for HR. |
+
+## WMF monthly export
+Dashboard → **Export monthly (Excel)** (top right, and on the Performance and Reports pages). One row per month for the
+selected period (a single month exports the 12 months ending with it): ride sessions, ride attendance, average riders per
+ride, events, event participation, total attendance, large public events (separate), unique / first-time / returning
+participants, new members, active members and total members at month end. Extra sheets: rides by month, events by month,
+Impact (retention, conversion), About. Figures use the dashboard's own engine, so they match the screen. Sponsors get
+counts below 5 as "<5".
+
+## Corporate Cycling Programme
+- **Import the tracker once:** Admin → Corporate settings → upload `CORPORATE_TRACKER_UNIFIED.xlsx`. It reads the Limad and NMDC
+  sheets (one row per person), the AURORA sheet (headcounts) and Master Data (fills dates the other sheets don't have, and
+  cancellations). The preview lists differences and look-alike names before anything is written.
+- **Company QR code** (Corporate → QR codes): print the poster or share the link with the company's staff. People scan with
+  the phone camera, type their name (and work email), and they're checked in. No sign-in. It opens the weekly ride by itself
+  on the company's ride days, and any scheduled session or event on its day. New names are added as participants.
+- **Personal QR codes**: every participant has one (`CORP-NMDC-0012`); ride leads scan them at Corporate → Scan. Printable cards per company.
+- **Attendance**: the register looks like the tracker (names × dates). Open a date to tick names, add a walk-in, enter a headcount or cancel it.
+- **Events**: running, yoga, workshops and one-off events per partner, scheduled ahead and recorded on the day.
+- **Reports**: printable (Print → Save as PDF) and Excel, per company or all, by month, quarter, year or dates, compared with the previous period.
+  Viewers and sponsors see no names. In Admin → Staff accounts, a viewer or sponsor can be limited to **one partner** (e.g. the NMDC sponsor):
+  they then only see that company's corporate dashboard and report.
+- **Tracker export**: Corporate → Attendance → Download tracker gives the same layout as the old Excel (one sheet per company + Master Data).
+
+## Department admin
+- Department → **Staff**: add the team with their sign-in email; give them a Coordinator account (Admin → Staff accounts). Add public holidays here too.
+- Each person uses **My attendance & leave**: check in (office / remote / at a ride or event), check out, request leave, see their balance.
+- Administrators see who's in today, approve or reject leave, and fill in or correct the **Attendance** month (P/R/F/L/S/A/O/H). Approved leave appears by itself.
+- Leave counts working days (Mon–Fri) and skips public holidays. Balance = entitlement + carried over − approved annual leave.
+- **HR**: Department → HR export gives the monthly attendance (grid + daily records with times) and the leave register as Excel.
+  Set `HR_FEED_TOKEN` in Render to switch on CSV feeds (`/api/hr/attendance.csv`, `/api/hr/leave.csv`) that an HR system,
+  Power Automate or Excel “Get data from web” can pull.
+
+---
+
 # WMF Community System
 
 Women Moving Forward's community management and reporting system. It covers:
@@ -83,6 +127,8 @@ DATABASE_URL=postgres://postgres@localhost:5432/wmf ADMIN_EMAIL=you@example.org 
 TEST_DATABASE_URL=postgres://postgres@localhost:5432/wmf_test TEST_WORKBOOK=./WMF_Community_Master_System_Integrated.xlsx npm test
 # agreed reference figures, from the 30 Sep 2026 workbook
 TEST_DATABASE_URL=… RECONCILE_WORKBOOK=./old-workbook.xlsx npm test
+# hub: corporate, department and the WMF monthly export (wipes the database; tracker optional)
+TEST_DATABASE_URL=… TEST_TRACKER=./in/CORPORATE_TRACKER_UNIFIED.xlsx npm test
 ```
 
 ## Where things are
@@ -93,5 +139,9 @@ TEST_DATABASE_URL=… RECONCILE_WORKBOOK=./old-workbook.xlsx npm test
 | `src/admin.js` | Import, export, accounts, settings and the audit log. |
 | `src/engine.js` | The dashboard calculations. The same file runs in the browser. |
 | `src/importer.js` / `src/exporter.js` | Reading the workbook in, and writing the backup workbook out. |
+| `src/wmfexport.js` | WMF monthly Excel export. |
+| `src/corporate.js`, `src/corpdata.js`, `src/corpimport.js`, `src/corpexport.js` | Corporate pages, figures, tracker import, Excel files. |
+| `src/department.js` | Department attendance, leave and HR exports. |
+| `src/views.js`, `src/charts.js`, `public/hub.css`, `public/ui.js` | Hub layout and navigation, server-drawn charts. |
 | `src/rules.js` | Matching members, Member IDs, duplicate checks and UAE time. |
 | `public/` | The dashboard, the scanner script and the styles. |

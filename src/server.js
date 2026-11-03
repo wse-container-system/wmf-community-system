@@ -68,6 +68,8 @@ function need(...roles) {
     const u = user(req);
     if (!u) return req.path.startsWith("/api/") ? res.status(401).json({ error: "Please sign in again." }) : res.redirect("/login?next=" + encodeURIComponent(req.originalUrl));
     if (u.mustChange && !req.path.startsWith("/account")) return res.redirect("/account/password");
+    // an account limited to one corporate partner only reaches that partner's corporate dashboard and report
+    if (u.company && !/^\/(corporate|account)(\/|$)/.test(req.path)) return req.path.startsWith("/api/") ? res.status(403).json({ error: "Not allowed for your account." }) : res.redirect("/corporate?company=" + encodeURIComponent(u.company));
     if (roles.length && !roles.includes(u.role)) return req.path.startsWith("/api/") ? res.status(403).json({ error: "Not allowed for your role." }) : res.status(403).send(layout("Not allowed", `<section class="card"><h2>Not available to your role</h2><p class="lead"><a href="/">Back to the start</a></p></section>`, { user: u }));
     next();
   };
@@ -99,9 +101,9 @@ app.post("/login", limit("login", 10, 15 * 60e3), wrap(async (req, res) => {
   await pool.query("UPDATE users SET last_login = now() WHERE id = $1", [u.id]);
   req.session.regenerate((err) => {
     if (err) return res.status(500).send("Session error");
-    req.session.user = { id: u.id, email: u.email, name: u.name, role: u.role, mustChange: u.must_change };
+    req.session.user = { id: u.id, email: u.email, name: u.name, role: u.role, mustChange: u.must_change, company: u.company || null };
     const next = String(req.body.next || "/");
-    res.redirect(u.must_change ? "/account/password" : next.startsWith("/") && !next.startsWith("//") ? next : "/");
+    res.redirect(u.must_change ? "/account/password" : u.company ? "/corporate" : next.startsWith("/") && !next.startsWith("//") ? next : "/");
   });
 }));
 app.post("/logout", (req, res) => req.session.destroy(() => res.redirect("/login")));
@@ -128,8 +130,44 @@ app.post("/account/password", need(), wrap(async (req, res) => {
   res.redirect("/");
 }));
 
-// ======================= home =======================
+// ======================= Cycling Development hub =======================
 app.get("/", need(), wrap(async (req, res) => {
+  const u = user(req);
+  const today = R.todayLocal(), y0 = today.slice(0, 4) + "-01-01", isStaff = STAFF.includes(u.role);
+  const C = require("./corpdata");
+  const [w, corp, dept, me] = await Promise.all([
+    pool.query(`SELECT (SELECT count(*) FROM members WHERE merged_into IS NULL) AS members,
+      (SELECT count(*) FROM participation WHERE voided_at IS NULL AND record_type = 'Attendance' AND record_date >= $1::date) AS rides,
+      (SELECT count(*) FROM participation WHERE voided_at IS NULL AND record_type = 'Event Registration' AND record_date >= $1::date) AS events`, [y0]),
+    C.stats({ codes: (await C.companies()).map((x) => x.code), start: y0, end: today }),
+    u.role === "admin" ? pool.query(`SELECT (SELECT count(*) FROM dept_staff WHERE active) staff, (SELECT count(*) FROM dept_leave WHERE status = 'Pending') pending,
+      (SELECT count(*) FROM dept_attendance WHERE work_date = $1 AND status IN ('Present','Remote','Field/Event')) inn`, [today]) : null,
+    isStaff ? pool.query("SELECT 1 FROM dept_staff WHERE lower(email) = lower($1) AND active", [u.email]) : null,
+  ]);
+  const W = w.rows[0], K = corp.k, D = dept && dept.rows[0];
+  const stat = (v, l) => `<div><b>${Number(v || 0).toLocaleString("en-GB")}</b><span>${h(l)}</span></div>`;
+  const links = (arr) => `<div class="links">${arr.map(([href, l]) => `<a href="${href}">${h(l)}</a>`).join(" · ")}</div>`;
+  res.send(page(req, "Hub", `
+    <section class="hub-intro"><h2>Good ${+R.nowLocal().slice(11, 13) < 12 ? "morning" : +R.nowLocal().slice(11, 13) < 17 ? "afternoon" : "evening"}${u.name && u.name !== "Administrator" ? ", " + h(u.name.split(" ")[0]) : ""}</h2>
+      <p class="muted" style="margin:4px 0 0">Cycling Development department hub · ${fmtDate(today)} · figures are ${today.slice(0, 4)} year to date</p></section>
+    <div class="hub-cards">
+      <a class="hub-card band-wmf" href="${isStaff ? "/wmf" : "/dashboard"}"><span class="eyebrow">Community programme</span><h3>WMN Moving FWD</h3>
+        <div class="stats">${stat(W.members, "members")}${stat(W.rides, "ride check-ins")}${stat(W.events, "event sign-ups")}</div>
+        <p class="muted" style="margin:0;font-size:14px">Rides, members, events, calendar, dashboard and monthly export.</p></a>
+      <a class="hub-card band-corp" href="/corporate"><span class="eyebrow">Corporate programme</span><h3>Corporate Cycling</h3>
+        <div class="stats">${stat(K.rideSessions, "weekly rides")}${stat(K.attendance, "total attendance")}${stat(K.active, "active riders")}</div>
+        <p class="muted" style="margin:0;font-size:14px">L'IMAD, NMDC and Aurora: QR check-in, attendance, events, reports for sponsors.</p></a>
+      ${isStaff ? `<a class="hub-card band-dept" href="${u.role === "admin" ? "/department" : "/department/me"}"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
+        ${D ? `<div class="stats">${stat(D.staff, "team members")}${stat(D.inn, "in today")}${stat(D.pending, "leave requests waiting")}</div>` : ""}
+        <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Staff attendance, annual leave and approvals, exports for HR." : me && me.rows[0] ? "Check in, request leave and see your balance." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}
+    </div>
+    ${isStaff ? `<section class="card"><h2>Quick links</h2><div class="toolbar" style="margin:8px 0 0">
+      <a class="btn" href="/scan">WMF scan</a><a class="btn" href="/corporate/attendance">Corporate attendance</a><a class="btn" href="/corporate/qr">Corporate QR codes</a>
+      <a class="btn" href="/dashboard#performance">WMF performance</a><a class="btn" href="/corporate/report">Corporate report</a><a class="btn" href="/department/me">My attendance & leave</a></div></section>` : ""}`, { active: "/" }));
+}));
+
+// ======================= WMF home =======================
+app.get("/wmf", need(), wrap(async (req, res) => {
   const u = user(req);
   if (!STAFF.includes(u.role)) return res.redirect("/dashboard");
   const today = R.todayLocal();
@@ -151,11 +189,12 @@ app.get("/", need(), wrap(async (req, res) => {
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
       ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
+      ${tile("/dashboard#performance", "Monthly export", "Excel", "Attendance per month: rides, events, impact")}
     </div>
     <section class="card"><h2>Links to share with the community</h2>
       <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link.</p>
       <dl class="kv"><dt>Registration</dt><dd><a href="/join">${h(req.protocol + "://" + req.get("host"))}/join</a></dd>
-      <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd></dl></section>`, { active: "/" }));
+      <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd></dl></section>`, { active: "/wmf" }));
 }));
 
 // ======================= dashboard =======================
@@ -636,8 +675,21 @@ app.post("/activities/:id", need(...STAFF), wrap(async (req, res) => {
   res.redirect("/activities");
 }));
 
+// ======================= WMF monthly export =======================
+app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
+  const u = user(req);
+  let data = await buildData();
+  if (u.role !== "admin") data = anonymise(data, SECRET, { keepNames: u.role === "coordinator" });
+  const { monthlyWorkbook } = require("./wmfexport");
+  const out = await monthlyWorkbook(data, { from: req.query.from, to: req.query.to, sponsor: u.role === "sponsor" });
+  await audit(pool, actor(req), "wmf.export.monthly", "wmf_dashboard", `${out.from}..${out.to}`, null, null);
+  res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").set("Content-Disposition", `attachment; filename="WMF-monthly-${out.from}-to-${out.to}.xlsx"`).send(out.buffer);
+}));
+
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
+require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 
 // ======================= errors =======================
@@ -652,6 +704,7 @@ async function init() {
   await migrate();
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
+  await require("./corpdata").seedCompanies();
   await ensureAdmin();
 }
 async function ensureAdmin() {

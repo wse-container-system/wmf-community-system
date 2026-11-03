@@ -1,0 +1,109 @@
+/* Cycling Development hub: section menu, hub cards, server-drawn charts, registers and print. Builds on app.css tokens. */
+.cd-mark { width: 44px; height: 44px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: var(--brand-grad-deep); flex-shrink: 0; }
+.cd-mark svg { width: 30px; height: 30px; }
+.brand-name .sub { margin: 0; }
+
+.sub-nav { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: thin; margin-top: -4px; }
+.sub-nav a { padding: 9px 12px; border-bottom: 2px solid transparent; color: var(--ink-2); font-weight: 600; font-size: 14px; white-space: nowrap; text-decoration: none; }
+.sub-nav a:hover { color: var(--ink); }
+.sub-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* hub landing */
+.hub-intro h2 { font-size: 26px; }
+.hub-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.hub-card { position: relative; display: grid; gap: 10px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; color: inherit; text-decoration: none; box-shadow: var(--shadow); overflow: hidden; }
+.hub-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 5px; background: var(--band, var(--brand-grad)); }
+.hub-card:hover { border-color: var(--accent); }
+.hub-card h3 { font-size: 21px; }
+.hub-card .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.hub-card .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0; }
+.hub-card .stats b { display: block; font: 600 22px/1.1 var(--f-display); font-stretch: 87%; font-variant-numeric: tabular-nums; }
+.hub-card .stats span { font-size: 12px; color: var(--ink-2); line-height: 1.25; display: block; }
+.hub-card .links { display: flex; flex-wrap: wrap; gap: 6px; }
+.hub-card .links a { font-size: 13px; font-weight: 600; }
+.band-wmf { --band: var(--brand-grad); }
+.band-corp { --band: linear-gradient(90deg, #2f7fd6, #1aa38a); }
+.band-dept { --band: linear-gradient(90deg, #7b62cf, #d9634f); }
+
+/* company chips */
+.co { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.co::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--co, var(--accent)); flex-shrink: 0; }
+.co-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.co-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); display: grid; gap: 8px; border-top: 4px solid var(--co, var(--accent)); }
+.co-card h3 { font-size: 18px; }
+.co-card dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 0; font-size: 14px; }
+.co-card dt { color: var(--ink-2); } .co-card dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* server-drawn SVG charts */
+.svgchart { width: 100%; height: auto; display: block; overflow: visible; }
+.svgchart text { font: 12px var(--f-body); fill: var(--muted); }
+.svgchart .val { fill: var(--ink-2); font-weight: 600; font-size: 11.5px; }
+.svgchart .gl { stroke: var(--line); }
+.svgchart .ax { stroke: var(--axis); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.hbar { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; }
+.hbar .bar { height: 14px; border-radius: 0 4px 4px 0; background: var(--s1); min-width: 2px; }
+.hbar b { font-variant-numeric: tabular-nums; }
+
+/* tables */
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.reg { font-size: 13px; }
+.reg th, .reg td { padding: 4px 6px; white-space: nowrap; }
+.reg th.d { writing-mode: vertical-rl; transform: rotate(180deg); font-weight: 600; min-width: 26px; height: 64px; vertical-align: bottom; }
+.reg td.x { text-align: center; }
+.reg .y { color: var(--good-ink); font-weight: 700; }
+.reg .cx { color: var(--muted); }
+.reg td.name { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.reg tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+
+.status-chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 6px; background: var(--accent-wash); color: var(--accent); }
+.st-Present, .st-Held, .st-Approved { background: var(--good-wash); color: var(--good-ink); }
+.st-Remote, .st-Field { background: #e8f2fd; color: #1f5ea8; }
+.st-Leave, .st-Pending, .st-Scheduled { background: var(--warn-wash); color: var(--warn-ink); }
+.st-Sick, .st-Absent, .st-Rejected, .st-Cancelled { background: var(--crit-wash); color: var(--crit-ink); }
+.st-Off, .st-Holiday { background: var(--line); color: var(--ink-2); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-Remote, :root:not([data-theme="light"]) .st-Field { background: #16283d; color: #80c0f9; } }
+
+.month-grid td.c { text-align: center; padding: 3px 2px; font-size: 12px; font-weight: 700; min-width: 26px; }
+.month-grid th.c { text-align: center; padding: 3px 2px; font-size: 11.5px; min-width: 26px; }
+.month-grid .we { background: color-mix(in srgb, var(--line) 45%, transparent); }
+
+.checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 14px; }
+.checklist label { display: flex; gap: 8px; align-items: center; font-weight: 400 !important; color: var(--ink) !important; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.checklist input { width: 18px !important; height: 18px; min-height: 0 !important; flex-shrink: 0; }
+
+/* QR posters and cards */
+.poster { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 22px; border-radius: 16px; background: #fff; color: #111; border: 3px solid var(--co, #4d5ac2); }
+.poster h3 { font-size: 26px; color: #111; }
+.poster img { width: min(320px, 78vw); image-rendering: pixelated; }
+.poster p { margin: 0; color: #333; }
+.qr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.qr-card { border: 1px solid #ddd; border-radius: 10px; padding: 10px; background: #fff; color: #111; display: grid; justify-items: center; gap: 4px; text-align: center; break-inside: avoid; }
+.qr-card img { width: 140px; height: 140px; image-rendering: pixelated; }
+.qr-card b { font-size: 14px; } .qr-card span { font-size: 12px; color: #444; }
+
+.checkin-hero { text-align: center; display: grid; gap: 6px; justify-items: center; }
+.checkin-hero .big-tick { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: var(--good-wash); color: var(--good-ink); font-size: 40px; font-weight: 700; }
+
+.inline-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+.inline-form .inp { width: auto; min-height: 34px; font-size: 14px; padding: 5px 8px; }
+
+/* reports */
+.a4 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.a4 .kpis div { border: 1px solid #e4e4e4; border-radius: 8px; padding: 8px; }
+.a4 .kpis b { display: block; font: 700 22px/1.1 var(--f-display); }
+.a4 .kpis span { font-size: 12px; color: #555; }
+@media (max-width: 560px) { .a4 .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+@media print {
+  .sub-nav, .shell-nav, .noprint, form.noprint { display: none !important; }
+  .qr-cards { grid-template-columns: repeat(4, 1fr); }
+  .poster { border-width: 2px; }
+  body { background: #fff; }
+}
+
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.card-head { flex-wrap: wrap; }
+.card-head > .toolbar { flex-wrap: wrap; }

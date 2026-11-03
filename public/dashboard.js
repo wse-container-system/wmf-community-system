@@ -292,6 +292,7 @@
         ${tile("No-show rate", "Not reported", `<span class="note">Event registrations count as attendance</span>`, false, true)}
       </div>
       <div class="grid">
+        ${exportBox()}
         ${chartCard("quarter", "Ride attendance by quarter", "Historical headcounts plus registered riders, combined without double counting.", "c6", tableHtml(["Quarter", "Ride attendance", "Qualifying participations"], cur.quarterly.map((q) => [q.quarter, cnt(q.rideAttendance), cnt(q.qualifying)])))}
         ${chartCard("newret", "New and returning members taking part", "Each person counted once per month: in their first month they are new.", "c6", trendTable(["Month", "New", "Returning"], (t) => [monLabel(t.month), t.firstTimers, t.returning]))}
         ${chartCard("series", "Ride attendance by ride", "Weekday ride series, agreed 1 Oct. Older ride names sit inside each series.", "c6", tableHtml(["Ride", "Attendance"], cur.bySeries.map((d) => [d.name, cnt(d.value)])))}
@@ -421,6 +422,7 @@
         <label class="f"><span>Period</span><select id="rPeriod">${opts}</select></label>
         <button class="btn" data-act="copyReport">Copy report text</button>
         <button class="btn" data-act="copyCSV">Copy report data (CSV)</button>
+        <a class="btn primary" href="/api/wmf/monthly.xlsx?from=${esc(H.addMonths(reportRange().end.slice(0, 7), -11))}&to=${esc((reportRange().end < ASOF ? reportRange().end : ASOF).slice(0, 7))}">Export 12 months (Excel)</a>
         <span class="toast" id="rToast" role="status"></span>
       </div>
       <p class="fnote noprint">Reports cover all locations and activities. PDF export and file downloads work in the SharePoint version; this preview can't download files, so the buttons copy to your clipboard instead. To copy data for your own filters, use the button on the Overview page.</p>
@@ -543,6 +545,7 @@
       return;
     }
     recompute();
+    syncExport();
     const f = state.f, ft = activeFilterText();
     const notes = [];
     if (ft) notes.push(`Filtered: ${ft}.`);
@@ -556,6 +559,26 @@
     $("#filters").hidden = ["about", "quality", "qr", "reports"].includes(state.page);
   }
   const skeleton = () => `<div class="hero"><div class="card"><div class="skel" style="height:22px;width:50%"></div><div class="skel" style="height:64px;width:40%;margin-top:14px"></div></div><div class="card"><div class="tiles">${'<div class="skel" style="height:78px"></div>'.repeat(6)}</div></div></div><div class="card" style="margin-top:14px"><div class="skel" style="height:220px"></div></div><p class="muted" role="status">Loading the latest snapshot…</p>`;
+
+  // ---------------- monthly Excel export ----------------
+  // months of the selected period; a single month exports the 12 months ending with it, so there is a trend
+  function exportRange() {
+    const r = range || rangeOf(state.f.periodType, state.f.period, state.f.from, state.f.to);
+    let a = r.start.slice(0, 7), b = (r.end < ASOF ? r.end : ASOF).slice(0, 7);
+    if (H.monthsBetween(a, b).length < 2) a = H.addMonths(b, -11);
+    return { from: a, to: b };
+  }
+  function exportHref() { const x = exportRange(); return `/api/wmf/monthly.xlsx?from=${x.from}&to=${x.to}`; }
+  function syncExport() {
+    const el = $("#exportMonthly"); if (!el) return;
+    const x = exportRange(); el.href = exportHref();
+    el.title = `Excel: attendance per month for rides and events, plus impact (${monLabel(x.from, true)} – ${monLabel(x.to, true)})`;
+  }
+  function exportBox() {
+    const x = exportRange();
+    return `<section class="card c12 noprint"><div class="card-head"><div><h2>Export attendance per month</h2><p class="lead">Excel file with one row per month (${esc(monLabel(x.from, true))} – ${esc(monLabel(x.to, true))}): ride sessions and attendance, events and participation, total attendance, unique, new and returning participants, active members, plus ride-by-ride and event-by-event sheets and an Impact sheet. Change the Period filter above to change the months.</p></div>
+      <a class="btn primary" href="${esc(exportHref())}">Download Excel</a></div></section>`;
+  }
 
   // ---------------- clipboard ----------------
   async function copyText(text, toastId) {
