@@ -375,22 +375,27 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const cards = await Promise.all(list.map(async (co) => {
       const url = qrUrl(req, co), img = await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 2, width: 420 });
       return `<section class="card c4" style="display:grid;gap:10px;align-content:start"><h2>${coChip(co)}</h2>
-        <div class="poster" style="--co:${h(co.color)}"><img src="${img}" alt="Check-in QR code for ${h(co.name)}"><p><b>Scan to check in</b></p></div>
+        <p class="muted" style="margin:0;font-size:13px">${co.checkin_mode === "self" ? "Self check-in: staff scan this and type their name." : "Staff scan this once to get their own QR code and ID. Attendance is taken by scanning their personal code."}</p>
+        <div class="poster" style="--co:${h(co.color)}"><img src="${img}" alt="QR code for ${h(co.name)}"><p><b>${co.checkin_mode === "self" ? "Scan to check in" : "Scan to get your personal QR code"}</b></p></div>
         <p class="muted" style="font-size:13px;overflow-wrap:anywhere;margin:0">${h(url)}</p>
         <div class="toolbar" style="margin:0"><a class="btn primary" href="/corporate/qr/${h(co.code)}/poster">Print poster</a><a class="btn" href="${img}" download="${h(co.code)}-check-in-QR.png">Download PNG</a><button class="btn" data-copy="${h(url)}">Copy link</button></div>
-        <div class="toolbar" style="margin:0"><a class="btn ghost" href="/corporate/qr/${h(co.code)}/cards">Personal QR cards for all participants</a></div>
+        <div class="toolbar" style="margin:0"><a class="btn ghost" href="/corporate/qr/${h(co.code)}/cards">Print personal QR cards (all participants)</a></div>
         ${isAdmin ? `<form method="post" action="/corporate/qr/${h(co.code)}/rotate" data-confirm="Make a new link? The old QR code for ${h(co.name)} stops working straight away."><button class="btn danger tblbtn">Replace this QR code</button></form>` : ""}</section>`;
     }));
     res.send(page(req, "Corporate QR codes", `
-      <section class="card"><h2>QR codes for corporate staff</h2><p class="lead">Two ways to record attendance. <b>Company QR (below):</b> give it to the company's staff, or put the poster up at the ride. Each person scans it with their phone camera and enters their name; no app, no sign-in. It works on ride days (${list.map((c) => `${h(c.name)}: ${h(c.ride_days)}`).join(", ")}) and on any day with a scheduled session or event. <b>Personal QR:</b> every participant also has their own code that a ride lead scans at <a href="/corporate/scan">Scan</a>.</p></section>
+      <section class="card"><h2>QR codes for corporate staff</h2>
+        <p class="lead"><b>Every staff member has their own QR code and ID number</b> (for example NMDC-0012). They keep it on their phone or as a printed card and show it at every ride; the ride lead scans it at <a href="/corporate/scan">Corporate → Scan</a>, and the attendance is saved on their record.</p>
+        <p class="lead"><b>How staff get their code:</b> share the company link or poster below. They scan it once, type their name and work email, and their personal QR code and ID appear on screen to save. They can come back to the same link any time to see the code again and their attendance record. You can also print a card for everyone.</p>
+        <p class="lead" style="margin-bottom:0">Forgot the code? The ride lead types their ID or ticks their name on the session page.</p></section>
       <div class="grid">${cards.join("")}</div>`, { active: "/corporate/qr" }));
   }));
   app.get("/corporate/qr/:code/poster", S, wrap(async (req, res) => {
     const co = (await C.companiesFor(user(req))).find((x) => x.code === req.params.code); if (!co) return res.redirect("/corporate/qr");
     const img = await QRCode.toDataURL(qrUrl(req, co), { errorCorrectionLevel: "M", margin: 2, width: 720 });
-    res.send(page(req, co.name + " check-in poster", `<div class="toolbar noprint"><button class="btn primary" data-print>Print</button><a class="btn" href="/corporate/qr">Back</a></div>
+    res.send(page(req, co.name + " poster", `<div class="toolbar noprint"><button class="btn primary" data-print>Print</button><a class="btn" href="/corporate/qr">Back</a></div>
       <div class="poster" style="--co:${h(co.color)};max-width:620px;margin:0 auto"><p style="letter-spacing:.08em;text-transform:uppercase;font-size:13px">Corporate Cycling Programme</p>
-        <h3>${h(co.name)} ride check-in</h3><img src="${img}" alt="Check-in QR code"><p style="font-size:18px"><b>1.</b> Open your phone camera &nbsp; <b>2.</b> Scan &nbsp; <b>3.</b> Enter your name</p>
+        ${co.checkin_mode === "self" ? `<h3>${h(co.name)} ride check-in</h3><img src="${img}" alt="Check-in QR code"><p style="font-size:18px"><b>1.</b> Open your phone camera &nbsp; <b>2.</b> Scan &nbsp; <b>3.</b> Enter your name</p>`
+    : `<h3>${h(co.name)} · get your personal QR code</h3><img src="${img}" alt="QR code"><p style="font-size:18px"><b>1.</b> Scan with your phone camera &nbsp; <b>2.</b> Enter your name and work email &nbsp; <b>3.</b> Save your QR code</p><p style="font-size:16px">Show your personal QR code to the ride lead at every ride.</p>`}
         <p class="muted">${h(co.ride_days)}${co.ride_time ? " · " + h(co.ride_time) : ""}${co.location ? " · " + h(co.location) : ""}</p><p style="font-size:12px;color:#666">Cycling Development · Powered by Aurora</p></div>`, { active: "/corporate/qr", wide: false }));
   }));
   app.get("/corporate/qr/:code/cards", S, wrap(async (req, res) => {
@@ -425,9 +430,24 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     : `<div class="alert info"><span class="ic">i</span><span>There's no ${h(co.name)} session to check in to today. Weekly rides: ${h(co.ride_days)}${co.ride_time ? " " + h(co.ride_time) : ""}.</span></div>`}
     </section>`;
   }
+  function myQrForm(co, v = {}, err) {
+    return `<section class="card" style="display:grid;gap:12px">
+      <div class="checkin-hero"><p class="muted" style="margin:0;letter-spacing:.06em;text-transform:uppercase;font-size:12px">Corporate Cycling Programme</p><h2 style="font-size:24px">${coChip(co)} personal QR code</h2>
+        <p class="lead" style="margin:0">Get your own QR code and ID number. Show it to the ride lead at every ride to record your attendance. Already have one? Enter the same details to see it again with your attendance record.</p></div>
+      ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
+      <form class="form" method="post" id="checkin">
+        <label>Your full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
+        <label>Work email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
+        <details><summary>First time? Tell us a little more</summary><div class="row2" style="margin-top:8px">
+          <label>Community<select name="community"><option value="">Prefer not to say</option>${C.COMMUNITIES.map((x) => opt(x, x, v.community)).join("")}<option ${v.community === "Other" ? "selected" : ""}>Other</option></select></label>
+          <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((x) => opt(x, x, v.gender)).join("")}</select></label></div></details>
+        <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
+        <button class="btn primary big">Show my QR code</button></form></section>`;
+  }
   app.get("/c/:token", wrap(async (req, res) => {
     const co = await companyByToken(req.params.token);
-    if (!co) return res.status(404).send(page(req, "Check-in", `<section class="card"><h2>This check-in link isn't active</h2><p class="lead">Ask your ride leader for the current QR code.</p></section>`, { wide: false }));
+    if (!co) return res.status(404).send(page(req, "Check-in", `<section class="card"><h2>This link isn't active</h2><p class="lead">Ask your ride leader for the current QR code.</p></section>`, { wide: false }));
+    if (co.checkin_mode !== "self") return res.send(page(req, co.name + " personal QR code", myQrForm(co), { wide: false, scripts: `<script src="/checkin.js"></script>` }));
     const ss = await C.todaysSessions(pool, co);
     res.send(page(req, co.name + " check-in", checkinForm(co, ss), { wide: false, scripts: `<script src="/checkin.js"></script>` }));
   }));
@@ -436,6 +456,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (!co) return res.redirect("/c/" + encodeURIComponent(req.params.token));
     const b = req.body || {};
     if (b.website) return res.redirect("/c/" + encodeURIComponent(req.params.token));
+    if (co.checkin_mode !== "self") return myQrPost(req, res, co, b);
     const ss = await C.todaysSessions(pool, co);
     const again = (err) => res.send(page(req, co.name + " check-in", checkinForm(co, ss, b, err), { wide: false, scripts: `<script src="/checkin.js"></script>` }));
     if (!ss.length) return again(null);
@@ -460,6 +481,43 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <p class="muted" style="font-size:13px">Have a great ride.</p></section>`, { wide: false }));
   }));
 
+  /**
+   * Personal QR code for a staff member. Found by work email, or by name when no email is on file yet.
+   * A name whose record already has a different email is refused, so nobody can pull up someone else's code.
+   */
+  async function myQrPost(req, res, co, b) {
+    const again = (err) => res.send(page(req, co.name + " personal QR code", myQrForm(co, b, err), { wide: false, scripts: `<script src="/checkin.js"></script>` }));
+    const email = R.normEmail(b.email);
+    if (R.clean(b.full_name).length < 3) return again("Please enter your full name.");
+    if (!R.EMAIL_RE.test(email)) return again("Please enter your work email.");
+    const out = await tx(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["corpqr|" + co.code]);
+      let p = await C.findParticipant(c, co.code, { email }), created = false;
+      if (!p) {
+        const byName = await C.findParticipant(c, co.code, { name: b.full_name });
+        if (byName && byName.email && byName.email !== email) return { err: "We have a different email for this name. Use the email you registered with, or ask your ride lead to show your code." };
+        if (byName) { await c.query("UPDATE corp_participants SET email = $2, updated_at = now() WHERE id = $1", [byName.id, email]); p = { ...byName, email }; }
+      }
+      if (!p) { p = await C.createParticipant(c, { ...b, email, company: co.code, community: [...C.COMMUNITIES, "Other"].includes(b.community) ? b.community : "", gender: ["Female", "Male"].includes(b.gender) ? b.gender : "" }, "public", "Personal QR request"); created = true; }
+      const hist = (await c.query("SELECT s.* FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = $1 ORDER BY s.session_date DESC", [p.id])).rows;
+      await audit(c, "public", "corp.qr.view", "corp_participant", p.pid, null, null, created ? "New participant" : null);
+      return { p, created, hist };
+    });
+    if (out.err) return again(out.err);
+    const { p, hist } = out;
+    const img = await QRCode.toDataURL(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 560 });
+    const thisYear = hist.filter((s) => String(s.session_date).startsWith(R.todayLocal().slice(0, 4))).length;
+    res.send(page(req, "My QR code", `<section class="card" style="display:grid;gap:12px">
+      <div class="checkin-hero"><h2 style="font-size:24px">${out.created ? `Welcome, ${h(p.full_name.split(" ")[0])}!` : `Hi ${h(p.full_name.split(" ")[0])}`}</h2>
+        <p class="lead" style="margin:0">This is your personal QR code. Show it to the ride lead at every ride.</p></div>
+      <div class="poster" style="--co:${h(co.color)}"><img src="${img}" alt="Your QR code"><p style="font-size:22px;font-weight:700;letter-spacing:.04em">${h(p.pid)}</p><p>${h(p.full_name)} · ${h(co.name)}</p></div>
+      <a class="btn primary big" href="${img}" download="${h(p.pid)}-QR.png" style="justify-content:center">Download my QR code</a>
+      <p class="muted" style="margin:0;font-size:13px">Tip: take a screenshot too, or add it to your phone's photos. Your ID number is ${h(p.pid)}; if you forget your phone, tell the ride lead your ID.</p></section>
+    <section class="card"><h2>My attendance</h2>
+      <div class="tiles" style="margin:8px 0 12px">${tile("Sessions attended", nf(hist.length), "All time")}${tile("This year", nf(thisYear), R.todayLocal().slice(0, 4))}${tile("Last session", hist[0] ? fmtDate(hist[0].session_date) : "—", hist[0] ? C.sessionName(hist[0], co) : "Not yet")}</div>
+      ${table(["Date", "Session"], hist.slice(0, 20).map((s) => [fmtDate(s.session_date), C.sessionName(s, co)]), { empty: "No sessions yet. See you at the next ride!" })}</section>`, { wide: false }));
+  }
+
   // ===================================================== staff scanner (personal QR codes)
   app.get("/corporate/scan", S, wrap(async (req, res) => {
     const list = await C.companiesFor(user(req));
@@ -467,19 +525,22 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const options = [];
     for (const co of list) for (const s of await C.todaysSessions(pool, co)) options.push({ v: s.virtual ? `ride:${co.code}` : String(s.id), label: `${co.name} · ${C.sessionName(s, co)}` });
     res.send(page(req, "Scan corporate QR", `
-      <section class="card narrow"><h2>Scan personal QR codes</h2><p class="lead">For corporate participants' personal codes (they start with CORP-). For the WMF community, use <a href="/scan">WMF → Scan QR</a>.</p>
+      <section class="card narrow"><h2>Scan personal QR codes</h2><p class="lead">Scan each staff member's personal code (it starts with CORP-) to record their attendance. For the WMF community, use <a href="/scan">WMF → Scan QR</a>.</p>
         ${options.length ? `<label class="f" style="display:grid;gap:4px"><span>Session today</span><select id="corpSession" class="inp">${options.map((o) => opt(o.v, o.label, "")).join("")}</select></label>`
     : `<div class="alert info"><span class="ic">i</span><span>No corporate session today (${fmtDate(today)}). <a href="/corporate/attendance">Create one</a> to scan into it.</span></div>`}</section>
       ${options.length ? `<section class="card narrow" style="display:grid;gap:12px"><div id="reader" aria-label="Camera"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="btn primary big" id="start">Start camera</button><button class="btn big" id="stop" hidden>Stop camera</button></div>
         <div id="result" class="scan-result" hidden aria-live="assertive"></div></section>
+      <section class="card narrow"><h2>Forgot their QR code?</h2><p class="lead">Type their ID number (e.g. NMDC-0012, or just "nmdc 12"). You can also tick names on the <a href="/corporate/attendance">session page</a>.</p>
+        <form class="toolbar" id="byId" style="margin:0"><input class="inp" id="pidInput" placeholder="ID number" autocomplete="off" style="max-width:220px" aria-label="ID number"><button class="btn primary">Check in</button></form></section>
       <section class="card narrow"><h2>This session</h2><ul class="log" id="log"><li class="muted">No scans yet on this device.</li></ul></section>` : ""}`,
     { active: "/corporate/scan", scripts: options.length ? `<script src="/vendor/html5-qrcode.min.js"></script><script src="/corp-scan.js"></script>` : "" }));
   }));
   app.post("/api/corp/scan", S, wrap(async (req, res) => {
     const { code, session } = req.body || {};
+    if (/WMF-\d/i.test(String(code || ""))) return res.json({ status: "error", message: "That's a WMF member code. Use WMF → Scan QR." });
     const pid = C.pidFromScan(code);
-    if (!pid) return res.json({ status: "error", message: /WMF-/i.test(String(code)) ? "That's a WMF member code. Use WMF → Scan QR." : "This is not a corporate participant QR code." });
+    if (!pid) return res.json({ status: "error", message: "This is not a corporate participant QR code or ID." });
     const list = await C.companiesFor(user(req));
     const out = await tx(async (c) => {
       const p = (await c.query("SELECT * FROM corp_participants WHERE pid = $1", [pid])).rows[0];
@@ -571,8 +632,9 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <input class="inp" name="location" value="${h(co.location)}" aria-label="Location" placeholder="Location" style="width:160px">
         <input class="inp" name="contact" value="${h(co.contact)}" aria-label="Contact" placeholder="Company contact" style="width:170px">
         <input type="color" name="color" value="${h(co.color || "#4d5ac2")}" aria-label="Colour">
+        <select class="inp" name="checkin_mode" aria-label="How attendance is taken">${opt("personal", "Personal QR codes", co.checkin_mode)}${opt("self", "Self check-in link", co.checkin_mode)}</select>
         <select class="inp" name="active" aria-label="Status">${opt("1", "Active", co.active ? "1" : "0")}${opt("0", "Paused", co.active ? "1" : "0")}</select>
-        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Ride days decide when the company QR code opens the weekly ride on its own. Use three-letter days separated by commas.</p></section>
+        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Ride days: the weekly ride opens for scanning on these days (three-letter days, separated by commas). Attendance: <b>Personal QR codes</b> means each person shows their own code to the ride lead and the company link only hands out codes; <b>Self check-in link</b> lets people check themselves in with the company link.</p></section>
     </div>`, { active: "/admin" }));
   }));
   app.post("/corporate/admin/companies", A, wrap(async (req, res) => {
@@ -586,8 +648,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   }));
   app.post("/corporate/admin/companies/:code", A, wrap(async (req, res) => {
     const b = req.body;
-    await pool.query("UPDATE corp_companies SET name = $2, ride_days = $3, ride_time = $4, location = $5, contact = $6, color = $7, active = $8 WHERE code = $1",
-      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || "Thu", R.clean(b.ride_time) || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0"]);
+    await pool.query("UPDATE corp_companies SET name = $2, ride_days = $3, ride_time = $4, location = $5, contact = $6, color = $7, active = $8, checkin_mode = $9 WHERE code = $1",
+      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || "Thu", R.clean(b.ride_time) || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0", b.checkin_mode === "self" ? "self" : "personal"]);
     await audit(pool, actor(req), "corp.company.update", "corp_company", req.params.code, null, b);
     setFlash(req, "ok", "Saved.");
     res.redirect("/corporate/admin");

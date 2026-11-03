@@ -30,6 +30,13 @@
       .then(show, function () { show({ status: "error", message: "No connection. Try again." }); })
       .finally(function () { setTimeout(function () { busy = false; }, 800); });
   }
+  // typed ID for someone who forgot their code
+  var byId = $("#byId");
+  if (byId) byId.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = $("#pidInput").value.trim(); if (!v) return;
+    last = ""; onScan(v); $("#pidInput").value = "";
+  });
   $("#start").addEventListener("click", function () {
     if (!window.Html5Qrcode) return show({ status: "error", message: "The scanner didn't load. Refresh the page." });
     scanner = scanner || new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });

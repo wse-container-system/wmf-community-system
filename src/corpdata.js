@@ -23,7 +23,8 @@ const nameKey = (s) => R.clean(s).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLo
 const weekdayShort = (iso) => DAYS[new Date(iso + "T12:00:00Z").getUTCDay()];
 const isRideDay = (co, iso) => String(co.ride_days || "").split(/[ ,;]+/).map((d) => d.slice(0, 3).toLowerCase()).includes(weekdayShort(iso).toLowerCase());
 const pidQr = (pid) => "CORP-" + pid;
-const pidFromScan = (text) => { const m = R.clean(text).toUpperCase().match(/CORP-([A-Z]+-\d{1,5})\b/); return m ? m[1] : null; };
+/** Participant ID from a scanned code or a typed ID: "CORP-NMDC-0012", "NMDC-0012" and "nmdc 12" all give "NMDC-0012". */
+const pidFromScan = (text) => { const m = R.clean(text).toUpperCase().match(/^(?:CORP-)?([A-Z]{2,12})[- ]?(\d{1,5})$/) || R.clean(text).toUpperCase().match(/CORP-([A-Z]{2,12})-(\d{1,5})\b/); return m ? `${m[1]}-${m[2].padStart(4, "0")}` : null; };
 
 async function seedCompanies(c = pool) {
   for (const co of DEFAULT_COMPANIES) {
