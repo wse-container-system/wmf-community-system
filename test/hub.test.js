@@ -104,6 +104,7 @@ test("cycling development hub", async (t) => {
   await t.test("corporate QR self check-in, scanner and ticking names", async () => {
     co = (await pool.query("SELECT * FROM corp_companies WHERE code = 'NMDC'")).rows[0];
     // make today a ride day for NMDC
+    await pool.query("UPDATE corp_companies SET checkin_mode = 'self' WHERE code = 'NMDC'");
     await pool.query("UPDATE corp_companies SET ride_days = $2 WHERE code = $1", ["NMDC", ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(today + "T12:00:00Z").getUTCDay()]]);
     const pub = client();
     const g = ok200(await pub("/c/" + co.checkin_token), "public check-in page");
@@ -135,6 +136,32 @@ test("cycling development hub", async (t) => {
     assert.equal(ev.status, 302);
     const evp = ok200(await admin("/corporate/events"), "events");
     assert.match(evp.text, /Aurora Bike Fit Workshop/);
+  });
+
+  await t.test("personal QR codes: staff get their own code and ID, ride lead scans or types it", { skip: !TRACKER && "set TEST_TRACKER" }, async () => {
+    const lim = (await pool.query("SELECT * FROM corp_companies WHERE code = 'LIMAD'")).rows[0];
+    assert.equal(lim.checkin_mode, "personal");
+    const pub = client();
+    assert.match(ok200(await pub("/c/" + lim.checkin_token), "get-qr page").text, /personal QR code/);
+    // existing person with no email on file: found by name, email saved, code and record shown
+    const r = ok200(await pub("/c/" + lim.checkin_token, { method: "POST", form: { full_name: "Jaap Kalkman", email: "jaap@limad.example" } }), "existing person");
+    assert.match(r.text, /LIMAD-0001/); assert.match(r.text, /data:image\/png;base64/); assert.match(r.text, /My attendance/);
+    // same name, different email: refused
+    const r2 = ok200(await pub("/c/" + lim.checkin_token, { method: "POST", form: { full_name: "Kalkman Jaap", email: "someone@else.example" } }), "other email");
+    assert.match(r2.text, /different email/); assert.doesNotMatch(r2.text, /LIMAD-0001/);
+    // new person gets a new ID
+    const r3 = ok200(await pub("/c/" + lim.checkin_token, { method: "POST", form: { full_name: "Nadia New", email: "nadia@limad.example" } }), "new person");
+    const pid = /LIMAD-\d{4}/.exec(r3.text)[0];
+    assert.notEqual(pid, "LIMAD-0001");
+    // ride lead: scan the code, and type an ID for someone who forgot theirs
+    const s = (await pool.query("INSERT INTO corp_sessions (company, session_date, kind, title, status) VALUES ('LIMAD', $1, 'Weekly ride', '', 'Held') ON CONFLICT DO NOTHING RETURNING id", [today])).rows[0]
+      || (await pool.query("SELECT id FROM corp_sessions WHERE company = 'LIMAD' AND session_date = $1 AND kind = 'Weekly ride'", [today])).rows[0];
+    assert.equal((await admin("/api/corp/scan", { method: "POST", json: { code: "CORP-" + pid, session: String(s.id) } })).json().status, "ok");
+    assert.equal((await admin("/api/corp/scan", { method: "POST", json: { code: "limad 1", session: String(s.id) } })).json().status, "ok");
+    assert.equal((await admin("/api/corp/scan", { method: "POST", json: { code: "LIMAD-0001", session: String(s.id) } })).json().status, "duplicate");
+    // the record shows today's session
+    assert.match(ok200(await pub("/c/" + lim.checkin_token, { method: "POST", form: { full_name: "Nadia New", email: "nadia@limad.example" } }), "record").text, /Sessions attended[\s\S]*?>1</);
+    ok200(await admin("/corporate/qr"), "qr page"); ok200(await admin("/corporate/qr/LIMAD/poster"), "poster"); ok200(await admin("/corporate/scan"), "scan page");
   });
 
   await t.test("sponsor limited to one partner", async () => {

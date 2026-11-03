@@ -162,6 +162,9 @@ CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
 -- ===== Cycling Development hub =====
 -- a sponsor or viewer can be limited to one corporate partner (NULL = everything their role allows)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT;
+-- how a company's staff record attendance: 'personal' = each person shows their own QR code to the ride lead (the company link only hands out codes);
+-- 'self' = people check themselves in with the company QR code
+
 
 -- ----- Corporate cycling programme -----
 CREATE TABLE IF NOT EXISTS corp_companies (
@@ -177,6 +180,7 @@ CREATE TABLE IF NOT EXISTS corp_companies (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS checkin_mode TEXT NOT NULL DEFAULT 'personal';
 CREATE TABLE IF NOT EXISTS corp_participants (
   id SERIAL PRIMARY KEY,
   pid TEXT UNIQUE NOT NULL,

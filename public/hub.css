@@ -107,3 +107,5 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .card-head { flex-wrap: wrap; }
 .card-head > .toolbar { flex-wrap: wrap; }
+.poster { max-width: 100%; min-width: 0; }
+.poster img { max-width: 100%; height: auto; }
