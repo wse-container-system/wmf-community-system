@@ -151,7 +151,7 @@ app.get("/", need(), wrap(async (req, res) => {
     <section class="hub-intro"><h2>Good ${+R.nowLocal().slice(11, 13) < 12 ? "morning" : +R.nowLocal().slice(11, 13) < 17 ? "afternoon" : "evening"}${u.name && u.name !== "Administrator" ? ", " + h(u.name.split(" ")[0]) : ""}</h2>
       <p class="muted" style="margin:4px 0 0">Cycling Development department hub · ${fmtDate(today)} · figures are ${today.slice(0, 4)} year to date</p></section>
     <div class="hub-cards">
-      <a class="hub-card band-wmf" href="${isStaff ? "/wmf" : "/dashboard"}"><span class="eyebrow">Community programme</span><h3>WMN Moving FWD</h3>
+      <a class="hub-card band-wmf" href="${isStaff ? "/wmf" : "/overview"}"><span class="eyebrow">Community programme</span><h3>WMN Moving FWD</h3>
         <div class="stats">${stat(W.members, "members")}${stat(W.rides, "ride check-ins")}${stat(W.events, "event sign-ups")}</div>
         <p class="muted" style="margin:0;font-size:14px">Rides, members, events, calendar, dashboard and monthly export.</p></a>
       <a class="hub-card band-corp" href="/corporate"><span class="eyebrow">Corporate programme</span><h3>Corporate Cycling</h3>
@@ -169,7 +169,7 @@ app.get("/", need(), wrap(async (req, res) => {
 // ======================= WMF home =======================
 app.get("/wmf", need(), wrap(async (req, res) => {
   const u = user(req);
-  if (!STAFF.includes(u.role)) return res.redirect("/dashboard");
+  if (!STAFF.includes(u.role)) return res.redirect("/overview");
   const today = R.todayLocal();
   const q = await pool.query(`SELECT
       (SELECT count(*) FROM members WHERE merged_into IS NULL) AS members,
@@ -187,6 +187,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       ${tile("/scan", "Ride check-ins today", s.today, fmtDate(today))}
       ${tile("/members?sort=new", "New members, last 30 days", s.new30, "Registrations")}
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
+      ${tile("/rides", "Attendance per ride", "Check", "Spot riders you forgot to scan")}
       ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
       ${tile("/dashboard#performance", "Monthly export", "Excel", "Attendance per month: rides, events, impact")}
@@ -254,17 +255,18 @@ app.get("/scan", need(...STAFF), wrap(async (req, res) => {
           <button class="btn primary">Register and check in</button>
         </form></details>
     </section>
+    <p class="muted narrow" style="font-size:13px;margin:0">After the ride: <a href="/rides">check the attendance list</a> for usual riders who weren't scanned.</p>
     <section class="card narrow"><h2>This session</h2><ul class="log" id="log"><li class="muted">No check-ins yet on this device.</li></ul></section>`,
   { active: "/scan", scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/scan.js"></script>` }));
 }));
 
 /** Check one member in to a ride. Shared by camera scans, name search and walk-ins. */
-async function checkIn(c, { member, activityId, date, source, scanned, by }) {
+async function checkIn(c, { member, activityId, date, source, scanned, by, maxDays = 14 }) {
   const act = (await c.query("SELECT * FROM activities WHERE activity_id = $1", [activityId])).rows[0];
   if (!act || act.kind !== "ride") return { status: "error", message: "Choose a ride first." };
   const today = R.todayLocal();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > today || R.weekdayOf(date) && date < require("./engine").helpers.addDays(today, -14))
-    return { status: "error", message: "Ride date must be within the last 14 days." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > today || R.weekdayOf(date) && date < require("./engine").helpers.addDays(today, -maxDays))
+    return { status: "error", message: `Ride date must be within the last ${maxDays} days.` };
   const series = R.seriesFor(act, date);
   const prior = await R.alreadyRode(c, member, date, series);
   if (prior) return { status: "duplicate", member, series, record: prior.record_id };
@@ -394,11 +396,14 @@ app.post("/join", limit("join", 8, 60 * 60e3), wrap(async (req, res) => {
 app.get("/events", wrap(async (req, res) => {
   const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
   res.send(page(req, "Events", `<section class="card"><h2>Upcoming WMF events</h2><p class="lead">Choose an event to sign up.</p>
-    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
+    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${priceText(e) ? " · " + h(priceText(e)) : " · Free"}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
     <p style="margin-top:14px"><a href="/calendar">See the full WMF calendar</a> · <a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
 }));
+const priceText = (e) => (Number(e.price_aed) > 0 ? "AED " + Number(e.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "");
+const safePayUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch (err) { return ""; } };
 function eventForm(e, v = {}, err) {
   return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.notes ? "<br>" + h(e.notes) : ""}</p>
+    ${priceText(e) ? `<div class="alert info"><span class="ic">i</span><span><b>Fee: ${h(priceText(e))}.</b> After you sign up you'll be taken to the payment page. Your place is confirmed once payment is received.</span></div>` : ""}
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     <form class="form" method="post">
       <label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>
@@ -442,13 +447,18 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     }
     const r = await R.addParticipation(c, { member, recordType: "Event Registration", date: R.nowLocal(), activityId: e.activity_id, activityName: e.name,
       activityType: e.activity_type || "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: `event|${member.member_id}|${e.activity_id}` }, "public");
-    return { member, created, duplicate: r.duplicate };
+    let paymentStatus = r.row.payment_status;
+    if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
+    return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
   if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), { wide: false }));
   let qr = "";
   if (out.created) { const img = await qrDataUrl(out.member.qr_value); qr = `<p class="lead">You're also now a WMF member. This is your personal QR code for rides:</p><div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(out.member.member_id)}</span></div><a class="btn" href="${img}" download="${h(out.member.member_id)}-WMF-QR.png">Download QR code</a>`; }
+  const payUrl = safePayUrl(e.payment_url);
+  const pay = out.paymentStatus === "Unpaid" && priceText(e) ? `<div class="alert warn"><span class="ic">!</span><span><b>One more step: pay ${h(priceText(e))}.</b> Your place is confirmed once payment is received.${payUrl ? "" : " The WMF team will send you payment details."} Your reference: <b>${h(out.recordId)}</b></span></div>
+    ${payUrl ? `<a class="btn primary big" href="${h(payUrl)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none">Pay ${h(priceText(e))} now ↗</a>` : ""}` : out.paymentStatus === "Paid" ? `<p><span class="badge good">Payment received</span></p>` : "";
   res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
-    <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
+    <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
 }));
 
 // ======================= members =======================
@@ -584,22 +594,9 @@ app.post("/members/:id/edit", need(...STAFF), wrap(async (req, res) => {
 app.post("/members/:id/merge", need("admin"), wrap(async (req, res) => {
   const keep = req.params.id, other = R.memberIdFromScan(req.body.other) || R.clean(req.body.other), reason = R.clean(req.body.reason);
   const back = "/members/" + encodeURIComponent(keep);
-  const msg = await tx(async (c) => {
-    const a = (await c.query("SELECT * FROM members WHERE member_id = $1 FOR UPDATE", [keep])).rows[0];
-    const b = (await c.query("SELECT * FROM members WHERE member_id = $1 FOR UPDATE", [other])).rows[0];
-    if (!a || !b) return "Member not found.";
-    if (a.member_id === b.member_id || b.merged_into || a.merged_into) return "These records can't be merged.";
-    if (!reason) return "Give a reason.";
-    const alts = new Set(String(a.alt_emails || "").split(/[;,\s]+/).map(R.normEmail).filter(Boolean));
-    for (const e of [b.primary_email, ...String(b.alt_emails || "").split(/[;,\s]+/)].map(R.normEmail).filter(Boolean)) if (e !== a.primary_email) alts.add(e);
-    const moved = await c.query("UPDATE participation SET member_id = $1 WHERE member_id = $2", [a.member_id, b.member_id]);
-    await c.query("UPDATE members SET alt_emails = $2, mobile = coalesce(mobile, $3), merged_into = NULL, updated_at = now() WHERE member_id = $1", [a.member_id, [...alts].join("; ") || null, b.mobile]);
-    await c.query("UPDATE members SET merged_into = $1, updated_at = now() WHERE member_id = $2", [a.member_id, b.member_id]);
-    await audit(c, actor(req), "member.merge", "member", a.member_id, { kept: a, merged: b }, { merged: b.member_id, rowsMoved: moved.rowCount, altEmails: [...alts] }, reason);
-    await audit(c, actor(req), "member.merged_into", "member", b.member_id, null, { into: a.member_id }, reason);
-    return null;
-  });
-  setFlash(req, msg ? "err" : "ok", msg || `Merged ${other} into ${keep}.`);
+  if (!reason) { setFlash(req, "err", "Give a reason."); return res.redirect(back); }
+  const r = await tx((c) => require("./dupes").mergeMembers(c, keep, other, actor(req), reason));
+  setFlash(req, r.err ? "err" : "ok", r.err || `Merged ${other} into ${keep}. You can undo it under Admin → Duplicates.`);
   res.redirect(back);
 }));
 app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
@@ -617,63 +614,9 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
   res.redirect(req.get("referer") && new URL(req.get("referer")).host === req.get("host") ? new URL(req.get("referer")).pathname : "/members");
 }));
 
-// ======================= activities =======================
-app.get("/activities", need(...STAFF), wrap(async (req, res) => {
-  const r = await pool.query(`SELECT a.*, (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL) AS n
-    FROM activities a ORDER BY a.core DESC, a.sort_order, (a.status = 'Active') DESC, a.kind, a.name`);
-  const row = (a) => `<tr><td><b>${h(a.name)}</b><br><span class="muted">${h(a.activity_id)}</span></td><td>${h(a.kind)}${a.core ? ' <span class="badge good">Scanner</span>' : ""}</td><td>${a.n}</td>
-    <td colspan="2"><form method="post" action="/activities/${encodeURIComponent(a.activity_id)}" class="toolbar" style="margin:0;align-items:center">
-      <select class="inp" name="location" style="width:auto;min-height:32px;font-size:14px">${["Abu Dhabi", "Dubai", "Other"].map((l) => `<option ${a.location === l ? "selected" : ""}>${l}</option>`).join("")}</select>
-      <select class="inp" name="status" style="width:auto;min-height:32px;font-size:14px">${["Active", "Inactive"].map((l) => `<option ${a.status === l ? "selected" : ""}>${l}</option>`).join("")}</select>
-      ${a.kind === "event" ? `<input class="inp" type="date" name="event_date" value="${h(a.event_date || "")}" style="width:auto;min-height:32px;font-size:14px">
-      <input class="inp" type="number" min="0" name="capacity" value="${h(a.capacity || "")}" placeholder="Capacity" style="width:100px;min-height:32px;font-size:14px">
-      <label class="check" style="display:inline-flex;gap:4px;font-size:14px"><input type="checkbox" name="registration_open" value="1" ${a.registration_open ? "checked" : ""}> Sign-up open</label>` : ""}
-      <button class="btn tblbtn">Save</button>${a.kind === "event" && a.registration_open ? ` <a href="/events/${encodeURIComponent(a.activity_id)}">Public link</a>` : ""}</form></td></tr>`;
-  res.send(page(req, "Rides & events", `<div class="grid">
-    <section class="card c8"><h2>Rides and events</h2><p class="lead">The scanner offers the six WMF rides marked “Scanner”. Older ride names from the workbook stay here for history. Location is Abu Dhabi unless set to Dubai.</p>
-      <div class="tw"><table><thead><tr><th>Activity</th><th>Kind</th><th class="n">Rows</th><th colspan="2">Settings</th></tr></thead><tbody>${r.rows.map(row).join("")}</tbody></table></div></section>
-    <section class="card c4"><h2>Add an event</h2><p class="lead">Rides are the six fixed WMF rides. Events added on the <a href="/calendar/manage">calendar</a> appear here automatically.</p>
-      <form class="form" method="post" action="/activities">
-        <label>Name<input name="name" required maxlength="120" placeholder="e.g. Saturday Ride or Gran Fondo Briefing"></label>
-        <input type="hidden" name="kind" value="event">
-        <label>Location<select name="location"><option>Abu Dhabi</option><option>Dubai</option><option>Other</option></select></label>
-        <label>Event date <span class="hint">(events only)</span><input type="date" name="event_date"></label>
-        <label>Capacity <span class="hint">(optional)</span><input type="number" min="0" name="capacity"></label>
-        <label>Notes shown on the sign-up page<input name="notes" maxlength="300"></label>
-        <label class="check"><input type="checkbox" name="registration_open" value="1"> <span>Open public sign-up now</span></label>
-        <button class="btn primary">Add</button></form></section></div>`, { active: "/activities" }));
-}));
-app.post("/activities", need(...STAFF), wrap(async (req, res) => {
-  const b = req.body, name = R.clean(b.name), kind = b.kind === "event" ? "event" : "ride";
-  if (!name) { setFlash(req, "err", "Enter a name."); return res.redirect("/activities"); }
-  const base = "ACT-" + name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
-  await tx(async (c) => {
-    let id = base, i = 1;
-    while ((await c.query("SELECT 1 FROM activities WHERE activity_id = $1", [id])).rows[0]) id = `${base}-${++i}`;
-    const row = { activity_id: id, name, kind, activity_type: kind === "ride" ? "Community Ride" : "Event Registration", category: kind === "ride" ? "Ride Initiative" : "Community Activation",
-      location: ["Abu Dhabi", "Dubai", "Other"].includes(b.location) ? b.location : "Abu Dhabi", event_date: kind === "event" && b.event_date ? b.event_date : null,
-      capacity: +b.capacity > 0 ? +b.capacity : null, registration_open: kind === "event" && !!b.registration_open, notes: R.clean(b.notes) || null };
-    const cols = Object.keys(row);
-    await c.query(`INSERT INTO activities (${cols}) VALUES (${cols.map((_, j) => "$" + (j + 1))})`, cols.map((k) => row[k]));
-    await audit(c, actor(req), "activity.create", "activity", id, null, row);
-  });
-  setFlash(req, "ok", `Added ${name}.`);
-  res.redirect("/activities");
-}));
-app.post("/activities/:id", need(...STAFF), wrap(async (req, res) => {
-  const b = req.body;
-  await tx(async (c) => {
-    const a = (await c.query("SELECT * FROM activities WHERE activity_id = $1 FOR UPDATE", [req.params.id])).rows[0];
-    if (!a) return;
-    const upd = { location: ["Abu Dhabi", "Dubai", "Other"].includes(b.location) ? b.location : a.location, status: b.status === "Inactive" ? "Inactive" : "Active" };
-    if (a.kind === "event") Object.assign(upd, { event_date: b.event_date || null, capacity: +b.capacity > 0 ? +b.capacity : null, registration_open: !!b.registration_open });
-    const keys = Object.keys(upd);
-    await c.query(`UPDATE activities SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(", ")} WHERE activity_id = $1`, [a.activity_id, ...keys.map((k) => upd[k])]);
-    await audit(c, actor(req), "activity.update", "activity", a.activity_id, Object.fromEntries(keys.map((k) => [k, a[k]])), upd);
-  });
-  setFlash(req, "ok", "Saved.");
-  res.redirect("/activities");
-}));
+// ======================= rides & events (see events.js, rides.js) =======================
+require("./events")(app, { need, page, setFlash, actor, user, wrap });
+require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn });
 
 // ======================= WMF monthly export =======================
 app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
@@ -691,6 +634,10 @@ require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
+require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
+require("./activations")(app, { need, page, setFlash, actor, user, wrap });
+require("./overview")(app, { need, page, setFlash, actor, user, wrap });
+require("./newsletter")(app, { need, page, setFlash, actor, user, wrap });
 
 // ======================= errors =======================
 app.use((req, res) => res.status(404).send(page(req, "Not found", `<section class="card"><h2>Page not found</h2><p class="lead"><a href="/">Back to the start</a></p></section>`, { wide: false })));
@@ -705,6 +652,8 @@ async function init() {
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
   await require("./corpdata").seedCompanies();
+  const merged = await require("./dupes").autoMergeEmails("system"); // same email = same person
+  if (merged) console.log(`Merged ${merged} duplicate member records (same email).`);
   await ensureAdmin();
 }
 async function ensureAdmin() {

@@ -21,6 +21,7 @@ function toItem(row, act) {
   const it = { id: row.id, t: row.title, c: row.category, s: row.start_date, e: row.end_date, st: row.start_time || "", et: row.end_time || "",
     loc: row.location || "", status: row.status, r: row.recur || null, x: row.exceptions || null, u: row.url || "", slot: row.ride_slot || null };
   if (act && act.registration_open && act.kind === "event" && act.status === "Active" && (!act.event_date || act.event_date >= R.todayLocal())) it.signup = "/events/" + encodeURIComponent(act.activity_id);
+  if (act && Number(act.price_aed) > 0) it.fee = "AED " + Number(act.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 });
   return it;
 }
 async function loadItems(c) {
@@ -34,20 +35,23 @@ async function ridesOn(date) {
 }
 
 /** Keep the linked app event in step with its calendar entry. */
-async function syncEvent(c, item, actor, { open, capacity } = {}) {
+async function syncEvent(c, item, actor, { open, capacity, price, paymentUrl } = {}) {
   if (item.category !== "wmf_event") return item.activity_id || null;
   let id = item.activity_id;
   if (!id) {
     const base = "EVT-" + item.title.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) + "-" + item.start_date.slice(0, 7);
     id = base;
     for (let i = 2; (await c.query("SELECT 1 FROM activities WHERE activity_id = $1", [id])).rows[0]; i++) id = `${base}-${i}`;
-    await c.query(`INSERT INTO activities (activity_id, name, activity_type, category, kind, location, event_date, status, registration_open, capacity)
-      VALUES ($1,$2,'Event Registration','Community Activation','event',$3,$4,'Active',$5,$6)`,
-    [id, item.title, /dubai|dxb/i.test(item.location || "") ? "Dubai" : "Abu Dhabi", item.start_date, !!open, capacity || null]);
+    await c.query(`INSERT INTO activities (activity_id, name, activity_type, category, kind, location, event_date, status, registration_open, capacity, price_aed, payment_url)
+      VALUES ($1,$2,'Event Registration','Community Activation','event',$3,$4,'Active',$5,$6,$7,$8)`,
+    [id, item.title, /dubai|dxb/i.test(item.location || "") ? "Dubai" : "Abu Dhabi", item.start_date, !!open, capacity || null, price || null, paymentUrl || null]);
     await audit(c, actor, "activity.create", "activity", id, null, { from: "calendar", title: item.title });
   } else {
     const sets = ["name = $2", "event_date = $3", "status = $4"], args = [id, item.title, item.start_date, item.status === "Cancelled" ? "Inactive" : "Active"];
-    if (open !== undefined) { args.push(!!open); sets.push(`registration_open = $${args.length}`); args.push(capacity || null); sets.push(`capacity = $${args.length}`); }
+    if (open !== undefined) {
+      args.push(!!open); sets.push(`registration_open = $${args.length}`); args.push(capacity || null); sets.push(`capacity = $${args.length}`);
+      args.push(price || null); sets.push(`price_aed = $${args.length}`); args.push(paymentUrl || null); sets.push(`payment_url = $${args.length}`);
+    }
     await c.query(`UPDATE activities SET ${sets.join(", ")} WHERE activity_id = $1`, args);
   }
   return id;
@@ -142,6 +146,8 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
         <fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px"><legend style="font-weight:600;color:var(--ink-2);font-size:14px">WMF events: sign-up</legend>
           <label class="check"><input type="checkbox" name="open" value="1" ${act && act.registration_open ? "checked" : ""}> <span>Open public sign-up (shows a Sign up button on the calendar)</span></label>
           <label>Capacity <span class="hint">(optional)</span><input type="number" min="0" name="capacity" value="${h(act && act.capacity ? act.capacity : "")}"></label>
+          <div class="row2"><label>Price in AED <span class="hint">(blank = free)</span><input type="number" min="0" step="0.01" name="price_aed" value="${h(act && act.price_aed ? act.price_aed : "")}"></label>
+            <label>Payment link <span class="hint">(https://…)</span><input type="url" name="payment_url" maxlength="400" value="${h(act && act.payment_url ? act.payment_url : "")}"></label></div>
           ${act ? `<p class="hint" style="margin:6px 0 0">Linked event: <a href="/events/${encodeURIComponent(act.activity_id)}">${h(act.activity_id)}</a></p>` : ""}</fieldset>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save</button><a class="btn" href="/calendar/manage">Cancel</a></div>
       </form>
@@ -161,6 +167,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
     if (!DATE_RE.test(start || "") || !DATE_RE.test(end) || end < start) return { err: "Check the dates." };
     for (const t of [b.start_time, b.end_time]) if (t && !TIME_RE.test(t)) return { err: "Check the times." };
     if (b.url && !/^https?:\/\//i.test(b.url)) return { err: "The link must start with https://" };
+    if (b.payment_url && !/^https:\/\//i.test(b.payment_url)) return { err: "The payment link must start with https://" };
     const weekdays = [].concat(b.weekdays || []).map(Number).filter((n) => n >= 0 && n <= 6);
     const exceptions = {};
     for (const d of String(b.cancelled || "").split(/[,\s]+/).filter(Boolean)) { if (!DATE_RE.test(d)) return { err: `"${d}" is not a date (use 2026-11-09).` }; exceptions[d] = "cancelled"; }
@@ -171,7 +178,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
       recur: weekdays.length ? JSON.stringify({ freq: "weekly", interval: Math.min(4, Math.max(1, +b.interval || 1)), weekdays, ...(DATE_RE.test(b.until || "") ? { until: b.until } : {}) }) : null,
       exceptions: Object.keys(exceptions).length ? JSON.stringify(exceptions) : null, url: R.clean(b.url) || null,
       ride_slot: R.CORE_RIDES.some((s) => s.activity_id === b.ride_slot) ? b.ride_slot : null,
-    }, open: !!b.open, capacity: +b.capacity > 0 ? +b.capacity : null };
+    }, open: !!b.open, capacity: +b.capacity > 0 ? +b.capacity : null, price: +b.price_aed > 0 ? +b.price_aed : null, paymentUrl: R.clean(b.payment_url) || null };
   }
   app.post("/calendar/items/:id", STAFF, wrap(async (req, res) => {
     const f = readForm(req.body);
@@ -180,7 +187,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
     const id = await tx(async (c) => {
       let before = null, row = { ...f.row };
       if (!isNew) { before = (await c.query("SELECT * FROM calendar_items WHERE id = $1 FOR UPDATE", [+req.params.id])).rows[0]; if (!before) return null; row.activity_id = before.activity_id; }
-      if (row.category === "wmf_event") row.activity_id = await syncEvent(c, row, actor(req), { open: f.open, capacity: f.capacity });
+      if (row.category === "wmf_event") row.activity_id = await syncEvent(c, row, actor(req), { open: f.open, capacity: f.capacity, price: f.price, paymentUrl: f.paymentUrl });
       else if (row.activity_id) { await c.query("UPDATE activities SET registration_open = FALSE WHERE activity_id = $1", [row.activity_id]); }
       const cols = Object.keys(row);
       let newId;

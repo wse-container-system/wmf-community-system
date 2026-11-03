@@ -64,6 +64,14 @@ It runs on **Render** (the web app) with its data in **Neon** (Postgres).
 | **Viewer** (managers) | The dashboard and reports, without names or emails. |
 | **Sponsor** | The dashboard with anonymised figures. Small counts show as "<5". |
 
+### Pages
+- **Overview:** a one-page summary for managers and sponsors, by year. It shows community size and growth, active riders, ride attendance, events and activations, partners, and highlights with their impact.
+- **Activations:** every WMF event, campaign, workshop and partner activation. Each has its category, partners, participants and impact. Administrators import the history from the *WMF Activation* workbook (Admin → Import activations). **Partners** lists who WMF works with, and lets you merge two names for the same partner.
+- **Events:** upcoming events with sign-up, capacity, **fee and payment link**. Each event has a sign-up list where staff mark people as Paid, Unpaid, Refunded or Waived.
+- **Attendance per ride** (`/rides`): who was checked in at each ride, and usual riders with no check-in. Missed people can be added up to 60 days after the ride.
+- **Newsletter:** monthly newsletters and event emails, drafted from the app's data and editable. You copy them into Outlook or Mailchimp; the app never sends email. Only administrators can download the recipient list, which needs their password and holds only members who agreed to updates.
+- **Duplicates** (Admin): records with the same email are merged automatically into the oldest record. Same phone or same name goes on a review list. Every merge can be undone.
+
 ### The QR codes already sent still work
 Each code holds the member's ID, for example `WMF-000123`. The import keeps every Member ID and QR value exactly as it is in the workbook. New members continue from the next number.
 

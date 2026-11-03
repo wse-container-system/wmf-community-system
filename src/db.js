@@ -133,6 +133,60 @@ CREATE TABLE IF NOT EXISTS scan_log (
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS core BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS sort_order INTEGER;
 
+-- duplicates
+CREATE TABLE IF NOT EXISTS merges (
+  id SERIAL PRIMARY KEY, at TIMESTAMPTZ NOT NULL DEFAULT now(), actor TEXT, reason TEXT,
+  kept TEXT NOT NULL, merged TEXT NOT NULL, moved_ids INTEGER[] NOT NULL DEFAULT '{}', kept_before JSONB, undone_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS dupe_dismissed (a TEXT NOT NULL, b TEXT NOT NULL, at TIMESTAMPTZ NOT NULL DEFAULT now(), actor TEXT, PRIMARY KEY (a, b));
+
+-- paid events
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS price_aed NUMERIC(10,2);
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS payment_url TEXT;
+ALTER TABLE participation ADD COLUMN IF NOT EXISTS payment_status TEXT;
+ALTER TABLE participation ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE participation ADD COLUMN IF NOT EXISTS payment_note TEXT;
+
+-- WMF activations (events, campaigns, workshops …) and the partners WMF works with
+CREATE TABLE IF NOT EXISTS partners (
+  id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, kind TEXT, aliases TEXT[] NOT NULL DEFAULT '{}', notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS activations (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  month DATE NOT NULL,
+  event_date DATE,
+  date_note TEXT,
+  category TEXT NOT NULL,
+  category_raw TEXT,
+  lead_owner TEXT,
+  frequency TEXT,
+  location TEXT,
+  participants INTEGER,
+  registrants INTEGER,
+  impact TEXT,
+  link TEXT,
+  status TEXT NOT NULL DEFAULT 'Completed',
+  activity_id TEXT,
+  source TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS activations_month ON activations (month);
+CREATE TABLE IF NOT EXISTS activation_partners (
+  activation_id INTEGER NOT NULL REFERENCES activations(id) ON DELETE CASCADE,
+  partner_id INTEGER NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+  PRIMARY KEY (activation_id, partner_id)
+);
+
+-- newsletters and event emails
+CREATE TABLE IF NOT EXISTS newsletters (
+  id SERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'monthly', title TEXT NOT NULL, month DATE, activity_id TEXT,
+  intro TEXT, sections JSONB NOT NULL DEFAULT '[]', options JSONB NOT NULL DEFAULT '{}',
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS calendar_items (
   id SERIAL PRIMARY KEY,
   title TEXT NOT NULL,

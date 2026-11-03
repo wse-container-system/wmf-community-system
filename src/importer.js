@@ -176,7 +176,7 @@ async function insertMany(c, table, rows) {
 }
 
 /** Write the parsed workbook into the database. Refuses to run over existing data unless replace is set. */
-async function commitImport(parsed, actor, { replace = false, fileName = "" } = {}) {
+async function commitImport(parsed, actor, { replace = false, fileName = "", autoMerge = true } = {}) {
   return tx(async (c) => {
     const have = Number((await c.query("SELECT (SELECT count(*) FROM members) + (SELECT count(*) FROM participation) AS n")).rows[0].n);
     if (have && !replace) throw new Error("The database already holds data. Tick 'Replace everything' to import again.");
@@ -200,7 +200,7 @@ async function commitImport(parsed, actor, { replace = false, fileName = "" } = 
     await require("./rules").ensureCoreRides(c); // the six scanner rides survive a re-import
     await audit(c, actor, replace ? "import.replace" : "import", "workbook", fileName || null, null, { ...parsed.summary, counters, warnings: parsed.warnings });
     return { ...parsed.summary, counters };
-  });
+  }).then(async (out) => ({ ...out, duplicatesMerged: autoMerge ? await require("./dupes").autoMergeEmails(actor) : 0 }));
 }
 
 module.exports = { parseWorkbook, commitImport };

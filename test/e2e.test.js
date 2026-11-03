@@ -58,7 +58,7 @@ test("full flow", async (t) => {
     assert.equal(loc, "/account/password");
     const r = await admin("/account/password", { method: "POST", form: { current: "first-Password-1", password: "Second-Password-2" } });
     assert.equal(r.location, "/");
-    const home = await admin("/");
+    const home = await admin("/wmf");
     assert.match(home.text, /The database is empty/);
   });
 
@@ -146,8 +146,8 @@ test("full flow", async (t) => {
   let evId;
   await t.test("event sign-up: open, idempotent, capacity", async () => {
     let r = await admin("/activities", { method: "POST", form: { name: "Test Gran Fondo Briefing", kind: "event", location: "Dubai", event_date: "2099-12-01", capacity: "2", registration_open: "1" } });
-    assert.equal(r.location, "/activities");
     evId = (await pool.query("SELECT activity_id FROM activities WHERE name = 'Test Gran Fondo Briefing'")).rows[0].activity_id;
+    assert.equal(r.location, "/activities/" + evId);
     const pub = client();
     const list = await pub("/events"); assert.match(list.text, /Test Gran Fondo Briefing/);
     r = await pub("/events/" + evId, { method: "POST", form: { full_name: "Test Rider", email: "test.rider@example.org", mobile: "0501234567", waiver_consent: "1" } });
@@ -160,6 +160,23 @@ test("full flow", async (t) => {
     assert.match(r.text, /event is full/);
     const regs = (await pool.query("SELECT count(*) n FROM participation WHERE activity_id = $1", [evId])).rows[0].n;
     assert.equal(Number(regs), 2);
+    // paid event: pay link after sign-up, staff marks paid
+    r = await admin("/activities", { method: "POST", form: { name: "Test Paid Workshop", location: "Abu Dhabi", event_date: "2099-12-02", price_aed: "49", payment_url: "https://pay.example.org/wmf-workshop", registration_open: "1", status: "Active" } });
+    const paidId = r.location.split("/").pop();
+    assert.match((await pub("/events/" + paidId)).text, /Fee: AED 49/);
+    r = await pub("/events/" + paidId, { method: "POST", form: { full_name: "Test Rider", email: "test.rider@example.org", mobile: "0501234567", waiver_consent: "1" } });
+    assert.match(r.text, /Pay AED 49 now/); assert.match(r.text, /https:\/\/pay\.example\.org\/wmf-workshop/);
+    const p = (await pool.query("SELECT * FROM participation WHERE activity_id = $1", [paidId])).rows[0];
+    assert.equal(p.payment_status, "Unpaid");
+    const slist = await admin("/activities/" + encodeURIComponent(paidId) + "/signups");
+    assert.match(slist.text, /Not paid yet/);
+    await admin(`/participation/${p.id}/payment`, { method: "POST", form: { status: "Paid", note: "Ziina 123" } });
+    const p2 = (await pool.query("SELECT * FROM participation WHERE id = $1", [p.id])).rows[0];
+    assert.equal(p2.payment_status, "Paid"); assert.ok(p2.paid_at);
+    assert.match((await admin("/activities/" + encodeURIComponent(paidId) + "/signups")).text, /AED 49/);
+    // http (not https) payment links are refused
+    r = await admin("/activities/" + encodeURIComponent(paidId), { method: "POST", form: { name: "Test Paid Workshop", price_aed: "49", payment_url: "http://insecure.example.org" } });
+    assert.equal((await pool.query("SELECT payment_url FROM activities WHERE activity_id = $1", [paidId])).rows[0].payment_url, "https://pay.example.org/wmf-workshop");
   });
 
   await t.test("member edit needs a reason and is audited; merge and void work", async () => {
@@ -281,6 +298,85 @@ test("full flow", async (t) => {
     assert.ok(!(await admin("/members/WMF-000001")).text.includes(local + "@"));
     assert.ok((await admin("/members/WMF-000001?contact=show")).text.includes(m1.primary_email));
     assert.ok((await pool.query("SELECT 1 FROM audit_log WHERE action = 'member.contact_view' AND entity_id = 'WMF-000001'")).rows[0]);
+  });
+
+  await t.test("duplicates: same email merged on import, undo works", async () => {
+    const merges = (await pool.query("SELECT * FROM merges WHERE undone_at IS NULL AND reason LIKE 'Same email%'")).rows;
+    assert.ok(merges.length >= 20, "same-email duplicates merged: " + merges.length);
+    const m = merges[0];
+    assert.equal((await pool.query("SELECT merged_into FROM members WHERE member_id = $1", [m.merged])).rows[0].merged_into, m.kept);
+    // the merged record's QR code still checks in, as the kept member
+    const s1 = (await admin("/api/scan", { method: "POST", json: { code: m.merged, activityId: "RIDE-MORNING", date: R.todayLocal() } })).json();
+    assert.equal(s1.memberId, m.kept);
+    assert.equal((await admin("/admin/duplicates")).status, 200);
+    await admin("/admin/duplicates/undo/" + m.id, { method: "POST", form: {} });
+    assert.equal((await pool.query("SELECT merged_into FROM members WHERE member_id = $1", [m.merged])).rows[0].merged_into, null);
+    // undone pairs are not merged again automatically
+    assert.equal(await require("../src/dupes").autoMergeEmails("test"), 0);
+  });
+
+  await t.test("attendance per ride and missed check-ins", async () => {
+    const r = await admin("/rides?days=180");
+    assert.equal(r.status, 200); assert.match(r.text, /Attendance per ride/);
+    const link = /href="(\/rides\/\d{4}-\d{2}-\d{2}\/[^"]+)"/.exec(r.text);
+    assert.ok(link, "a ride session is listed");
+    assert.equal((await admin(link[1].replace(/&amp;/g, "&"))).status, 200);
+    const d = require("../src/engine").helpers.addDays(R.todayLocal(), -20);
+    await admin("/rides/checkin", { method: "POST", form: { memberId: "WMF-000010", date: d, activityId: "RIDE-WEEKEND-LONG", back: "/rides" } });
+    const row = (await pool.query("SELECT * FROM participation WHERE member_id = 'WMF-000010' AND source = 'Manual Attendance Correction'")).rows[0];
+    assert.ok(row); assert.equal(row.record_date.slice(0, 10), d);
+  });
+
+  await t.test("activations, partners and management overview", async () => {
+    const WA = process.env.TEST_ACTIVATIONS;
+    if (WA) {
+      const fd = new FormData();
+      fd.append("file", new Blob([fs.readFileSync(WA)]), "WMF_Activation.xlsx");
+      const html = await (await fetch(base + "/admin/activations-import", { method: "POST", body: fd, headers: { origin: base, cookie: await cookieOf(admin) } })).text();
+      const token = /name="token" value="([0-9a-f]+)"/.exec(html)[1];
+      await admin("/admin/activations-import/commit", { method: "POST", form: { token } });
+      assert.equal(Number((await pool.query("SELECT count(*) n FROM activations")).rows[0].n), 127);
+      assert.match((await admin("/partners")).text, /Colnago Caff/);
+    }
+    let r = await admin("/activations/new", { method: "POST", form: { title: "Test Sunrise Ride", month: "2026-10", category: "Themed Community Rides", status: "Completed", participants: "12", partners: "Test Partner Co, Colnago Caffè", impact: "First sunrise ride." } });
+    const id = r.location.split("/").pop();
+    const a = (await require("../src/activations").loadActivations("a.id = $1", [+id]))[0];
+    assert.deepEqual(a.partners.sort(), ["Colnago Caffè", "Test Partner Co"]);
+    // merge one partner into another
+    const tp = (await pool.query("SELECT id FROM partners WHERE name = 'Test Partner Co'")).rows[0].id;
+    await admin("/partners/" + tp, { method: "POST", form: { name: "Test Partner Co", merge_into: "Merge into: Colnago Caffè" } });
+    assert.ok(!(await pool.query("SELECT 1 FROM partners WHERE name = 'Test Partner Co'")).rows[0]);
+    for (const y of ["2025", "2026"]) {
+      const o = await admin("/overview?year=" + y);
+      assert.equal(o.status, 200); assert.match(o.text, /Is the community growing/);
+    }
+    // sponsors see the overview but no member names or emails
+    const sp = client(); await login(sp, "sponsor@test.local", "Role-Password-123");
+    const so = await sp("/overview");
+    assert.equal(so.status, 200); assert.doesNotMatch(so.text, /@gmail\.com|Test Rider/);
+    assert.equal((await sp("/activations")).status, 403);
+  });
+
+  await t.test("newsletter and event email", async () => {
+    // a member who agreed to updates
+    await client()("/join", { method: "POST", form: { full_name: "News Reader", email: "news.reader@example.org", mobile: "0509998877", waiver_consent: "1", updates_consent: "1" } });
+    let r = await admin("/newsletter/new", { method: "POST", form: { kind: "monthly", month: "2026-11" } });
+    const nid = r.location.split("/").pop();
+    const p = await admin("/newsletter/" + nid);
+    assert.match(p.text, /October 2026 in numbers/); assert.match(p.text, /Copy for Outlook/);
+    const mail = await admin(`/newsletter/${nid}/email.html`);
+    assert.match(mail.text, /brand\/wmf-logo\.png/); assert.match(mail.text, /unsubscribe/);
+    await admin("/newsletter/" + nid, { method: "POST", form: { title: "WMF November", intro: "Hi", count: "1", heading_0: "Big news", body_0: "Text", btext_0: "Go", burl_0: "javascript:alert(1)" } });
+    const saved = (await pool.query("SELECT * FROM newsletters WHERE id = $1", [+nid])).rows[0];
+    assert.equal(saved.sections[0].button_url, "", "unsafe link dropped");
+    r = await admin("/newsletter/new", { method: "POST", form: { kind: "event", activity_id: evId } });
+    assert.match((await admin(r.location)).text, /Test Gran Fondo Briefing/);
+    // recipients: password needed, only members who agreed
+    assert.notEqual((await admin("/newsletter-recipients.csv", { method: "POST", form: { password: "nope" } })).type, "text/csv; charset=utf-8");
+    const csv = await admin("/newsletter-recipients.csv", { method: "POST", form: { password: "Second-Password-2" } });
+    assert.match(csv.text, /news\.reader@example\.org/); assert.doesNotMatch(csv.text, /test\.rider@example\.org/);
+    const coord = client(); await login(coord, "coordinator@test.local", "Role-Password-123");
+    assert.equal((await coord("/newsletter-recipients.csv", { method: "POST", form: { password: "Role-Password-123" } })).status, 403);
   });
 
   await t.test("security: cross-site posts refused, login required", async () => {

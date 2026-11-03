@@ -36,6 +36,9 @@ async function exportWorkbook() {
     pool.query("SELECT * FROM history_events ORDER BY report_month, id"),
     pool.query("SELECT * FROM audit_log ORDER BY at, id"),
   ]);
+  const acts = await require("./activations").loadActivations();
+  const partners = (await pool.query("SELECT * FROM partners ORDER BY name")).rows;
+  const cal = (await pool.query("SELECT * FROM calendar_items ORDER BY start_date, id")).rows;
   const wb = new ExcelJS.Workbook();
   wb.creator = "WMF Community System";
   wb.created = new Date();
@@ -53,12 +56,13 @@ async function exportWorkbook() {
     ["Activity Name", (r) => r.activity_name], ["Activity Type", (r) => r.activity_type], ["Participation Status", (r) => r.status], ["Counts as Visit", (r) => r.counts_as_visit],
     ["Member Name", (r) => r.member_name], ["Member Email", (r) => r.member_email], ["Phone", (r) => r.phone], ["Gender", (r) => r.gender], ["Community", (r) => r.community],
     ["Member Key", (r) => r.member_key], ["Source", (r) => r.source], ["Form Response ID", (r) => r.form_response_id], ["Notes", (r) => r.notes],
-    ["Member ID", (r) => r.member_id], ["Voided", (r) => (r.voided_at ? "Yes" : "")], ["Void Reason", (r) => r.void_reason], ["Entered By", (r) => r.created_by],
+    ["Member ID", (r) => r.member_id], ["Payment Status", (r) => r.payment_status], ["Paid At", (r) => (r.paid_at ? new Date(r.paid_at) : null)], ["Payment Note", (r) => r.payment_note],
+    ["Voided", (r) => (r.voided_at ? "Yes" : "")], ["Void Reason", (r) => r.void_reason], ["Entered By", (r) => r.created_by],
   ], p.rows);
   addTable(wb, "Activity Setup", "WMFActivitySetup", [
     ["Activity ID", (r) => r.activity_id], ["Activity Name", (r) => r.name], ["Activity Type", (r) => r.activity_type], ["Activity Category", (r) => r.category],
     ["Kind", (r) => r.kind], ["Location", (r) => r.location], ["Event Date", (r) => toDate(r.event_date), "day"], ["Capacity", (r) => r.capacity],
-    ["Sign-up Open", (r) => (r.registration_open ? "Yes" : "No")], ["Status", (r) => r.status], ["Reporting Notes", (r) => r.notes],
+    ["Sign-up Open", (r) => (r.registration_open ? "Yes" : "No")], ["Price (AED)", (r) => (r.price_aed == null ? null : Number(r.price_aed))], ["Payment Link", (r) => r.payment_url], ["Status", (r) => r.status], ["Reporting Notes", (r) => r.notes],
   ], a.rows);
   addTable(wb, "Historical Ride Summary", "WMFHistoricalRideSummary", [
     ["Session Key", (r) => r.session_key], ["Ride Date", (r) => toDate(r.ride_date), "day"], ["Initiative", (r) => r.initiative], ["State", (r) => r.state],
@@ -68,6 +72,17 @@ async function exportWorkbook() {
     ["Event Key", (r) => r.event_key], ["Report Month", (r) => toDate(r.report_month), "day"], ["Event Name", (r) => r.name], ["Category", (r) => r.category],
     ["Collaborated Entity", (r) => r.collaborator], ["Frequency", (r) => r.frequency], ["Attendance", (r) => r.attendance], ["Comments", (r) => r.comments],
   ], he.rows);
+  addTable(wb, "Activations", "WMFActivations", [
+    ["Month", (r) => toDate(r.month), "day"], ["Date", (r) => toDate(r.event_date), "day"], ["Date Note", (r) => r.date_note], ["Activation", (r) => r.title], ["Category", (r) => r.category],
+    ["Original Category", (r) => r.category_raw], ["Partners", (r) => r.partners.join(", ")], ["Lead", (r) => r.lead_owner], ["Frequency", (r) => r.frequency], ["Location", (r) => r.location],
+    ["Participants", (r) => r.participants], ["Registrations", (r) => r.registrants], ["Status", (r) => r.status], ["Impact", (r) => r.impact], ["Link", (r) => r.link], ["Linked Event", (r) => r.activity_id],
+  ], acts);
+  addTable(wb, "Partners", "WMFPartners", [["Partner", (r) => r.name], ["Other names", (r) => (r.aliases || []).join(", ")], ["Notes", (r) => r.notes]], partners);
+  addTable(wb, "Calendar", "WMFCalendar", [
+    ["Title", (r) => r.title], ["Type", (r) => r.category], ["Start", (r) => toDate(r.start_date), "day"], ["End", (r) => toDate(r.end_date), "day"], ["Start Time", (r) => r.start_time],
+    ["End Time", (r) => r.end_time], ["Location", (r) => r.location], ["Status", (r) => r.status], ["Repeats", (r) => (r.recur ? JSON.stringify(r.recur) : null)],
+    ["Cancelled Dates", (r) => (r.exceptions ? Object.keys(r.exceptions).join(", ") : null)], ["Link", (r) => r.url], ["Scanner Ride", (r) => r.ride_slot], ["Linked Event", (r) => r.activity_id],
+  ], cal);
   addTable(wb, "Audit Log", "WMFAuditLog", [
     ["When (UTC)", (r) => r.at], ["Who", (r) => r.actor], ["Action", (r) => r.action], ["Entity", (r) => r.entity], ["Record", (r) => r.entity_id],
     ["Reason", (r) => r.reason], ["Before", (r) => (r.before ? JSON.stringify(r.before).slice(0, 32000) : null)], ["After", (r) => (r.after ? JSON.stringify(r.after).slice(0, 32000) : null)],

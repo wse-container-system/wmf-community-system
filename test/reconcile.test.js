@@ -18,7 +18,7 @@ const E = require("../src/engine");
 test("agreed reference figures (data to 30 Sep 2026)", async () => {
   await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await migrate();
-  await commitImport(await parseWorkbook(fs.readFileSync(WB)), "test");
+  await commitImport(await parseWorkbook(fs.readFileSync(WB)), "test", { autoMerge: false }); // figures agreed before duplicates were merged
   const P = E.prepare(await buildData());
   const asOf = "2026-09-30";
   const k = (start, end) => E.compute(P, { start, end }, asOf).kpis;
@@ -45,5 +45,12 @@ test("agreed reference figures (data to 30 Sep 2026)", async () => {
   const m = (await pool.query("SELECT * FROM members WHERE member_id = $1", [r.member_id])).rows[0];
   const day = r.record_date.slice(0, 10);
   assert.ok(await R.alreadyRode(pool, m, day, R.seriesFor(r, day)), "imported ride found");
+  // after merging same-email duplicates: activity totals stay the same, only the member count drops
+  const merged = await require("../src/dupes").autoMergeEmails("test");
+  const P2 = E.prepare(await buildData());
+  const sep2 = E.compute(P2, { start: "2026-09-01", end: "2026-09-30" }, asOf).kpis;
+  console.log("# after merging", merged, "duplicates:", JSON.stringify({ participants: sep2.participants, newMembers: sep2.newMembers, active: sep2.activeMembers, inactive: sep2.inactiveMembers, rideAttendance: sep2.rideAttendance }));
+  assert.equal(sep2.rideAttendance, 68);
+  assert.equal(sep2.participants, 53);
   await pool.end();
 });

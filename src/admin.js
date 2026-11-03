@@ -23,6 +23,8 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
         <p class="muted" style="font-size:13px">The backup holds every member's contact details. Keep it in a restricted SharePoint folder, never email it, and delete local copies.</p><p class="muted">Last backup: ${fmtTs(c.exp)}</p></section>
       <section class="card c6"><h2>Import the workbook</h2><p class="lead">One-time move from WMF_Community_Master_System_Integrated.xlsx. Shows a preview first; nothing is written until you confirm.</p>
         <p><a class="btn" href="/admin/import">Import…</a></p><p class="muted">${Number(c.m).toLocaleString("en-GB")} members and ${Number(c.p).toLocaleString("en-GB")} activity rows in the database. Last import: ${fmtTs(c.imp)}</p></section>
+      <section class="card c4"><h2>Activation history</h2><p class="lead">Import the WMF Activation workbook (events, partners, impact).</p><a class="btn" href="/admin/activations-import">Import activations</a></section>
+      <section class="card c4"><h2>Duplicate members</h2><p class="lead">Same email: merged automatically. Same phone or name: you decide.</p><a class="btn" href="/admin/duplicates">Review duplicates</a></section>
       <section class="card c4"><h2>Staff accounts</h2><p class="lead">${c.u} active accounts.</p><a class="btn" href="/admin/users">Manage accounts</a></section>
       <section class="card c4"><h2>Counting settings</h2><p class="lead">Test entries to leave out, and large events reported separately.</p><a class="btn" href="/admin/settings">Settings</a></section>
       <section class="card c4"><h2>Audit log</h2><p class="lead">Every change, check-in, import and export.</p><a class="btn" href="/admin/audit">Open audit log</a></section>
@@ -69,7 +71,7 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
     if (have && req.body.confirm !== "REPLACE") { setFlash(req, "err", "Type REPLACE to confirm."); return res.redirect("/admin/import"); }
     const out = await commitImport(p.parsed, actor(req), { replace: !!have, fileName: p.name });
     previews.delete(String(req.body.token));
-    setFlash(req, "ok", `Imported ${out.members} members and ${out.activity} activity rows. New Member IDs start after ${p.parsed.summary.highestMemberId}.`);
+    setFlash(req, "ok", `Imported ${out.members} members and ${out.activity} activity rows, and merged ${out.duplicatesMerged} same-email duplicates. New Member IDs start after ${p.parsed.summary.highestMemberId}.`);
     res.redirect("/admin");
   }));
 

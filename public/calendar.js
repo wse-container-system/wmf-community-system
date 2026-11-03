@@ -52,6 +52,7 @@
     $("#wc-pop-title").textContent = a.t;
     const rows = [["Date", o.end > o.date ? fmt(o.date, { wd: 1 }) + " – " + fmt(o.end, { wd: 1, y: 1 }) : fmt(o.date, { wd: 1, y: 1 })],
       ["Time", a.st ? t12(a.st) + (a.et ? " – " + t12(a.et) : "") : "To be confirmed"], ["Location", a.loc || "To be confirmed"]];
+    if (a.fee) rows.push(["Fee", a.fee + " (pay online after signing up)"]);
     if (a.r) rows.push(["Repeats", a.r.freq === "monthly" ? "Monthly" : "Every " + (a.r.interval > 1 ? a.r.interval + " weeks, " : "") + (a.r.weekdays || []).map((d) => DAYS[d]).join(", ")]);
     if (o.cancel) rows.unshift(["Status", "Cancelled"]); else if (a.status === "Tentative") rows.unshift(["Status", "To be confirmed"]);
     $("#wc-pop-body").innerHTML = rows.map(([k2, v]) => `<div><dt>${k2}</dt><dd>${esc(v)}</dd></div>`).join("");
