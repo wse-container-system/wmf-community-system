@@ -351,6 +351,17 @@ test("cycling development hub", async (t) => {
     if (own) { await mgr(`${b0}/leave/${own.id}`, { method: "POST", form: { do: "remove" } }); assert.notEqual((await pool.query("SELECT status FROM dept_leave WHERE id = $1", [own.id])).rows[0].status, "Cancelled"); }
     assert.equal((await mgr(`${b0}/schedule/export.xlsx`, { raw: true })).status, 200);
     assert.equal((await mgr("/department/schedule")).status, 302, "the hub still needs a sign-in");
+    // view-only link for HR: sees everything in the department, downloads the timesheet, changes nothing
+    await admin("/department/share", { method: "POST", form: { staff_id: "" } });
+    const hrL = (await pool.query("SELECT * FROM dept_share_links WHERE staff_id IS NULL ORDER BY id DESC LIMIT 1")).rows[0];
+    const hr = client(), hb = `/d/${hrL.token}`;
+    const hv = ok200(await hr(`${hb}/schedule?date=${monday}`), "hr week");
+    assert.match(hv.text, /view only/); assert.match(hv.text, /HR timesheet/); assert.doesNotMatch(hv.text, /sc-plus|Add my time|Copy last week/);
+    assert.doesNotMatch(ok200(await hr(`${hb}/leave`), "hr leave").text, /Add leave|name="do"/);
+    assert.equal((await hr(`${hb}/schedule/export.xlsx?month=${today.slice(0, 7)}`, { raw: true })).status, 200);
+    const before = await DS.weekHours(jas.id, monday);
+    await hr(`${hb}/schedule/entries`, { method: "POST", form: { staff_id: String(jas.id), activity: "Office", work_date: monday, start_time: "05:00", end_time: "06:00" } });
+    assert.equal(await DS.weekHours(jas.id, monday), before, "view-only link can't change anything");
     await admin(`/department/share/${link.id}`, { method: "POST", form: { active: "0" } });
     assert.equal((await mgr(`${b0}/schedule`)).status, 404);
 
