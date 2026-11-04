@@ -25,6 +25,7 @@ module.exports = function admin(app, { need, page, setFlash, actor, user, wrap }
         <p><a class="btn" href="/admin/import">Import…</a></p><p class="muted">${Number(c.m).toLocaleString("en-GB")} members and ${Number(c.p).toLocaleString("en-GB")} activity rows in the database. Last import: ${fmtTs(c.imp)}</p></section>
       <section class="card c4"><h2>Activation history</h2><p class="lead">Import the WMF Activation workbook (events, partners, impact).</p><a class="btn" href="/admin/activations-import">Import activations</a></section>
       <section class="card c4"><h2>Duplicate members</h2><p class="lead">Same email: merged automatically. Same phone or name: you decide.</p><a class="btn" href="/admin/duplicates">Review duplicates</a></section>
+      <section class="card c4"><h2>Scanner links</h2><p class="lead">A simple scanner page for anyone taking attendance (WMF and corporate), shared as a link. No sign-in.</p><a class="btn primary" href="/admin/scanners">Scanner links</a></section>
       <section class="card c4"><h2>Staff accounts</h2><p class="lead">${c.u} active accounts.</p><a class="btn" href="/admin/users">Manage accounts</a></section>
       <section class="card c4"><h2>Counting settings</h2><p class="lead">Test entries to leave out, and large events reported separately.</p><a class="btn" href="/admin/settings">Settings</a></section>
       <section class="card c4"><h2>Audit log</h2><p class="lead">Every change, check-in, import and export.</p><a class="btn" href="/admin/audit">Open audit log</a></section>

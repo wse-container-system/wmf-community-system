@@ -162,7 +162,7 @@ app.get("/", need(), wrap(async (req, res) => {
         <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Staff attendance, annual leave and approvals, exports for HR." : me && me.rows[0] ? "Check in, request leave and see your balance." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}
     </div>
     ${isStaff ? `<section class="card"><h2>Quick links</h2><div class="toolbar" style="margin:8px 0 0">
-      <a class="btn" href="/scan">WMF scan</a><a class="btn" href="/corporate/attendance">Corporate attendance</a><a class="btn" href="/corporate/qr">Corporate QR codes</a>
+      ${u.role === "admin" ? `<a class="btn primary" href="/admin/scanners">Scanner links for staff</a>` : ""}<a class="btn" href="/scan">WMF scan</a><a class="btn" href="/corporate/attendance">Corporate attendance</a><a class="btn" href="/corporate/qr">Corporate QR codes</a>
       <a class="btn" href="/dashboard#performance">WMF performance</a><a class="btn" href="/corporate/report">Corporate report</a><a class="btn" href="/department/me">My attendance & leave</a></div></section>` : ""}`, { active: "/" }));
 }));
 
@@ -646,6 +646,7 @@ app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar") });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 require("./dupes")(app, { need, page, setFlash, actor, user, wrap });

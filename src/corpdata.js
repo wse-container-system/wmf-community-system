@@ -156,6 +156,28 @@ async function stats({ codes, start, end, asOf = R.todayLocal() }) {
   };
 }
 
+/**
+ * Check a participant in from a scanned code or typed ID. session = a session id, or "ride:<CODE>" for today's weekly ride
+ * (created on the first scan). codes = the companies the scanner may record for.
+ */
+async function corpScan(c, { code, session, by, codes, method = "Scanned by staff" }) {
+  if (/WMF-\d/i.test(String(code || ""))) return { status: "error", message: "That's a WMF member code." };
+  const pid = pidFromScan(code);
+  if (!pid) return { status: "error", message: "This is not a corporate QR code or ID." };
+  const p = (await c.query("SELECT * FROM corp_participants WHERE pid = $1", [pid])).rows[0];
+  if (!p || !codes.includes(p.company)) return { status: "error", message: `${pid} isn't on the participant list.` };
+  let s;
+  // "ride:AUTO": today's weekly ride of whichever company the person belongs to
+  if (String(session || "") === "ride:AUTO") session = "ride:" + p.company;
+  const m = /^ride:([A-Z]+)$/.exec(String(session || ""));
+  if (m) { if (!codes.includes(m[1])) return { status: "error", message: "Choose today's session first." }; s = await ensureSession(c, { company: m[1], date: R.todayLocal(), kind: RIDE, status: "Held", by }); }
+  else s = (await c.query("SELECT * FROM corp_sessions WHERE id = $1", [+session || 0])).rows[0];
+  if (!s) return { status: "error", message: "Choose today's session first." };
+  if (s.company !== p.company) return { status: "error", message: `${p.full_name} is with ${p.company}, not this session's company. Choose the ${p.company} session.` };
+  const r = await markAttendance(c, s, p, method, by);
+  return { ...r, name: p.full_name, pid: p.pid, company: p.company };
+}
+
 /** Period helpers shared by the dashboard and reports: ?period=month|quarter|year|ytd|custom&p=2026-10 */
 function periodFromQuery(q, today = R.todayLocal()) {
   const type = ["month", "quarter", "year", "ytd", "all", "custom"].includes(q.period) ? q.period : "ytd";
@@ -179,5 +201,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, createParticipant, findParticipant, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, createParticipant, findParticipant, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };
