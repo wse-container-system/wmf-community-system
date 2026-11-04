@@ -127,6 +127,8 @@ test("cycling development hub", async (t) => {
     co = (await pool.query("SELECT * FROM corp_companies WHERE code = 'NMDC'")).rows[0];
     // make today a ride day for NMDC
     await pool.query("UPDATE corp_companies SET checkin_mode = 'self' WHERE code = 'NMDC'");
+    // NMDC's regular ride falls on today
+    await pool.query("UPDATE corp_schedules SET weekday = $1, week = 0, starts = $2 WHERE company = 'NMDC'", [new Date(today + "T12:00:00Z").getUTCDay(), today]);
     await pool.query("UPDATE corp_companies SET ride_days = $2 WHERE code = $1", ["NMDC", ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(today + "T12:00:00Z").getUTCDay()]]);
     const pub = client();
     const g = ok200(await pub("/c/" + co.checkin_token), "public check-in page");
@@ -247,6 +249,37 @@ test("cycling development hub", async (t) => {
     const names = (await xlsx(bk.text)).worksheets.map((w) => w.name);
     for (const n of ["Corporate Participants", "Corporate Sessions", "Corporate Attendance", "Department Staff", "Department Leave", "Department Attendance", "Scanner Links"]) assert.ok(names.includes(n), n + " in backup");
     const ping = await pub("/ping"); assert.equal(ping.status, 200); assert.equal(ping.text, "ok");
+  });
+
+  await t.test("schedules: regular sessions per company, adjustable, cancel a date", async () => {
+    const sch = (await pool.query("SELECT company, kind, title, weekday, week, start_time FROM corp_schedules ORDER BY id")).rows;
+    assert.deepEqual(sch.filter((x) => x.company !== "NMDC").map((x) => [x.company, x.kind, x.title, x.weekday, x.week, x.start_time]), [
+      ["LIMAD", "Weekly ride", "", 4, 0, "06:00"], ["AURORA", "Weekly ride", "Aurora Ride", 4, 1, "17:00"], ["AURORA", "Running", "Aurora Running", 4, 2, "17:00"], ["AURORA", "Yoga", "Aurora Yoga", 4, 3, "17:00"]]);
+    ok200(await admin("/corporate/schedule"), "schedule page");
+    // Aurora Yoga moved to today; it shows on the scanner and the AUTO option puts Aurora staff into it
+    const dow = new Date(today + "T12:00:00Z").getUTCDay(), wk = Math.ceil(+today.slice(8) / 7);
+    const yoga = (await pool.query("SELECT id FROM corp_schedules WHERE title = 'Aurora Yoga'")).rows[0];
+    const r = await admin(`/corporate/schedule/${yoga.id}`, { method: "POST", form: { kind: "Yoga", title: "Aurora Yoga", week: String(wk > 4 ? -1 : wk), weekday: String(dow), start_time: "17:30", starts: today, active: "1" } });
+    assert.equal(r.status, 302);
+    const C = require("../src/corpdata");
+    const aur = (await pool.query("SELECT * FROM corp_companies WHERE code = 'AURORA'")).rows[0];
+    const ts = await C.todaysSessions(pool, aur);
+    assert.ok(ts.some((s) => s.virtual && s.title === "Aurora Yoga" && s.start_time === "17:30"), "planned yoga appears today");
+    const p = await tx((c) => C.createParticipant(c, { company: "AURORA", full_name: "Aurora Person", email: "ap@aurora.example" }, "test", "test"));
+    const out = await tx((c) => C.corpScan(c, { code: "CORP-" + p.pid, session: "ride:AUTO", by: "test", codes: ["AURORA"] }));
+    assert.equal(out.status, "ok");
+    const sess = (await pool.query("SELECT s.* FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = $1", [p.id])).rows[0];
+    assert.equal(sess.title, "Aurora Yoga"); assert.equal(sess.start_time, "17:30");
+    // cancel next week's LIMAD ride; it shows as cancelled and isn't offered
+    const lim = (await pool.query("SELECT id FROM corp_schedules WHERE company = 'LIMAD'")).rows[0];
+    let thu = today; while (new Date(thu + "T12:00:00Z").getUTCDay() !== 4 || thu === today) thu = E.helpers.addDays(thu, 1);
+    await admin(`/corporate/schedule/${lim.id}/date`, { method: "POST", form: { date: thu, action: "cancel", reason: "National Day" } });
+    const can = (await pool.query("SELECT status, remarks FROM corp_sessions WHERE company = 'LIMAD' AND session_date = $1", [thu])).rows[0];
+    assert.deepEqual(can, { status: "Cancelled", remarks: "National Day" });
+    await admin(`/corporate/schedule/${lim.id}/date`, { method: "POST", form: { date: thu, action: "restore" } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_sessions WHERE company = 'LIMAD' AND session_date = $1", [thu])).rows[0].n, 0);
+    const dash = ok200(await admin("/corporate"), "dashboard");
+    assert.match(dash.text, /Every Thursday · 06:00/);
   });
 
   await t.test("sponsor limited to one partner", async () => {

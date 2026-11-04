@@ -16,6 +16,7 @@ const pct = (r) => (r == null ? "—" : Math.round(r * 100) + "%");
 const opt = (v, label, cur) => `<option value="${h(v)}" ${String(cur) === String(v) ? "selected" : ""}>${h(label)}</option>`;
 const coChip = (co) => `<span class="co" style="--co:${h(co.color || "var(--accent)")}">${h(co.name)}</span>`;
 const stChip = (s) => `<span class="status-chip st-${h(String(s).split(/[ /]/)[0])}">${h(s)}</span>`;
+const label = (s, co) => `${C.sessionName(s, co)}${s.start_time ? " · " + s.start_time : ""}`;
 const sessLink = (s, co) => `<a href="/corporate/session/${s.id}">${h(C.sessionName(s, co))}</a>`;
 
 module.exports = function corporate(app, { need, page, setFlash, actor, user, wrap, limit }) {
@@ -57,21 +58,30 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       series: multi ? sc.codes.map((code) => ({ name: sc.byCode[code].name, color: sc.byCode[code].color, values: monthsIn.map((m) => m.byCo[code]) }))
         : [{ name: "Rides", color: "var(--s1)", values: monthsIn.map((m) => m.rideAttendance) }, { name: "Other activities & events", color: "var(--s3)", values: monthsIn.map((m) => m.eventAttendance) }] });
     const coCards = st.byCompany.map((b) => { const co = sc.byCode[b.code]; return `<div class="co-card" style="--co:${h(co.color)}"><h3>${h(co.name)}</h3>
-      <dl><dt>Weekly rides held</dt><dd>${nf(b.sessions)}</dd><dt>Other activities & events</dt><dd>${nf(b.events)}</dd><dt>Total attendance</dt><dd>${nf(b.attendance)}</dd>
+      <dl><dt>Rides held</dt><dd>${nf(b.sessions)}</dd><dt>Other activities & events</dt><dd>${nf(b.events)}</dd><dt>Total attendance</dt><dd>${nf(b.attendance)}</dd>
       <dt>Average riders per ride</dt><dd>${nf(b.avg, 1)}</dd><dt>People taking part</dt><dd>${nf(b.people)}</dd><dt>Active now (2+ in 90 days)</dt><dd>${nf(b.active)}</dd>
       <dt>Cancelled sessions</dt><dd>${nf(b.cancelled)}</dd><dt>Last session</dt><dd>${fmtDate(b.lastSession)}</dd></dl>
       <div class="toolbar" style="margin:4px 0 0"><a class="btn" href="/corporate?${qs({ company: b.code, ...perQs(per) })}">Open</a><a class="btn ghost" href="/corporate/report?${qs({ company: b.code, ...perQs(per) })}">Report</a></div></div>`; }).join("");
-    const upcoming = (await pool.query("SELECT * FROM corp_sessions WHERE company = ANY($1) AND session_date >= $2 AND status <> 'Cancelled' ORDER BY session_date LIMIT 6", [sc.codes, R.todayLocal()])).rows;
     const todayIs = R.todayLocal();
-    const rideDays = sc.list.filter((c) => sc.codes.includes(c.code)).map((c) => `${c.name}: ${c.ride_days}${c.ride_time ? " " + c.ride_time : ""}`).join(" · ");
+    // coming up: the next planned sessions from each company's schedule, plus one-off sessions added by hand
+    const occ = await C.occurrences(pool, sc.codes, todayIs, addDays(todayIs, 35));
+    const extra = (await pool.query("SELECT * FROM corp_sessions WHERE company = ANY($1) AND session_date >= $2 ORDER BY session_date", [sc.codes, todayIs])).rows
+      .filter((s) => !occ.some((o) => o.session && o.session.id === s.id));
+    const upcoming = [...occ.map((o) => ({ d: o.date, company: o.sc.company, name: C.schedName(o.sc, sc.byCode[o.sc.company]) + (o.sc.start_time ? " · " + o.sc.start_time : ""), status: o.session ? o.session.status : "Scheduled", id: o.session && o.session.id })),
+      ...extra.map((s) => ({ d: s.session_date, company: s.company, name: label(s, sc.byCode[s.company]), status: s.status, id: s.id }))].sort((a, b) => a.d.localeCompare(b.d)).slice(0, 10);
+    // planned in the last 60 days but nothing recorded (not even a cancellation)
+    const missed = (await C.occurrences(pool, sc.codes, addDays(todayIs, -60), addDays(todayIs, -1))).filter((o) => !o.session);
+    const scheds = await C.schedules(pool, sc.codes);
+    const rideDays = sc.list.filter((c) => sc.codes.includes(c.code)).map((c) => { const x = scheds.filter((y) => y.company === c.code); return `${c.name}: ${x.length ? x.map((y) => C.scheduleText(y).replace(/ of the month/, "")).join(", ") : c.ride_days}`; }).join(" · ");
     res.send(page(req, "Corporate dashboard", `
-      <div class="card-head"><div><h2 style="font-size:22px">${sc.sel ? coChip(sc.sel) : "Corporate Cycling Programme"}</h2><p class="muted" style="margin:2px 0 0">${h(per.label)} · weekly rides ${h(rideDays)}</p></div>
+      <div class="card-head"><div><h2 style="font-size:22px">${sc.sel ? coChip(sc.sel) : "Corporate Cycling Programme"}</h2><p class="muted" style="margin:2px 0 0">${h(per.label)} · ${h(rideDays)}${named ? ` · <a href="/corporate/schedule">change schedule</a>` : ""}</p></div>
         <div class="toolbar noprint" style="margin:0">${named ? `<a class="btn" href="/corporate/attendance?${qs({ company: sc.sel && sc.sel.code })}">Take attendance</a><a class="btn" href="/corporate/qr">QR codes</a>` : ""}<a class="btn primary" href="/corporate/report?${qs({ company: sc.sel && sc.sel.code, ...perQs(per) })}">Report for management & sponsors</a></div></div>
       ${periodControls(per, companySelect(sc))}
+      ${named && missed.length ? `<div class="alert warn"><span class="ic">!</span><span><b>${missed.length} planned session${missed.length > 1 ? "s have" : " has"} nothing recorded</b> (no scans and not marked cancelled): ${missed.slice(0, 5).map((o) => `${h(sc.byCode[o.sc.company].name)} ${h(C.schedName(o.sc, sc.byCode[o.sc.company]))} ${fmtDate(o.date)}`).join(" · ")}. Record them on the <a href="/corporate/schedule">Schedule</a> page (tick names or mark cancelled).</span></div>` : ""}
       ${named && st.needsAttendance.length ? `<div class="alert warn"><span class="ic">!</span><span><b>${st.needsAttendance.length} past session${st.needsAttendance.length > 1 ? "s have" : " has"} no attendance recorded.</b> ${st.needsAttendance.slice(0, 4).map((s) => `<a href="/corporate/session/${s.id}">${h(sc.byCode[s.company].name)} ${fmtDate(s.d)}</a>`).join(" · ")}</span></div>` : ""}
       <div class="tiles">
         ${tile("Total attendance", nf(k.attendance), "Rides, activities and events")}
-        ${tile("Weekly rides held", nf(k.rideSessions), k.cancelled ? `${k.cancelled} cancelled` : "None cancelled")}
+        ${tile("Rides held", nf(k.rideSessions), k.cancelled ? `${k.cancelled} cancelled` : "None cancelled")}
         ${tile("Average riders per ride", nf(k.avgPerRide, 1), `${nf(k.rideAttendance)} ride check-ins`)}
         ${tile("Other activities & events", nf(k.events), `${nf(k.eventAttendance)} attendance`)}
         ${tile("People taking part", nf(k.people), "Named check-ins in the period")}
@@ -80,13 +90,13 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         ${tile("Came back again", pct(k.repeatRate), `${nf(k.repeat)} of ${nf(k.people)} attended 2+ times`)}
       </div>
       <div class="grid">
-        <section class="card c8"><h2>Attendance by month</h2><p class="lead">${multi ? "Stacked by company." : "Weekly rides and other activities."} Months before the period are shown for context.</p>${chart}</section>
+        <section class="card c8"><h2>Attendance by month</h2><p class="lead">${multi ? "Stacked by company." : "Rides and other activities."} Months before the period are shown for context.</p>${chart}</section>
         <section class="card c4"><h2>By activity</h2><p class="lead">Attendance in the period.</p>${hbars(st.byKind.map((x) => ({ ...x, color: x.name === C.RIDE ? "var(--s1)" : "var(--s3)" })))}
           <h2 style="margin-top:16px">Community</h2><p class="lead">Emirati and expat attendance, where recorded.</p>${hbars([{ name: "Emirati", value: k.emirati, color: "var(--s1)" }, { name: "Expat", value: k.expat, color: "var(--s2)" }, { name: "Not recorded", value: k.unknownCommunity, color: "var(--axis)" }].filter((x) => x.value))}</section>
         ${multi ? `<section class="card c12"><h2>Companies</h2><p class="lead">${h(per.label)}.</p><div class="co-cards">${coCards}</div></section>` : ""}
         ${named ? `<section class="card c6"><h2>Most regular participants</h2><p class="lead">Sessions attended in the period.</p>${table(["Name", "Company", "Sessions", "Last"], st.top.map((p) => [raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), sc.byCode[p.company].name, p.inRange, fmtDate(p.last)]), { num: [2] })}</section>
         <section class="card c6"><h2>Follow up</h2><p class="lead">Used to come regularly, nothing in the last 90 days.</p>${table(["Name", "Company", "Last session", "Total"], st.lapsed.slice(0, 10).map((p) => [raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), sc.byCode[p.company].name, fmtDate(p.last), p.dates.length]), { num: [3], empty: "Nobody to follow up." })}</section>` : ""}
-        <section class="card c12"><h2>Coming up</h2>${table(["Date", "Company", "Session", "Status"], upcoming.map((s) => [fmtDate(s.session_date) + (s.session_date === todayIs ? " · today" : ""), sc.byCode[s.company].name, named ? raw(sessLink(s, sc.byCode[s.company])) : C.sessionName(s, sc.byCode[s.company]), raw(stChip(s.status))]), { empty: "Nothing scheduled. Weekly rides open for check-in automatically on ride days." })}</section>
+        <section class="card c12"><h2>Coming up</h2>${table(["Date", "Company", "Session", "Status"], upcoming.map((u) => [fmtDate(u.d) + (u.d === todayIs ? " · today" : ""), sc.byCode[u.company].name, named && u.id ? raw(`<a href="/corporate/session/${u.id}">${h(u.name)}</a>`) : u.name, raw(stChip(u.status))]), { empty: "Nothing planned. Add the regular sessions on the Schedule page." })}</section>
       </div>`, { active: "/corporate" }));
   }));
 
@@ -119,7 +129,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
             <div class="row2"><label>Title <span class="hint">(optional, e.g. "Night ride at Yas")</span><input name="title" maxlength="120"></label>
               <label>Status<select name="status">${opt("Held", "Held", "Held")}${opt("Scheduled", "Scheduled (future)", "")}${opt("Cancelled", "Cancelled", "")}</select></label></div>
             <button class="btn primary">Create session</button></form></section>
-        <section class="card c4"><h2>Today</h2>${(await C.todaysSessions(pool, co)).map((s) => s.virtual ? `<p class="lead">Ride day: the weekly ride opens on the first check-in.</p><form method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${today}"><input type="hidden" name="kind" value="${C.RIDE}"><input type="hidden" name="status" value="Held"><button class="btn">Open today's ride to tick names</button></form>` : `<p>${sessLink(s, co)} ${stChip(s.status)}</p>`).join("") || `<p class="muted">No session today.</p>`}
+        <section class="card c4"><h2>Today</h2>${(await C.todaysSessions(pool, co)).map((s) => s.virtual ? `<p class="lead" style="margin:0 0 6px"><b>${h(label(s, co))}</b> is planned today; it opens at the first scan.</p><form method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${today}"><input type="hidden" name="kind" value="${h(s.kind)}"><input type="hidden" name="title" value="${h(s.title)}"><input type="hidden" name="status" value="Held"><button class="btn">Open it to tick names</button></form>` : `<p>${sessLink(s, co)} ${stChip(s.status)}</p>`).join("") || `<p class="muted">No session today. <a href="/corporate/schedule">Schedule</a></p>`}
           <p class="muted" style="font-size:13px">Self check-in link: <a href="/corporate/qr">QR codes</a></p></section>
         <section class="card c12"><h2>${h(per.label)}</h2><p class="lead">${sess.filter((s) => s.status === "Held").length} sessions held, ${sess.filter((s) => s.status === "Cancelled").length} cancelled. — means cancelled. Columns with a total but no ticks are headcount-only sessions.</p>${reg}</section>
       </div>`, { active: "/corporate/attendance" }));
@@ -488,7 +498,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <div class="poster" style="--co:${h(co.color)};max-width:620px;margin:0 auto"><p style="letter-spacing:.08em;text-transform:uppercase;font-size:13px">Corporate Cycling Programme</p>
         ${co.checkin_mode === "self" ? `<h3>${h(co.name)} ride check-in</h3><img src="${img}" alt="Check-in QR code"><p style="font-size:18px"><b>1.</b> Open your phone camera &nbsp; <b>2.</b> Scan &nbsp; <b>3.</b> Enter your name</p>`
     : `<h3>${h(co.name)} · get your personal QR code</h3><img src="${img}" alt="QR code"><p style="font-size:18px"><b>1.</b> Scan with your phone camera &nbsp; <b>2.</b> Enter your name and work email &nbsp; <b>3.</b> Save your QR code</p><p style="font-size:16px">Show your personal QR code to the ride lead at every ride.</p>`}
-        <p class="muted">${h(co.ride_days)}${co.ride_time ? " · " + h(co.ride_time) : ""}${co.location ? " · " + h(co.location) : ""}</p><p style="font-size:12px;color:#666">Cycling Development · Powered by Aurora</p></div>`, { active: "/corporate/qr", wide: false }));
+        <p class="muted">${(await C.schedules(pool, [co.code])).map((x) => h(C.schedName(x, co) + ": " + C.scheduleText(x))).join("<br>") || h(co.ride_days)}${co.location ? "<br>" + h(co.location) : ""}</p><p style="font-size:12px;color:#666">Cycling Development · Powered by Aurora</p></div>`, { active: "/corporate/qr", wide: false }));
   }));
   app.get("/corporate/qr/:code/cards", S, wrap(async (req, res) => {
     const co = (await C.companiesFor(user(req))).find((x) => x.code === req.params.code); if (!co) return res.redirect("/corporate/qr");
@@ -515,7 +525,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <div class="checkin-hero"><p class="muted" style="margin:0;letter-spacing:.06em;text-transform:uppercase;font-size:12px">Corporate Cycling Programme</p><h2 style="font-size:24px">${coChip(co)} check-in</h2><p class="lead" style="margin:0">${fmtDate(R.todayLocal())}</p></div>
       ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
       ${sessions.length ? `<form class="form" method="post" id="checkin">
-        ${many ? `<fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px"><legend style="font-weight:600;margin-bottom:4px">Which session?</legend>${sessions.map((s, i) => `<label class="check"><input type="radio" name="session" value="${s.virtual ? "ride" : s.id}" ${i === 0 ? "checked" : ""}> <span>${h(C.sessionName(s, co))}</span></label>`).join("")}</fieldset>` : `<input type="hidden" name="session" value="${sessions[0].virtual ? "ride" : sessions[0].id}"><p style="margin:0"><b>${h(C.sessionName(sessions[0], co))}</b></p>`}
+        ${many ? `<fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px"><legend style="font-weight:600;margin-bottom:4px">Which session?</legend>${sessions.map((s, i) => `<label class="check"><input type="radio" name="session" value="${h(C.sessionValue(s))}" ${i === 0 ? "checked" : ""}> <span>${h(label(s, co))}</span></label>`).join("")}</fieldset>` : `<input type="hidden" name="session" value="${h(C.sessionValue(sessions[0]))}"><p style="margin:0"><b>${h(label(sessions[0], co))}</b></p>`}
         <label>Your full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
         <label>Work email <span class="hint">(helps us find you; optional)</span><input name="email" type="email" maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
         <details><summary>First time? Tell us a little more</summary><div class="row2" style="margin-top:8px">
@@ -523,7 +533,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((x) => opt(x, x, v.gender)).join("")}</select></label></div></details>
         <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
         <button class="btn primary big">Check in</button>${privacyNote(co)}</form>`
-    : `<div class="alert info"><span class="ic">i</span><span>There's no ${h(co.name)} session to check in to today. Weekly rides: ${h(co.ride_days)}${co.ride_time ? " " + h(co.ride_time) : ""}.</span></div>`}
+    : `<div class="alert info"><span class="ic">i</span><span>There's no ${h(co.name)} session to check in to today.</span></div>`}
     </section>`;
   }
   function myQrForm(co, v = {}, err) {
@@ -558,10 +568,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (!ss.length) return again(null);
     if (R.clean(b.full_name).length < 3) return again("Please enter your full name.");
     if (b.email && !R.EMAIL_RE.test(R.normEmail(b.email))) return again("Please check your email address.");
-    const target = ss.find((s) => String(s.virtual ? "ride" : s.id) === String(b.session)) || ss[0];
+    const target = ss.find((s) => C.sessionValue(s) === String(b.session)) || ss[0];
     const out = await tx(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["corp|" + co.code + "|" + R.todayLocal()]);
-      const s = target.virtual ? await C.ensureSession(c, { company: co.code, date: R.todayLocal(), kind: C.RIDE, status: "Held", by: "QR self check-in" }) : (await c.query("SELECT * FROM corp_sessions WHERE id = $1", [target.id])).rows[0];
+      const s = await C.resolveSession(c, C.sessionValue(target), { by: "QR self check-in" });
       let p = await C.findParticipant(c, co.code, { email: b.email, name: b.full_name }), created = false;
       if (!p) { p = await C.createParticipant(c, { ...b, company: co.code, community: [...C.COMMUNITIES, "Other"].includes(b.community) ? b.community : "", gender: ["Female", "Male"].includes(b.gender) ? b.gender : "" }, "public", "QR self check-in"); created = true; }
       else if (b.email && !p.email) await c.query("UPDATE corp_participants SET email = $2, updated_at = now() WHERE id = $1", [p.id, R.normEmail(b.email)]);
@@ -622,7 +632,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const list = await C.companiesFor(user(req));
     const today = R.todayLocal();
     const options = [];
-    for (const co of list) for (const s of await C.todaysSessions(pool, co)) options.push({ v: s.virtual ? `ride:${co.code}` : String(s.id), label: `${co.name} · ${C.sessionName(s, co)}` });
+    for (const co of list) for (const s of await C.todaysSessions(pool, co)) options.push({ v: C.sessionValue(s), label: `${co.name} · ${label(s, co)}` });
     res.send(page(req, "Scan corporate QR", `
       <section class="card narrow"><h2>Scan personal QR codes</h2><p class="lead">Scan each staff member's personal code (it starts with CORP-) to record their attendance. For the WMF community, use <a href="/scan">WMF → Scan QR</a>.</p>
         ${options.length ? `<label class="f" style="display:grid;gap:4px"><span>Session today</span><select id="corpSession" class="inp">${options.map((o) => opt(o.v, o.label, "")).join("")}</select></label>`
@@ -650,14 +660,14 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const pr = await C.stats({ codes: sc.codes, start: addDays(prevEnd, -(days - 1)), end: prevEnd });
     const k = st.k, kp = pr.k, who = sc.sel ? sc.sel.name : "All corporate partners";
     const ch = (a, b) => (b ? `${a - b >= 0 ? "+" : ""}${Math.round(((a - b) / b) * 100)}%` : a ? "New" : "—");
-    const rowsK = [["Weekly rides held", k.rideSessions, kp.rideSessions], ["Ride attendance", k.rideAttendance, kp.rideAttendance], ["Average riders per ride", k.avgPerRide, kp.avgPerRide, 1],
+    const rowsK = [["Rides held", k.rideSessions, kp.rideSessions], ["Ride attendance", k.rideAttendance, kp.rideAttendance], ["Average riders per ride", k.avgPerRide, kp.avgPerRide, 1],
       ["Other activities & events", k.events, kp.events], ["Activity & event attendance", k.eventAttendance, kp.eventAttendance], ["Total attendance", k.attendance, kp.attendance],
       ["People taking part (named)", k.people, kp.people], ["New joiners", k.newJoiners, kp.newJoiners], ["Active participants (2+ in 90 days)", k.active, kp.active], ["Sessions cancelled", k.cancelled, kp.cancelled]];
     const months = st.months.filter((m) => m.inRange);
     const evs = st.sessions.filter((s) => s.kind !== C.RIDE);
     // plain-language highlights, built only from the numbers above
     const hl = [];
-    if (k.attendance) hl.push(`${nf(k.attendance)} attendances across ${nf(k.rideSessions)} weekly ride${k.rideSessions === 1 ? "" : "s"} and ${nf(k.events)} other ${k.events === 1 ? "activity" : "activities"}.`);
+    if (k.attendance) hl.push(`${nf(k.attendance)} attendances across ${nf(k.rideSessions)} ride${k.rideSessions === 1 ? "" : "s"} and ${nf(k.events)} other ${k.events === 1 ? "activity" : "activities"}.`);
     if (kp.attendance) hl.push(`Total attendance ${k.attendance >= kp.attendance ? "rose" : "fell"} ${Math.abs(Math.round(((k.attendance - kp.attendance) / kp.attendance) * 100))}% compared with the previous ${days} days.`);
     if (k.newJoiners) hl.push(`${nf(k.newJoiners)} new joiner${k.newJoiners > 1 ? "s" : ""} took part for the first time.`);
     if (k.repeatRate != null && k.people) hl.push(`${pct(k.repeatRate)} of participants came to two or more sessions.`);
@@ -666,14 +676,14 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (best && months.length > 1) hl.push(`Busiest month: ${monLabel(best.month, true)} with ${nf(best.attendance)} attendances.`);
     const chart = columns({ categories: months.map((m) => m.month), short: (m) => monLabel(m), height: 200, label: "Attendance by month",
       series: sc.codes.length > 1 ? sc.codes.map((code) => ({ name: sc.byCode[code].name, color: sc.byCode[code].color, values: months.map((m) => m.byCo[code]) }))
-        : [{ name: "Weekly rides", color: "#2f7fd6", values: months.map((m) => m.rideAttendance) }, { name: "Other activities & events", color: "#7b62cf", values: months.map((m) => m.eventAttendance) }] });
+        : [{ name: "Rides", color: "#2f7fd6", values: months.map((m) => m.rideAttendance) }, { name: "Other activities & events", color: "#7b62cf", values: months.map((m) => m.eventAttendance) }] });
     res.send(page(req, "Corporate report", `
       <div class="toolbar noprint" style="align-items:center"><button class="btn primary" data-print>Print or save as PDF</button><a class="btn" href="/corporate/report.xlsx?${qs({ company: sc.sel && sc.sel.code, ...perQs(per) })}">Download Excel</a></div>
       ${periodControls(per, companySelect(sc))}
       <div class="report-wrap"><article class="a4" id="report">
         <h2>Corporate Cycling Programme · ${h(who)}</h2>
         <p class="meta">${h(per.label)} (${fmtDate(per.start)} – ${fmtDate(per.end < R.todayLocal() ? per.end : R.todayLocal())}) · compared with the previous ${days} days · prepared ${fmtDate(R.todayLocal())} by the Cycling Development department</p>
-        <div class="kpis"><div><b>${nf(k.attendance)}</b><span>Total attendance</span></div><div><b>${nf(k.rideSessions)}</b><span>Weekly rides held</span></div><div><b>${nf(k.avgPerRide, 1)}</b><span>Average riders per ride</span></div><div><b>${nf(k.newJoiners)}</b><span>New joiners</span></div></div>
+        <div class="kpis"><div><b>${nf(k.attendance)}</b><span>Total attendance</span></div><div><b>${nf(k.rideSessions)}</b><span>Rides held</span></div><div><b>${nf(k.avgPerRide, 1)}</b><span>Average riders per ride</span></div><div><b>${nf(k.newJoiners)}</b><span>New joiners</span></div></div>
         <h3>Highlights</h3>${hl.length ? `<ul>${hl.map((x) => `<li>${h(x)}</li>`).join("")}</ul>` : "<p>No sessions in this period.</p>"}
         <h3>Key figures</h3>${table(["Measure", h(per.label), "Previous period", "Change"], rowsK.map(([l, a, b, d]) => [l, nf(a, d || 0), nf(b, d || 0), ch(a || 0, b || 0)]), { num: [1, 2, 3] })}
         <h3>Attendance by month</h3>${chart}
@@ -697,6 +707,100 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").set("Content-Disposition", `attachment; filename="CORPORATE_TRACKER_${sc.sel ? sc.sel.code : "UNIFIED"}_${R.todayLocal()}.xlsx"`).send(buf);
   }));
 
+  // ===================================================== schedule: regular sessions per company (adjustable)
+  const schedFields = (b) => ({
+    kind: C.KINDS.includes(b.kind) ? b.kind : C.RIDE, title: R.clean(b.title).slice(0, 80),
+    weekday: Math.min(6, Math.max(0, +b.weekday || 0)), week: C.WEEKS.some((w) => String(w[0]) === String(b.week)) ? +b.week : 0,
+    start_time: /^\d{2}:\d{2}$/.test(b.start_time || "") ? b.start_time : null, location: R.clean(b.location) || null,
+    starts: /^\d{4}-\d{2}-\d{2}$/.test(b.starts || "") ? b.starts : R.todayLocal(), ends: /^\d{4}-\d{2}-\d{2}$/.test(b.ends || "") ? b.ends : null,
+  });
+  const schedRow = (x, co, action) => `<form class="inline-form" method="post" action="${action}" style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <select class="inp" name="kind" aria-label="Activity">${C.KINDS.map((k) => opt(k, k === C.RIDE ? "Ride" : k, x.kind)).join("")}</select>
+      <input class="inp" name="title" value="${h(x.title)}" placeholder="Name (e.g. Aurora Yoga)" aria-label="Name" maxlength="80" style="width:170px">
+      <select class="inp" name="week" aria-label="Which weeks">${C.WEEKS.map(([v, l]) => opt(v, l, x.week)).join("")}</select>
+      <select class="inp" name="weekday" aria-label="Day">${C.WEEKDAYS_LONG.map((d, i) => opt(i, d, x.weekday)).join("")}</select>
+      <input class="inp" type="time" name="start_time" value="${h(x.start_time)}" aria-label="Start time">
+      <input class="inp" name="location" value="${h(x.location)}" placeholder="Location" aria-label="Location" maxlength="80" style="width:140px">
+      <label class="muted" style="font-size:13px">From <input class="inp" type="date" name="starts" value="${h(x.starts || R.todayLocal())}"></label>
+      <label class="muted" style="font-size:13px">Until <input class="inp" type="date" name="ends" value="${h(x.ends)}"></label>
+      ${x.id ? `<select class="inp" name="active" aria-label="On or paused">${opt("1", "On", x.active ? "1" : "0")}${opt("0", "Paused", x.active ? "1" : "0")}</select>
+        <button class="btn tblbtn">Save</button><button class="btn tblbtn danger" name="action" value="delete" formnovalidate>Remove</button>` : `<button class="btn primary tblbtn">Add</button>`}
+    </form>`;
+  app.get("/corporate/schedule", S, wrap(async (req, res) => {
+    const list = await C.companiesFor(user(req)), codes = list.map((x) => x.code), today = R.todayLocal();
+    const all = await C.schedules(pool, codes, { all: true });
+    const occ = await C.occurrences(pool, codes, addDays(today, -21), addDays(today, 56));
+    const counts = new Map((await pool.query("SELECT session_id, count(*)::int n FROM corp_attendance WHERE session_id = ANY($1) GROUP BY session_id", [occ.filter((o) => o.session).map((o) => o.session.id)])).rows.map((r) => [r.session_id, r.n]));
+    const dateRow = (o, co) => {
+      const s = o.session, past = o.date < today, n = s ? counts.get(s.id) || 0 : 0;
+      const status = s ? (s.status === "Cancelled" ? `Cancelled${s.remarks ? ": " + s.remarks : ""}` : `${s.status} · ${n || s.headcount || 0} attended`) : past ? "Nothing recorded" : o.date === today ? "Today · opens at the first scan" : "Planned";
+      const act = s && s.status === "Cancelled"
+        ? (n ? "" : `<form method="post" action="/corporate/schedule/${o.sc.id}/date" class="inline-form"><input type="hidden" name="date" value="${o.date}"><button class="btn tblbtn" name="action" value="restore">Undo cancel</button></form>`)
+        : `${s ? `<a class="btn tblbtn" href="/corporate/session/${s.id}">Open</a>` : past || o.date === today ? `<form method="post" action="/corporate/sessions" class="inline-form"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${o.date}"><input type="hidden" name="kind" value="${h(o.sc.kind)}"><input type="hidden" name="title" value="${h(o.sc.title)}"><input type="hidden" name="status" value="Held"><button class="btn tblbtn">Record attendance</button></form>` : ""}
+           ${!s || !n ? `<form method="post" action="/corporate/schedule/${o.sc.id}/date" class="inline-form"><input type="hidden" name="date" value="${o.date}"><input class="inp" name="reason" placeholder="Reason (holiday, weather…)" maxlength="120" style="width:180px" aria-label="Reason"><button class="btn tblbtn danger" name="action" value="cancel">Cancel this date</button></form>` : ""}`;
+      return [fmtDate(o.date) + " " + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(o.date + "T12:00:00Z").getUTCDay()], C.schedName(o.sc, co) + (o.sc.start_time ? " · " + o.sc.start_time : ""), raw(`<span class="status-chip st-${s ? s.status : past ? "Absent" : "Scheduled"}">${h(status)}</span>`), raw(act)];
+    };
+    const cards = list.map((co) => {
+      const mine = all.filter((x) => x.company === co.code), dates = occ.filter((o) => o.sc.company === co.code);
+      return `<section class="card" id="${h(co.code)}"><h2>${coChip(co)}</h2>
+        <p class="lead">${mine.filter((x) => x.active).map((x) => `<b>${h(C.schedName(x, co))}</b>: ${h(C.scheduleText(x))}`).join(" · ") || "No regular sessions yet."}</p>
+        ${mine.map((x) => schedRow(x, co, `/corporate/schedule/${x.id}`)).join("")}
+        <details style="margin-top:8px"><summary><b>Add a regular session</b></summary>${schedRow({ kind: C.RIDE, title: "", week: 0, weekday: 4, start_time: "", location: co.location || "", starts: today, ends: "", active: true }, co, `/corporate/schedule?company=${encodeURIComponent(co.code)}`)}</details>
+        <h3 style="font-size:15px;margin-top:14px">Dates (last 3 weeks and next 8 weeks)</h3>
+        ${table(["Date", "Session", "Status", ""], dates.map((o) => dateRow(o, co)), { empty: "No planned dates in this window." })}</section>`;
+    });
+    res.send(page(req, "Corporate schedule", `
+      <section class="card"><h2>Regular sessions</h2><p class="lead">Set each company's regular sessions once: which day, which week of the month (every week, or e.g. the 1st Thursday), time and place.
+        On the day, the session appears on the scanner and the company link by itself, and opens at the first scan. Holiday or bad weather? <b>Cancel this date</b> below; the rest of the schedule stays the same.
+        "1st Thursday" means the first Thursday of the month (days 1–7), "2nd" days 8–14, and so on.</p></section>
+      ${cards.join("")}`, { active: "/corporate/schedule" }));
+  }));
+  async function schedAllowed(req, id) {
+    const x = (await pool.query("SELECT * FROM corp_schedules WHERE id = $1", [+id || 0])).rows[0];
+    return x && (await C.companiesFor(user(req))).some((c) => c.code === x.company) ? x : null;
+  }
+  app.post("/corporate/schedule", S, wrap(async (req, res) => {
+    const co = (await C.companiesFor(user(req))).find((x) => x.code === req.query.company);
+    if (!co) return res.redirect("/corporate/schedule");
+    const f = schedFields(req.body), k = Object.keys(f);
+    const r = (await pool.query(`INSERT INTO corp_schedules (company, ${k}) VALUES ($1, ${k.map((_, i) => "$" + (i + 2))}) RETURNING id`, [co.code, ...k.map((x) => f[x])])).rows[0];
+    await audit(pool, actor(req), "corp.schedule.create", "corp_schedule", String(r.id), null, { company: co.code, ...f });
+    setFlash(req, "ok", `Added: ${C.schedName(f, co)}, ${C.scheduleText(f)}.`);
+    res.redirect("/corporate/schedule#" + co.code);
+  }));
+  app.post("/corporate/schedule/:id", S, wrap(async (req, res) => {
+    const x = await schedAllowed(req, req.params.id); if (!x) return res.redirect("/corporate/schedule");
+    if (req.body.action === "delete") {
+      await pool.query("DELETE FROM corp_schedules WHERE id = $1", [x.id]);
+      await audit(pool, actor(req), "corp.schedule.delete", "corp_schedule", String(x.id), x, null);
+      setFlash(req, "ok", "Removed. Sessions already recorded stay in the register.");
+    } else {
+      const f = { ...schedFields(req.body), starts: /^\d{4}-\d{2}-\d{2}$/.test(req.body.starts || "") ? req.body.starts : x.starts, active: req.body.active !== "0" }, k = Object.keys(f);
+      await pool.query(`UPDATE corp_schedules SET ${k.map((y, i) => `${y} = $${i + 2}`).join(", ")} WHERE id = $1`, [x.id, ...k.map((y) => f[y])]);
+      await audit(pool, actor(req), "corp.schedule.update", "corp_schedule", String(x.id), x, f);
+      setFlash(req, "ok", "Schedule saved.");
+    }
+    res.redirect("/corporate/schedule#" + x.company);
+  }));
+  app.post("/corporate/schedule/:id/date", S, wrap(async (req, res) => {
+    const x = await schedAllowed(req, req.params.id), d = req.body.date;
+    if (!x || !/^\d{4}-\d{2}-\d{2}$/.test(d || "")) return res.redirect("/corporate/schedule");
+    await tx(async (c) => {
+      if (req.body.action === "restore") {
+        const s = (await c.query("SELECT * FROM corp_sessions WHERE company = $1 AND session_date = $2 AND kind = $3 AND title = $4", [x.company, d, x.kind, x.title || ""])).rows[0];
+        const n = s ? Number((await c.query("SELECT count(*) n FROM corp_attendance WHERE session_id = $1", [s.id])).rows[0].n) : 0;
+        if (s && s.status === "Cancelled" && !n) await c.query("DELETE FROM corp_sessions WHERE id = $1", [s.id]);
+        await audit(c, actor(req), "corp.schedule.restore", "corp_schedule", String(x.id), null, { date: d });
+      } else {
+        const s = await C.ensureSession(c, { company: x.company, date: d, kind: x.kind, title: x.title, status: "Cancelled", by: actor(req) });
+        await c.query("UPDATE corp_sessions SET status = 'Cancelled', remarks = coalesce($2, remarks) WHERE id = $1", [s.id, R.clean(req.body.reason) || null]);
+        await audit(c, actor(req), "corp.schedule.cancel", "corp_schedule", String(x.id), null, { date: d, reason: R.clean(req.body.reason) });
+      }
+    });
+    setFlash(req, "ok", req.body.action === "restore" ? `${fmtDate(d)} is back on.` : `${fmtDate(d)} cancelled. It won't appear on the scanner, and reports count it as cancelled.`);
+    res.redirect("/corporate/schedule#" + x.company);
+  }));
+
   // ===================================================== admin: import & companies
   app.get("/corporate/admin", A, wrap(async (req, res) => {
     const list = await C.companies(pool, { all: true });
@@ -707,12 +811,11 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <p class="muted">Now: ${n.p} participants, ${n.s} sessions, ${n.a} named check-ins.</p></section>
       <section class="card c6"><h2>Add a partner company</h2><form class="form" method="post" action="/corporate/admin/companies">
         <div class="row2"><label>Short code <span class="hint">(letters, e.g. ADNOC)</span><input name="code" required pattern="[A-Za-z]{2,12}" maxlength="12"></label><label>Name<input name="name" required maxlength="60"></label></div>
-        <div class="row2"><label>Ride days<input name="ride_days" value="Thu" maxlength="40"></label><label>Colour<input type="color" name="color" value="#7b62cf"></label></div>
+        <div class="row2"><label>Colour<input type="color" name="color" value="#7b62cf"></label></div><p class="muted" style="margin:0;font-size:13px">Then add its regular sessions on Corporate → Schedule.</p>
         <button class="btn">Add company</button></form></section>
       <section class="card c12"><h2>Partner companies</h2>${list.map((co) => `<form class="inline-form" method="post" action="/corporate/admin/companies/${h(co.code)}" style="padding:8px 0;border-bottom:1px solid var(--line)">
         <b style="min-width:70px">${h(co.code)}</b><input class="inp" name="name" value="${h(co.name)}" aria-label="Name" maxlength="60">
-        <input class="inp" name="ride_days" value="${h(co.ride_days)}" aria-label="Ride days" title="Ride days, e.g. Tue, Thu" style="width:110px">
-        <input class="inp" name="ride_time" value="${h(co.ride_time)}" aria-label="Ride time" placeholder="Time" style="width:90px">
+        <a class="btn tblbtn" href="/corporate/schedule#${h(co.code)}">Schedule</a>
         <input class="inp" name="location" value="${h(co.location)}" aria-label="Location" placeholder="Location" style="width:160px">
         <input class="inp" name="contact" value="${h(co.contact)}" aria-label="Contact" placeholder="Company contact" style="width:170px">
         <input type="color" name="color" value="${h(co.color || "#4d5ac2")}" aria-label="Colour">
@@ -720,7 +823,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <select class="inp" name="qr_access" aria-label="Who can get a personal code">${opt("anyone", "Anyone can get a code", co.qr_access)}${opt("list", "Only people on our list", co.qr_access)}</select>
         <select class="inp" name="checkin_mode" aria-label="How attendance is taken">${opt("personal", "Personal QR codes", co.checkin_mode)}${opt("self", "Self check-in link", co.checkin_mode)}</select>
         <select class="inp" name="active" aria-label="Status">${opt("1", "Active", co.active ? "1" : "0")}${opt("0", "Paused", co.active ? "1" : "0")}</select>
-        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Ride days: the weekly ride opens for scanning on these days (three-letter days, separated by commas). Attendance: <b>Personal QR codes</b> means each person shows their own code to the ride lead and the company link only hands out codes; <b>Self check-in link</b> lets people check themselves in with the company link. <b>Work email ending</b> (e.g. nmdc.ae): only those emails can collect a personal code. <b>Only people on our list</b>: staff can collect a code only if their email is already on the participant list (upload the company's staff list on Corporate → Participants).</p></section>
+        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Regular sessions (days, weeks of the month, times) are set on <a href="/corporate/schedule">Corporate → Schedule</a>. Attendance: <b>Personal QR codes</b> means each person shows their own code to the ride lead and the company link only hands out codes; <b>Self check-in link</b> lets people check themselves in with the company link. <b>Work email ending</b> (e.g. nmdc.ae): only those emails can collect a personal code. <b>Only people on our list</b>: staff can collect a code only if their email is already on the participant list (upload the company's staff list on Corporate → Participants).</p></section>
     </div>`, { active: "/admin" }));
   }));
   app.post("/corporate/admin/companies", A, wrap(async (req, res) => {
@@ -733,9 +836,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     res.redirect("/corporate/admin");
   }));
   app.post("/corporate/admin/companies/:code", A, wrap(async (req, res) => {
-    const b = req.body;
+    const b = req.body, co0 = (await pool.query("SELECT * FROM corp_companies WHERE code = $1", [req.params.code])).rows[0];
+    if (!co0) return res.redirect("/corporate/admin");
     await pool.query("UPDATE corp_companies SET name = $2, ride_days = $3, ride_time = $4, location = $5, contact = $6, color = $7, active = $8, checkin_mode = $9, email_domain = $10, qr_access = $11 WHERE code = $1",
-      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || "Thu", R.clean(b.ride_time) || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0", b.checkin_mode === "self" ? "self" : "personal",
+      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || co0.ride_days || "Thu", R.clean(b.ride_time) || co0.ride_time || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0", b.checkin_mode === "self" ? "self" : "personal",
         String(b.email_domain || "").toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, "")).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).join(", ") || null, b.qr_access === "list" ? "list" : "anyone"]);
     await audit(pool, actor(req), "corp.company.update", "corp_company", req.params.code, null, b);
     setFlash(req, "ok", "Saved.");

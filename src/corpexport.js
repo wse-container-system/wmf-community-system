@@ -76,16 +76,16 @@ async function reportWorkbook({ sc, per, named }) {
   s.addRow([`${per.label} (${per.start} to ${per.end < R.todayLocal() ? per.end : R.todayLocal()}) · prepared ${R.todayLocal()}`]);
   s.addRow([]);
   styleHead(s.addRow(["Measure", "Value"]));
-  for (const [l, v] of [["Total attendance", k.attendance], ["Weekly rides held", k.rideSessions], ["Ride attendance", k.rideAttendance], ["Average riders per ride", k.avgPerRide == null ? null : Math.round(k.avgPerRide * 10) / 10],
+  for (const [l, v] of [["Total attendance", k.attendance], ["Rides held", k.rideSessions], ["Ride attendance", k.rideAttendance], ["Average riders per ride", k.avgPerRide == null ? null : Math.round(k.avgPerRide * 10) / 10],
     ["Other activities & events held", k.events], ["Activity & event attendance", k.eventAttendance], ["People taking part (named)", k.people], ["New joiners", k.newJoiners],
     ["Active participants (2+ sessions in 90 days)", k.active], ["Came back again (2+ sessions in period)", k.repeatRate], ["Sessions cancelled", k.cancelled], ["Emirati attendance", k.emirati], ["Expat attendance", k.expat], ["Community not recorded", k.unknownCommunity]]) s.addRow([l, v]);
   s.getCell("B14").numFmt = "0%";
   s.getColumn(1).width = 46; s.getColumn(2).width = 14;
   const months = st.months.filter((m) => m.inRange);
-  sheetTable(wb, "Monthly", ["Month", "Weekly rides", "Ride attendance", "Activities & events", "Their attendance", "Total attendance", "People (named)", "Cancelled", ...(sc.codes.length > 1 ? sc.codes.map((c) => sc.byCode[c].name) : [])],
+  sheetTable(wb, "Monthly", ["Month", "Rides", "Ride attendance", "Activities & events", "Their attendance", "Total attendance", "People (named)", "Cancelled", ...(sc.codes.length > 1 ? sc.codes.map((c) => sc.byCode[c].name) : [])],
     months.map((m) => [monLabel(m.month, true), m.rides, m.rideAttendance, m.events, m.eventAttendance, m.attendance, m.people, m.cancelled, ...(sc.codes.length > 1 ? sc.codes.map((c) => m.byCo[c]) : [])]),
     [16], { totals: [1, 2, 3, 4, 5, 7, ...(sc.codes.length > 1 ? sc.codes.map((_, i) => 8 + i) : [])] });
-  sheetTable(wb, "By company", ["Company", "Weekly rides", "Average per ride", "Activities & events", "Total attendance", "People (named)", "Active now", "Active roster", "Cancelled"],
+  sheetTable(wb, "By company", ["Company", "Rides", "Average per ride", "Activities & events", "Total attendance", "People (named)", "Active now", "Active roster", "Cancelled"],
     st.byCompany.map((b) => [sc.byCode[b.code].name, b.sessions, b.avg == null ? null : Math.round(b.avg * 10) / 10, b.events, b.attendance, b.people, b.active, b.roster, b.cancelled]), [18], { totals: [1, 3, 4, 8] });
   const ev = sheetTable(wb, "Sessions", ["Date", "Company", "Activity", "Title", "Status", "Attendance", "Named check-ins", "Headcount", "Remarks"],
     st.sessions.map((x) => [toDate(x.d), sc.byCode[x.company].name, x.kind, x.title || "", x.status, x.attendance, x.named, x.headcount, x.remarks || ""]), [12, 14, 14, 26, 11, 11, 14, 11, 40], { totals: [5] });
@@ -97,7 +97,7 @@ async function reportWorkbook({ sc, per, named }) {
   }
   const ab = wb.addWorksheet("About");
   for (const t of ["How the figures are counted", "Attendance counts each person once per session. Sessions recorded only as a headcount count that headcount.",
-    "Weekly rides are the regular programme rides; running, yoga, workshops and events are counted as activities & events.",
+    "Rides are the programme rides (weekly or monthly); running, yoga, workshops and events are counted as activities & events.",
     "Active participants attended 2 or more sessions in the 90 days to the end of the period.", "New joiners took part for the first time in the period.",
     named ? "This file contains participants' names: keep it inside the department." : "This file contains no names."]) ab.addRow([t]);
   ab.getRow(1).font = { bold: true }; ab.getColumn(1).width = 110;

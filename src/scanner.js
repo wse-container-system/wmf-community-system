@@ -53,13 +53,13 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
         ${onCal.length ? `<p class="sc-note">On the calendar today: ${onCal.map((o) => `${o.time ? h(o.time) + " " : ""}${h(o.title)}`).join(" · ")}</p>` : ""}`;
     }
     if (showC) {
-      const opts = [["ride:AUTO", "Today's ride (any company)"]];
+      const opts = [["ride:AUTO", "Today's session (any company)"]];
       for (const co of await C.companies()) {
         const ss = await C.todaysSessions(pool, co);
-        for (const s of ss) if (!s.virtual) opts.push([String(s.id), `${co.name} · ${C.sessionName(s, co)}`]);
+        for (const s of ss) opts.push([C.sessionValue(s), `${co.name} · ${C.sessionName(s, co)}${s.start_time ? " · " + s.start_time : ""}`]);
       }
       corp = `<label class="sc-field"><span>Corporate session</span><select id="corpSession" class="inp">${opts.map(([v, t], i) => `<option value="${h(v)}" ${i === 0 ? "selected" : ""}>${h(t)}</option>`).join("")}</select></label>
-        <p class="sc-note">Leave it on “Today's ride” for the weekly rides: each person goes into their own company's ride. Choose an event only when scanning for that event.</p>`;
+        <p class="sc-note">Leave it on “Today's session”: each person goes into their own company's session for today. Pick a session from the list only when a company has two sessions on the same day.</p>`;
     }
     await pool.query("UPDATE scanner_links SET last_opened = now() WHERE id = $1", [l.id]);
     res.set("Cache-Control", "no-store").send(shell("Attendance scanner", `

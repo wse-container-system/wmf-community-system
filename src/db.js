@@ -276,6 +276,22 @@ CREATE TABLE IF NOT EXISTS corp_sessions (
   UNIQUE (company, session_date, kind, title)
 );
 CREATE INDEX IF NOT EXISTS corp_sessions_date ON corp_sessions (session_date);
+ALTER TABLE corp_sessions ADD COLUMN IF NOT EXISTS start_time TEXT;
+-- regular sessions per company: weekday + which week of the month (0 = every week, 1–4, -1 = last) + time
+CREATE TABLE IF NOT EXISTS corp_schedules (
+  id SERIAL PRIMARY KEY,
+  company TEXT NOT NULL REFERENCES corp_companies(code),
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  week INTEGER NOT NULL DEFAULT 0 CHECK (week BETWEEN -1 AND 4),
+  start_time TEXT,
+  location TEXT,
+  starts DATE,
+  ends DATE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS corp_attendance (
   id SERIAL PRIMARY KEY,
   session_id INTEGER NOT NULL REFERENCES corp_sessions(id) ON DELETE CASCADE,
