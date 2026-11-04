@@ -105,10 +105,54 @@
       .finally(function () { photo.value = ""; try { reader.clear(); } catch (e) { /* nothing to clear */ } });
   });
 
-  // ---------- typed ID
+  // ---------- no QR code: an ID is checked in straight away; anything else is a search (WMF)
+  var looksLikeId = function (v) { return /^\s*(?:wmf[\s-]*)?\d{1,6}\s*$/i.test(v) || /^\s*(corp-)?[a-z]{2,12}[\s-]?\d{1,5}\s*$/i.test(v) || /^\s*WMF-\d{6}\s*$/i.test(v); };
+  var hits = $("#hits"), timer = null;
+  function find(q) {
+    return fetch("/s/" + encodeURIComponent(token) + "/find", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q: q }) })
+      .then(function (r) { return r.ok ? r.json() : []; }, function () { return []; })
+      .then(function (list) {
+        hits.innerHTML = list.length ? list.map(function (m) { return '<li><span><b>' + esc(m.name) + '</b> <span class="muted">' + esc(m.id) + (m.hint ? " · " + esc(m.hint) : "") + '</span></span><button class="btn tblbtn primary" data-id="' + esc(m.id) + '">Check in</button></li>'; }).join("")
+          : '<li class="muted">No match. Register them below as a new rider.</li>';
+      });
+  }
+  $("#idInput").addEventListener("input", function (e) {
+    clearTimeout(timer);
+    var v = e.target.value.trim();
+    if (mode !== "wmf" || v.length < 3 || looksLikeId(v)) { hits.innerHTML = ""; return; }
+    timer = setTimeout(function () { find(v); }, 300);
+  });
   $("#byId").addEventListener("submit", function (e) {
     e.preventDefault();
     var v = $("#idInput").value.trim(); if (!v) return;
-    last = ""; send(v); $("#idInput").value = "";
+    if (looksLikeId(v) || mode !== "wmf") { last = ""; send(v); $("#idInput").value = ""; hits.innerHTML = ""; }
+    else find(v);
+  });
+  hits.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-id]"); if (!b) return;
+    last = ""; send(b.getAttribute("data-id")); hits.innerHTML = ""; $("#idInput").value = "";
+  });
+
+  // ---------- new rider: register, check in, then send their personal QR code
+  var walk = $("#walkin");
+  if (walk) walk.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = Object.fromEntries(new FormData(walk).entries()); body.activityId = ctx().activityId;
+    var btn = walk.querySelector("button"); btn.disabled = true;
+    fetch("/s/" + encodeURIComponent(token) + "/walkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        show(r, body.full_name);
+        if (r.status === "error") return;
+        var msg = "Hi " + r.first + ", welcome to WMN Moving FWD! Here is your personal QR code for our rides: " + r.qrUrl + " \nPlease save it and show it to the ride leader at every ride.";
+        var done = $("#newDone"); done.hidden = false;
+        done.innerHTML = '<div class="qrbox" style="margin-top:10px"><img src="' + r.qr + '" alt="QR code for ' + esc(r.id) + '"><span class="id">' + esc(r.id) + '</span></div>'
+          + '<p class="sc-note" style="text-align:center">They can also take a photo of this screen.</p><div class="sc-send">'
+          + (r.phone ? '<a class="btn primary" href="https://wa.me/' + encodeURIComponent(r.phone) + '?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener">Send on WhatsApp</a>' : "")
+          + (r.email ? '<a class="btn" href="mailto:' + encodeURIComponent(r.email) + '?subject=' + encodeURIComponent("Your WMF QR code") + '&body=' + encodeURIComponent(msg) + '">Send by email</a>' : "")
+          + '<button class="btn" type="button" data-copy="' + esc(r.qrUrl) + '">Copy link</button></div>';
+        walk.reset();
+      }, function () { show({ status: "error", message: "No connection. Try again." }); })
+      .finally(function () { btn.disabled = false; });
   });
 })();

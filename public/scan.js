@@ -105,7 +105,11 @@
     try {
       const r = await post("/api/walkin", { ...body, ...ctx() });
       show(r);
-      if (r.status === "ok" || r.status === "duplicate") { e.target.reset(); if (r.created) $("#result").insertAdjacentHTML("beforeend", `<span>New member ${esc(r.memberId)}. <a href="/members/${encodeURIComponent(r.memberId)}">Show their QR code</a></span>`); }
+      if (r.status === "ok" || r.status === "duplicate") {
+        e.target.reset();
+        const msg = `Hi ${r.first || ""}, welcome to WMN Moving FWD! Here is your personal QR code for our rides: ${r.qrUrl} \nPlease save it and show it to the ride leader at every ride.`;
+        $("#result").insertAdjacentHTML("beforeend", `<span>${r.created ? "New member" : "Member"} ${esc(r.memberId)} · send their QR code:</span><span class="sc-send">${r.phone ? `<a class="btn primary" href="https://wa.me/${encodeURIComponent(r.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}${r.email ? `<a class="btn" href="mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent("Your WMF QR code")}&body=${encodeURIComponent(msg)}">Email</a>` : ""}<a class="btn" href="/members/${encodeURIComponent(r.memberId)}">Show QR</a></span>`);
+      }
     } catch (x) { show({ status: "error", message: "No connection. Try again." }); }
   });
 })();
