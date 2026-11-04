@@ -142,7 +142,7 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/hub.css"><link rel="icon" type="image/png" href="/brand/favicon.png"></head>
 <body><div class="app"><header class="top"><div class="brand"><span class="cd-mark" aria-hidden="true"><svg viewBox="0 0 40 40" width="30" height="30"><circle cx="11" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="29" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M11 26 L18 13 L26 13 M18 13 L23 26 L29 26 M24 9 h5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-<div class="brand-name"><h1>Cycling Development</h1><p class="sub">Department${l && l.staff_name ? " · " + h(l.staff_name) : ""}</p></div></div>
+<div class="brand-name"><h1>Cycling Development</h1><p class="sub">Department · ${l && l.staff_name ? h(l.staff_name) : "view only"}</p></div></div>
 <nav class="shell-nav"><a href="/d/${h(l.token)}/schedule">Schedule</a><a href="/d/${h(l.token)}/leave">Leave</a></nav></header>
 <main id="main" style="display:grid;gap:14px">${body}</main><footer class="foot"><span>Cycling Development · Powered by Aurora</span><span>UAE time</span></footer></div><script src="/ui.js"></script></body></html>`;
   async function shareCtx(req, res) {
@@ -296,19 +296,21 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
   app.get("/department/share", A, wrap(async (req, res) => {
     const rows = (await pool.query("SELECT d.*, s.full_name AS staff_name FROM dept_share_links d LEFT JOIN dept_staff s ON s.id = d.staff_id ORDER BY d.active DESC, d.created_at DESC")).rows;
     const staff = await allStaff(), base = `${req.protocol}://${req.get("host")}`;
-    res.send(page(req, "Share", `<section class="card"><h2>Personal link</h2><p class="lead">For someone who should use the department without the rest of the hub (e.g. your manager). They see the team schedule and leave, and can change <b>only their own</b> time and leave. Add them on Team first.</p>
-      <form class="inline-form" method="post" action="/department/share"><select class="inp" name="staff_id" required aria-label="Whose link">${staff.map((s) => `<option value="${s.id}">${h(s.full_name)}</option>`).join("")}</select><button class="btn primary">Make link</button></form></section>
+    res.send(page(req, "Share", `<section class="card"><h2>Personal link</h2><p class="lead"><b>View only</b> (e.g. HR): sees the team schedule and leave, and can download the timesheet; can't change anything. <b>A team member</b> (e.g. your manager): the same, and can change only their own time and leave.</p>
+      <form class="inline-form" method="post" action="/department/share"><select class="inp" name="staff_id" aria-label="Who is the link for"><option value="">View only (HR)</option>${staff.map((s) => `<option value="${s.id}">${h(s.full_name)} (can edit own)</option>`).join("")}</select><button class="btn primary">Make link</button></form></section>
       ${rows.map((l) => `<section class="card" style="display:grid;gap:8px;${l.active ? "" : "opacity:.6"}"><div class="card-head"><h2>${h(l.staff_name || l.label)} ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}</h2><span class="muted" style="font-size:13px">${l.staff_id ? "Can edit own time and leave" : "View only"} · last opened ${fmtTs(l.last_opened)}</span></div>
         ${l.active ? `<div class="toolbar" style="margin:0"><button class="btn primary" data-copy="${h(base)}/d/${h(l.token)}">Copy link</button><a class="btn" href="/d/${h(l.token)}" target="_blank" rel="noopener">Open</a>
           <form method="post" action="/department/share/${l.id}" style="display:inline"><button class="btn danger" name="active" value="0">Switch off</button></form></div>`
     : `<form method="post" action="/department/share/${l.id}"><button class="btn" name="active" value="1">Switch on with a new link</button></form>`}</section>`).join("")}`, { active: "/department/share" }));
   }));
   app.post("/department/share", A, wrap(async (req, res) => {
-    const s = (await pool.query("SELECT * FROM dept_staff WHERE id = $1 AND active", [+req.body.staff_id || 0])).rows[0];
-    if (!s) return res.redirect("/department/share");
-    await pool.query("INSERT INTO dept_share_links (token, label, staff_id, created_by) VALUES ($1,$2,$3,$4)", [crypto.randomBytes(12).toString("base64url"), s.full_name, s.id, actor(req)]);
-    await audit(pool, actor(req), "dept.share.create", "dept_share_links", s.full_name, null, null);
-    setFlash(req, "ok", `Link made for ${s.full_name}. Copy it and send it to them.`);
+    // no person chosen = view only (e.g. HR): can look and download the timesheet, can't change anything
+    const s = req.body.staff_id ? (await pool.query("SELECT * FROM dept_staff WHERE id = $1 AND active", [+req.body.staff_id || 0])).rows[0] : null;
+    if (req.body.staff_id && !s) return res.redirect("/department/share");
+    const label = s ? s.full_name : "HR (view only)";
+    await pool.query("INSERT INTO dept_share_links (token, label, staff_id, created_by) VALUES ($1,$2,$3,$4)", [crypto.randomBytes(12).toString("base64url"), label, s ? s.id : null, actor(req)]);
+    await audit(pool, actor(req), "dept.share.create", "dept_share_links", label, null, null);
+    setFlash(req, "ok", `Link made: ${label}. Copy it and send it.`);
     res.redirect("/department/share");
   }));
   app.post("/department/share/:id", A, wrap(async (req, res) => {
