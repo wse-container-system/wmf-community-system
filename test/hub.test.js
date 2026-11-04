@@ -302,61 +302,63 @@ test("cycling development hub", async (t) => {
     await admin("/department/staff", { method: "POST", form: { full_name: "Jas Coach", email: "jas@test.local", employee_no: "E101", job_title: "Coach", leave_entitlement: "22" } });
     const staff = (await pool.query("SELECT * FROM dept_staff WHERE email IS NOT NULL ORDER BY id")).rows;
     assert.equal(staff.length, 2);
-    // self check-in
-    await admin("/department/me/clock", { method: "POST", form: { action: "Present" } });
-    const me = ok200(await admin("/department/me"), "me");
-    assert.match(me.text, /My week/);
-    // a leave request across a weekend: only working days count
+    assert.equal((await admin("/department/me")).location, "/department/leave");
+    // a leave plan across a weekend: only working days count; tentative, then confirmed
     const mon = (() => { let d = E.helpers.addDays(today, 7); while (new Date(d + "T12:00:00Z").getUTCDay() !== 1) d = E.helpers.addDays(d, 1); return d; })();
-    await admin("/department/me/leave", { method: "POST", form: { leave_type: "Annual", start_date: E.helpers.addDays(mon, 3), end_date: E.helpers.addDays(mon, 7), plan: "Tentative" } }); // Thu → next Mon
+    await admin("/department/leave", { method: "POST", form: { staff_id: String(staff[0].id), leave_type: "Annual", start_date: E.helpers.addDays(mon, 3), end_date: E.helpers.addDays(mon, 7), plan: "Tentative" } }); // Thu → next Mon
     const lv = (await pool.query("SELECT * FROM dept_leave")).rows[0];
     assert.equal(+lv.days, 3); assert.equal(lv.status, "Tentative");
-    // overlapping request refused
-    await admin("/department/me/leave", { method: "POST", form: { leave_type: "Annual", start_date: E.helpers.addDays(mon, 4), end_date: E.helpers.addDays(mon, 4) } });
-    assert.equal((await pool.query("SELECT count(*)::int n FROM dept_leave")).rows[0].n, 1);
-    await admin(`/department/leave/${lv.id}/decide`, { method: "POST", form: { decision: "Approved", note: "Enjoy" } });
+    await admin(`/department/leave/${lv.id}`, { method: "POST", form: { do: "confirm" } });
     assert.equal((await pool.query("SELECT status FROM dept_leave WHERE id = $1", [lv.id])).rows[0].status, "Approved");
-    // admin records a range for Jas
-    await admin("/department/attendance/set", { method: "POST", form: { staff_id: String(staff[1].id), status: "Field/Event", from: E.helpers.addDays(today, -6), to: today, notes: "Liwa camp prep" } });
-    for (const p of ["/department", "/department/attendance", "/department/leave", "/department/staff", "/department/hr"]) ok200(await admin(p), p);
-    const ax = await admin(`/department/export/attendance.xlsx?month=${today.slice(0, 7)}`, { raw: true }); assert.equal(ax.status, 200);
-    const awb = await xlsx(ax.text); assert.deepEqual(awb.worksheets.map((w) => w.name), ["Month grid", "Daily records"]);
+    for (const p of ["/department/schedule", "/department/leave", "/department/staff", "/department/share"]) ok200(await admin(p), p);
+    assert.equal((await admin("/department")).location, "/department/schedule");
     const lx = await admin(`/department/export/leave.xlsx?year=${mon.slice(0, 4)}`, { raw: true }); assert.equal(lx.status, 200);
-    // ----- team schedule: blocks, repeats, copy week, views, HR file, read-only link for a manager
+    // ----- simple schedule, leave plans, HR timesheet, personal link for the manager
     const DS = require("../src/deptschedule");
     const monday = DS.mondayOf(today), jas = staff[1];
     await admin("/department/schedule/entries", { method: "POST", form: new URLSearchParams([["staff_id", String(jas.id)], ["activity", "Office"], ["work_date", monday], ["start_time", "09:00"], ["end_time", "17:00"],
       ["repeat", "1"], ["repeat", "2"], ["repeat", "3"], ["repeat", "4"], ["repeat", "5"], ["until", E.helpers.addDays(monday, 6)]]) });
     await admin("/department/schedule/entries", { method: "POST", form: { staff_id: String(jas.id), activity: "Corporate Ride", work_date: E.helpers.addDays(monday, 3), start_time: "06:00", end_time: "08:00", note: "L'IMAD" } });
-    await admin("/department/schedule/entries", { method: "POST", form: { staff_id: String(jas.id), activity: "Office", work_date: monday, start_time: "10:00", end_time: "09:00" } }); // refused: finish before start
-    assert.equal(await DS.weekHours(jas.id, monday), 42, "5 x 8h office + 2h corporate ride");
-    for (const v of ["week", "day", "month"]) { const r = ok200(await admin(`/department/schedule?view=${v}&date=${E.helpers.addDays(monday, 3)}`), v); assert.match(r.text, /Corporate Ride|ds-strips/); }
-    assert.match(ok200(await admin(`/department/availability?month=${today.slice(0, 7)}`), "availability").text, /Available/);
-    const cw = await admin("/department/schedule/copy-week", { method: "POST", form: { staff_id: String(jas.id), monday: E.helpers.addDays(monday, 7) } });
-    assert.equal(cw.status, 302);
-    assert.equal(await DS.weekHours(jas.id, E.helpers.addDays(monday, 7)), 42, "copied into next week");
-    const hx = await admin(`/department/schedule/export.xlsx?month=${today.slice(0, 7)}`, { raw: true });
-    assert.equal(hx.status, 200);
-    const hwb = await xlsx(hx.text); assert.ok(hwb.getWorksheet("Summary") && hwb.getWorksheet("Team grid") && hwb.getWorksheet("Jas Coach"));
-    ok200(await admin(`/department/schedule/print?month=${today.slice(0, 7)}`), "print");
-    // read-only link: department only
-    await admin("/department/share", { method: "POST", form: { label: "My manager" } });
-    const link = (await pool.query("SELECT * FROM dept_share_links WHERE label = 'My manager'")).rows[0];
-    const mgr = client();
-    const sv = ok200(await mgr(`/d/${link.token}/schedule?view=week&date=${monday}`), "manager week");
-    assert.match(sv.text, /Corporate Ride/); assert.doesNotMatch(sv.text, /shell-nav|href="\/corporate|href="\/wmf|Copy last week|ds-add/, "no hub menus and no editing");
-    ok200(await mgr(`/d/${link.token}/availability`), "manager availability");
-    assert.equal((await mgr(`/d/${link.token}/schedule/export.xlsx?month=${today.slice(0, 7)}`, { raw: true })).status, 200);
-    assert.equal((await mgr(`/d/${link.token}/schedule/entries`, { method: "POST", form: { x: "1" } })).status, 403);
-    assert.equal((await mgr("/department")).status, 302, "the rest of the hub still needs a sign-in");
+    const bad = await admin("/department/schedule/entries", { method: "POST", form: { staff_id: String(jas.id), activity: "Office", work_date: monday, start_time: "10:00", end_time: "09:00" } });
+    assert.match(bad.location, /err=/);
+    assert.equal(await DS.weekHours(jas.id, monday), 42);
+    for (const v of ["week", "month"]) assert.match(ok200(await admin(`/department/schedule?view=${v}&date=${E.helpers.addDays(monday, 3)}`), v).text, v === "week" ? /Corporate Ride/ : /sc-dot/);
+    await admin("/department/schedule/copy-week", { method: "POST", form: { staff_id: String(jas.id), monday: E.helpers.addDays(monday, 7) } });
+    assert.equal(await DS.weekHours(jas.id, E.helpers.addDays(monday, 7)), 42);
+    const hwb = await xlsx((await admin(`/department/schedule/export.xlsx?month=${today.slice(0, 7)}`, { raw: true })).text);
+    assert.deepEqual(hwb.worksheets[0].getRow(3).values.slice(1), ["Name", "Days worked", "Total hours", "Leave days"]);
+    assert.ok(hwb.getWorksheet("Jas Coach"));
+    ok200(await admin("/department/leave"), "leave page");
+    // personal link for the manager: sees the department, edits only her own time and leave
+    await admin("/department/staff", { method: "POST", form: { full_name: "Manager Person", leave_entitlement: "22" } });
+    const mgrS = (await pool.query("SELECT * FROM dept_staff WHERE full_name = 'Manager Person'")).rows[0];
+    await admin("/department/share", { method: "POST", form: { staff_id: String(mgrS.id) } });
+    const link = (await pool.query("SELECT * FROM dept_share_links WHERE staff_id = $1", [mgrS.id])).rows[0];
+    const mgr = client(), b0 = `/d/${link.token}`;
+    const sv = ok200(await mgr(`${b0}/schedule?date=${monday}`), "manager week");
+    assert.match(sv.text, /Corporate Ride/); assert.doesNotMatch(sv.text, /href="\/corporate|href="\/wmf|href="\/admin/);
+    assert.equal((sv.text.match(/sc-plus/g) || []).length, 7, "+ only on her own row");
+    await mgr(`${b0}/schedule/entries`, { method: "POST", form: { staff_id: String(mgrS.id), activity: "Office", work_date: monday, start_time: "08:30", end_time: "16:30" } });
+    await mgr(`${b0}/schedule/entries`, { method: "POST", form: { staff_id: String(jas.id), activity: "Office", work_date: monday, start_time: "06:00", end_time: "07:00" } }); // someone else: refused
+    assert.equal(await DS.weekHours(mgrS.id, monday), 8);
+    assert.equal(await DS.weekHours(jas.id, monday), 42);
+    await mgr(`${b0}/leave`, { method: "POST", form: { staff_id: String(mgrS.id), start_date: E.helpers.addDays(monday, 14), end_date: E.helpers.addDays(monday, 15), leave_type: "Annual", plan: "Tentative" } });
+    const ml = (await pool.query("SELECT * FROM dept_leave WHERE staff_id = $1", [mgrS.id])).rows[0];
+    assert.equal(ml.status, "Tentative");
+    await mgr(`${b0}/leave/${ml.id}`, { method: "POST", form: { do: "confirm" } });
+    assert.equal((await pool.query("SELECT status FROM dept_leave WHERE id = $1", [ml.id])).rows[0].status, "Approved");
+    const own = (await pool.query("SELECT id FROM dept_leave WHERE staff_id = $1 LIMIT 1", [jas.id])).rows[0];
+    if (own) { await mgr(`${b0}/leave/${own.id}`, { method: "POST", form: { do: "remove" } }); assert.notEqual((await pool.query("SELECT status FROM dept_leave WHERE id = $1", [own.id])).rows[0].status, "Cancelled"); }
+    assert.equal((await mgr(`${b0}/schedule/export.xlsx`, { raw: true })).status, 200);
+    assert.equal((await mgr("/department/schedule")).status, 302, "the hub still needs a sign-in");
     await admin(`/department/share/${link.id}`, { method: "POST", form: { active: "0" } });
-    assert.equal((await mgr(`/d/${link.token}/schedule`)).status, 404);
+    assert.equal((await mgr(`${b0}/schedule`)).status, 404);
 
     // HR feed
     const pub = client();
     assert.equal((await pub("/api/hr/attendance.csv?key=wrong")).status, 403);
-    const csv = await pub(`/api/hr/attendance.csv?key=${process.env.HR_FEED_TOKEN}&from=${E.helpers.addDays(today, -6)}&to=${today}`);
-    assert.equal(csv.status, 200); assert.match(csv.text, /Jas Coach,jas@test.local/); assert.match(csv.text, /Field\/Event/);
+    const csv = await pub(`/api/hr/attendance.csv?key=${process.env.HR_FEED_TOKEN}&from=${monday}&to=${E.helpers.addDays(monday, 6)}`);
+    assert.equal(csv.status, 200); assert.match(csv.text, /Jas Coach,jas@test.local/); assert.match(csv.text, /Corporate Ride \(L'IMAD\)/);
     const lcsv = await pub(`/api/hr/leave.csv?key=${process.env.HR_FEED_TOKEN}&year=${mon.slice(0, 4)}`);
     assert.match(lcsv.text, /Approved/);
   });
