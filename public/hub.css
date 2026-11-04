@@ -109,3 +109,26 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .card-head > .toolbar { flex-wrap: wrap; }
 .poster { max-width: 100%; min-width: 0; }
 .poster img { max-width: 100%; height: auto; }
+
+/* shareable scanner page */
+.scanner-app { background: var(--bg); }
+.sc-wrap { max-width: 520px; margin: 0 auto; padding: 14px 16px 28px; display: grid; gap: 12px; }
+.sc-top { display: flex; gap: 12px; align-items: center; }
+.sc-top h1 { font-size: 22px; } .sc-top p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.sc-top .cd-mark { width: 44px; height: 44px; }
+.sc-tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.sc-tabs button { border: 0; border-radius: 9px; padding: 12px; font: 700 17px/1 var(--f-display); background: transparent; color: var(--ink-2); cursor: pointer; }
+.sc-tabs button[aria-selected="true"] { background: var(--brand-grad-deep); color: #fff; }
+.sc-card { display: grid; gap: 12px; }
+.sc-card h2 { font-size: 17px; }
+.sc-field { display: grid; gap: 4px; font-weight: 600; color: var(--ink-2); font-size: 14px; }
+.sc-field .inp { font-size: 17px; min-height: 48px; }
+.sc-reader { border-radius: 12px; overflow: hidden; }
+.sc-reader:empty { display: none; }
+.sc-go { width: 100%; justify-content: center; min-height: 56px; font-size: 18px; }
+.sc-note { margin: 0; color: var(--muted); font-size: 13.5px; }
+.sc-row { display: flex; gap: 8px; } .sc-row .inp { flex: 1; min-height: 48px; font-size: 17px; }
+.sc-count { display: flex; justify-content: space-between; align-items: center; }
+.sc-count b { font: 700 28px/1 var(--f-display); }
+.sc-foot { text-align: center; color: var(--muted); font-size: 12.5px; margin: 0; }
+.sc-off { text-align: center; } .sc-off h1 { font-size: 22px; }

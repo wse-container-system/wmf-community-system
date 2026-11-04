@@ -327,6 +327,19 @@ CREATE TABLE IF NOT EXISTS dept_attendance (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (staff_id, work_date)
 );
+-- shareable scanner pages for staff taking attendance (no sign-in; can only record check-ins)
+CREATE TABLE IF NOT EXISTS scanner_links (
+  id SERIAL PRIMARY KEY,
+  token TEXT UNIQUE NOT NULL,
+  label TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'both' CHECK (scope IN ('both','wmf','corporate')),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  scans INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_opened TIMESTAMPTZ,
+  last_used TIMESTAMPTZ
+);
 CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NOT NULL);
 `;
 

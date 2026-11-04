@@ -185,6 +185,37 @@ test("cycling development hub", async (t) => {
     ok200(await admin("/corporate/qr"), "qr page"); ok200(await admin("/corporate/qr/LIMAD/poster"), "poster"); ok200(await admin("/corporate/scan"), "scan page");
   });
 
+  await t.test("scanner link: one simple page for any staff, WMF and corporate", { skip: !TRACKER && "set TEST_TRACKER" }, async () => {
+    const r = await admin("/admin/scanners", { method: "POST", form: { label: "Jas phone", scope: "both" } });
+    assert.equal(r.status, 302);
+    const l = (await pool.query("SELECT * FROM scanner_links WHERE label = 'Jas phone'")).rows[0];
+    ok200(await admin("/admin/scanners"), "admin scanner links");
+    const pub = client();
+    const pg = ok200(await pub("/s/" + l.token), "scanner page");
+    assert.match(pg.text, /Attendance scanner/); assert.match(pg.text, /data-mode="corp"/);
+    assert.doesNotMatch(pg.text, /shell-nav|sub-nav/, "no hub menus");
+    assert.equal((await pub("/s/" + l.token + "/manifest.webmanifest")).status, 200);
+    // corporate: the "ride today" option works even on a non-ride day
+    const cs = await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "CORP-NMDC-0010", session: "ride:AUTO" } });
+    assert.equal(cs.json().status, "ok", cs.text);
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "nmdc 10", session: "ride:AUTO" } })).json().status, "duplicate");
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "LIMAD-0002", session: "ride:AUTO" } })).json().status, "ok", "each person goes to their own company's ride");
+    // WMF: scanned code and typed number
+    const m = (await pool.query("SELECT member_id FROM members WHERE merged_into IS NULL ORDER BY member_id LIMIT 1")).rows[0];
+    const ws = await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: m.member_id, activityId: "RIDE-MORNING" } });
+    assert.ok(["ok", "duplicate"].includes(ws.json().status), ws.text);
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: String(+m.member_id.slice(4)), activityId: "RIDE-MORNING" } })).json().status, "duplicate");
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "hello", activityId: "RIDE-MORNING" } })).json().status, "error");
+    // scope and switching off
+    await admin(`/admin/scanners/${l.id}`, { method: "POST", form: { label: "Jas phone", scope: "wmf" } });
+    assert.match((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "CORP-NMDC-0011", session: "ride:NMDC" } })).json().message, /WMF only/);
+    await admin(`/admin/scanners/${l.id}`, { method: "POST", form: { label: "Jas phone", scope: "wmf", active: "0" } });
+    assert.equal((await pub("/s/" + l.token)).status, 404);
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: m.member_id, activityId: "RIDE-MORNING" } })).status, 403);
+    const who = (await pool.query("SELECT method, created_by FROM corp_attendance ORDER BY id DESC LIMIT 1")).rows[0];
+    assert.equal(who.created_by, "Scanner link: Jas phone");
+  });
+
   await t.test("sponsor limited to one partner", async () => {
     await admin("/admin/users", { method: "POST", form: { email: "sponsor@nmdc.example", name: "NMDC Sponsor", role: "sponsor", company: "NMDC" } });
     await pool.query("UPDATE users SET password_hash = $2, must_change = false WHERE email = $1", ["sponsor@nmdc.example", await require("bcryptjs").hash("Sponsor-Password-1", 4)]);

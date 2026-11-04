@@ -538,23 +538,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   }));
   app.post("/api/corp/scan", S, wrap(async (req, res) => {
     const { code, session } = req.body || {};
-    if (/WMF-\d/i.test(String(code || ""))) return res.json({ status: "error", message: "That's a WMF member code. Use WMF → Scan QR." });
-    const pid = C.pidFromScan(code);
-    if (!pid) return res.json({ status: "error", message: "This is not a corporate participant QR code or ID." });
-    const list = await C.companiesFor(user(req));
-    const out = await tx(async (c) => {
-      const p = (await c.query("SELECT * FROM corp_participants WHERE pid = $1", [pid])).rows[0];
-      if (!p || !list.some((x) => x.code === p.company)) return { status: "error", message: `${pid} isn't on the participant list.` };
-      let s;
-      const m = /^ride:([A-Z]+)$/.exec(String(session || ""));
-      if (m) s = await C.ensureSession(c, { company: m[1], date: R.todayLocal(), kind: C.RIDE, status: "Held", by: actor(req) });
-      else s = (await c.query("SELECT * FROM corp_sessions WHERE id = $1", [+session || 0])).rows[0];
-      if (!s) return { status: "error", message: "Choose today's session first." };
-      if (s.company !== p.company) return { status: "error", message: `${p.full_name} is with ${p.company}, not this session's company.` };
-      const r = await C.markAttendance(c, s, p, "Scanned by staff", actor(req));
-      return { ...r, name: p.full_name, pid: p.pid };
-    });
-    res.json(out);
+    const codes = (await C.companiesFor(user(req))).map((x) => x.code);
+    res.json(await tx((c) => C.corpScan(c, { code, session, by: actor(req), codes })));
   }));
 
   // ===================================================== report for management & sponsors
