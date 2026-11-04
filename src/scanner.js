@@ -72,6 +72,9 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
         <div id="reader" class="sc-reader" aria-label="Camera"></div>
         <button class="btn primary big sc-go" id="start">Start scanning</button>
         <button class="btn big sc-go" id="stop" hidden>Stop camera</button>
+        <label class="btn big sc-go sc-photo" for="photo">Camera won't open? Take a photo of the code</label>
+        <input type="file" id="photo" accept="image/*" capture="environment" hidden>
+        <div id="photoReader" hidden></div>
         <div id="result" class="scan-result" hidden aria-live="assertive"></div>
         <p class="sc-note" id="queue" hidden></p>
       </section>

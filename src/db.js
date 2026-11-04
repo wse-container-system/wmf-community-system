@@ -235,6 +235,9 @@ CREATE TABLE IF NOT EXISTS corp_companies (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS checkin_mode TEXT NOT NULL DEFAULT 'personal';
+-- who can collect a personal QR code: 'anyone' with a work email, or only people already on the company's list; and which email endings count as work emails
+ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS qr_access TEXT NOT NULL DEFAULT 'anyone';
+ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS email_domain TEXT;
 CREATE TABLE IF NOT EXISTS corp_participants (
   id SERIAL PRIMARY KEY,
   pid TEXT UNIQUE NOT NULL,
@@ -252,6 +255,7 @@ CREATE TABLE IF NOT EXISTS corp_participants (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS employee_no TEXT;
 CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (company, name_key);
 CREATE TABLE IF NOT EXISTS corp_sessions (
   id SERIAL PRIMARY KEY,

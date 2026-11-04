@@ -25,11 +25,12 @@ const E = require("../src/engine");
 let base, server;
 function client() {
   const jar = {};
-  return async (path, { method = "GET", form, json, headers = {}, raw } = {}) => {
+  return async (path, { method = "GET", form, json, headers = {}, raw, multipart } = {}) => {
     const h = { ...headers, cookie: Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; "), origin: base };
     let b;
     if (form) { b = new URLSearchParams(form).toString(); h["content-type"] = "application/x-www-form-urlencoded"; }
     if (json) { b = JSON.stringify(json); h["content-type"] = "application/json"; }
+    if (multipart) b = multipart;
     const r = await fetch(base + path, { method, headers: h, body: b, redirect: "manual" });
     for (const c of r.headers.getSetCookie()) { const [kv] = c.split(";"); const i = kv.indexOf("="); jar[kv.slice(0, i)] = kv.slice(i + 1); }
     const text = raw ? Buffer.from(await r.arrayBuffer()) : await r.text();
@@ -214,6 +215,38 @@ test("cycling development hub", async (t) => {
     assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: m.member_id, activityId: "RIDE-MORNING" } })).status, 403);
     const who = (await pool.query("SELECT method, created_by FROM corp_attendance ORDER BY id DESC LIMIT 1")).rows[0];
     assert.equal(who.created_by, "Scanner link: Jas phone");
+  });
+
+  await t.test("launch: staff list upload, work-email rule, list only, privacy, backup, ping", { skip: !TRACKER && "set TEST_TRACKER" }, async () => {
+    // a company's HR list as CSV: one person already here without an email, one new person, one row with no email
+    const csv = "Full name,Work email,Employee number,Gender,Emirati / Expat\nShaza Alkharat,shaza@nmdc.ae,N77,Female,UAE\nNew Starter,new.starter@nmdc.ae,N78,F,Indian\nNo Mail,,N79,,\n";
+    const fd = new FormData(); fd.append("company", "NMDC"); fd.append("file", new Blob([csv], { type: "text/csv" }), "nmdc.csv");
+    const pv = ok200(await admin("/corporate/participants/upload", { method: "POST", multipart: fd }), "list preview");
+    assert.match(pv.text, /New Starter/); assert.match(pv.text, /No email/);
+    const tok = /name="token" value="([a-f0-9]+)"/.exec(pv.text)[1];
+    assert.equal((await admin("/corporate/participants/upload/commit", { method: "POST", form: { token: tok } })).status, 302);
+    const shaza = (await pool.query("SELECT * FROM corp_participants WHERE company = 'NMDC' AND email = 'shaza@nmdc.ae'")).rows[0];
+    assert.ok(shaza && shaza.pid === "NMDC-0004" && shaza.employee_no === "N77" && shaza.community === "Emirati", "existing person got email, employee no and community");
+    assert.equal((await pool.query("SELECT community FROM corp_participants WHERE email = 'new.starter@nmdc.ae'")).rows[0].community, "Expat");
+    const before = (await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n;
+    ok200(await admin("/corporate/participants/template.xlsx", { raw: true }), "template");
+    await pool.query("UPDATE corp_companies SET email_domain = 'nmdc.ae', qr_access = 'list' WHERE code = 'NMDC'");
+    const nm = (await pool.query("SELECT * FROM corp_companies WHERE code = 'NMDC'")).rows[0];
+    await pool.query("UPDATE corp_companies SET checkin_mode = 'personal' WHERE code = 'NMDC'");
+    const pub = client();
+    const form = ok200(await pub("/c/" + nm.checkin_token), "qr page");
+    assert.match(form.text, /Privacy: your name, work email/); assert.match(form.text, /@nmdc\.ae/);
+    // wrong email ending refused; email not on the list refused
+    assert.match(ok200(await pub("/c/" + nm.checkin_token, { method: "POST", form: { full_name: "Shaza Alkharat", email: "shaza@gmail.com" } }), "domain").text, /work email \(ending @nmdc\.ae\)/);
+    assert.match(ok200(await pub("/c/" + nm.checkin_token, { method: "POST", form: { full_name: "Someone Else", email: "someone@nmdc.ae" } }), "list").text, /couldn&#39;t find|couldn't find/);
+    assert.match(ok200(await pub("/c/" + nm.checkin_token, { method: "POST", form: { full_name: "Shaza Alkharat", email: "shaza@nmdc.ae" } }), "on the list").text, /NMDC-0004/);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n, before, "nobody added in list-only mode");
+    // backup holds corporate and department sheets
+    const bk = await admin("/admin/export.xlsx", { method: "POST", form: { password: "Second-Password-2" }, raw: true });
+    assert.equal(bk.status, 200);
+    const names = (await xlsx(bk.text)).worksheets.map((w) => w.name);
+    for (const n of ["Corporate Participants", "Corporate Sessions", "Corporate Attendance", "Department Staff", "Department Leave", "Department Attendance", "Scanner Links"]) assert.ok(names.includes(n), n + " in backup");
+    const ping = await pub("/ping"); assert.equal(ping.status, 200); assert.equal(ping.text, "ok");
   });
 
   await t.test("sponsor limited to one partner", async () => {

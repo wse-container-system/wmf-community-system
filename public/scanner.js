@@ -95,6 +95,16 @@
   });
   $("#stop").addEventListener("click", function () { (scanner ? scanner.stop() : Promise.resolve()).catch(function () {}).then(function () { $("#start").hidden = false; $("#stop").hidden = true; }); });
 
+  // ---------- photo of the code: works even where the live camera is blocked (e.g. links opened inside WhatsApp)
+  var photo = $("#photo");
+  if (photo) photo.addEventListener("change", function () {
+    var f = photo.files && photo.files[0]; if (!f) return;
+    if (!window.Html5Qrcode) return show({ status: "error", message: "The scanner didn't load. Refresh the page." });
+    var reader = new Html5Qrcode("photoReader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+    reader.scanFile(f, false).then(function (text) { last = ""; send(text); }, function () { show({ status: "error", message: "No QR code found in that photo. Hold the phone closer and try again, or type the ID below." }); })
+      .finally(function () { photo.value = ""; try { reader.clear(); } catch (e) { /* nothing to clear */ } });
+  });
+
   // ---------- typed ID
   $("#byId").addEventListener("submit", function (e) {
     e.preventDefault();
