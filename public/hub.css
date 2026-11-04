@@ -220,3 +220,41 @@ a.ds-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 @media print { .ds-week { min-width: 0; font-size: 10px; } .ds-add, .ds-add2 { display: none !important; } .ds-card { border: 0; padding: 0; } }
 .st-Tentative { background: repeating-linear-gradient(135deg, #fde7b8 0 5px, #fff6e2 5px 10px); color: #6b4a00; outline: 1px dashed #d79a28; outline-offset: -1px; }
 .st-Requested { background: var(--accent-wash); color: var(--accent); }
+
+/* ===== department: simple schedule ===== */
+.sc-bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+.sc-step { display: flex; align-items: center; gap: 6px; } .sc-step b { min-width: 170px; text-align: center; font-family: var(--f-display); font-size: 17px; }
+.sc-bar .seg a { border: 0; border-radius: 0; min-height: 36px; } .sc-bar .seg a + a { border-left: 1px solid var(--line); }
+.sc-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); }
+.sc-legend span { display: inline-flex; align-items: center; gap: 5px; } .sc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sc-li { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sc-li.conf, .sc-lv.conf { background: #f3b23c; color: #4a3000; }
+.sc-li.tent, .sc-lv.tent { background: repeating-linear-gradient(135deg, #fde7b8 0 5px, #fff6e2 5px 10px); color: #6b4a00; }
+.sc-card { padding: 8px; }
+.sc-week { border-collapse: collapse; min-width: 860px; font-size: 13px; }
+.sc-week th, .sc-week td { border-bottom: 1px solid var(--line); padding: 6px; vertical-align: top; text-align: left; }
+.sc-week thead th { font-weight: 600; color: var(--ink-2); font-size: 12.5px; } .sc-week thead th span { color: var(--ink); font-weight: 700; }
+.sc-week tbody th { white-space: nowrap; font-weight: 700; min-width: 110px; position: sticky; left: 0; background: var(--surface); }
+.sc-week td { min-width: 104px; position: relative; padding-bottom: 20px; }
+.sc-week td.we { background: color-mix(in srgb, var(--line) 35%, var(--surface)); }
+.sc-week .is-today { background: var(--accent-wash); }
+.sc-week tr.mine th { color: var(--accent); }
+.sc-chip { display: block; text-decoration: none; color: var(--ink); border-left: 3px solid var(--ac); background: color-mix(in srgb, var(--ac) 12%, var(--surface)); border-radius: 5px; padding: 2px 6px; margin-bottom: 3px; font-size: 12.5px; line-height: 1.35; }
+a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface)); }
+.sc-chip b { font-variant-numeric: tabular-nums; } .sc-note2 { color: var(--muted); }
+.sc-lv { display: block; border-radius: 5px; padding: 2px 6px; margin-bottom: 3px; font-size: 12.5px; font-weight: 700; }
+.sc-lv.hol { background: #d8f0e0; color: #145c33; }
+.sc-plus { position: absolute; left: 6px; bottom: 2px; font-weight: 700; color: var(--accent); text-decoration: none; font-size: 15px; line-height: 1; opacity: .5; }
+.sc-week td:hover .sc-plus, .sc-plus:focus-visible { opacity: 1; } @media (hover: none) { .sc-plus { opacity: 1; } }
+.sc-tot { font-weight: 700; white-space: nowrap; text-align: right !important; } .sc-tot.over { color: var(--crit-ink); }
+.sc-month { border-collapse: collapse; font-size: 12px; }
+.sc-month th, .sc-month td { border: 1px solid var(--line); padding: 4px 2px; text-align: center; min-width: 27px; }
+.sc-month thead th span { color: var(--muted); font-weight: 400; }
+.sc-month tbody th { text-align: left; padding: 4px 8px; white-space: nowrap; }
+.sc-month td { font-weight: 600; font-variant-numeric: tabular-nums; height: 32px; }
+.sc-month .we { background: color-mix(in srgb, var(--line) 40%, var(--surface)); }
+.sc-month .conf { background: #f3b23c; color: #4a3000; } .sc-month .tent { background: repeating-linear-gradient(135deg, #fde7b8 0 4px, #fff6e2 4px 8px); color: #6b4a00; }
+.sc-month .hol { background: #d8f0e0; } .sc-month .is-today { box-shadow: inset 0 -2px 0 var(--accent); }
+.sc-dot { display: block; width: 14px; height: 4px; border-radius: 2px; margin: 0 auto 2px; }
+@media (max-width: 560px) { .sc-step b { min-width: 0; font-size: 15px; } }

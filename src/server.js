@@ -161,13 +161,13 @@ app.get("/", need(), wrap(async (req, res) => {
       <a class="hub-card band-corp" href="/corporate"><span class="eyebrow">Corporate programme</span><h3>Corporate Cycling</h3>
         <div class="stats">${stat(K.rideSessions, "rides held")}${stat(K.attendance, "total attendance")}${stat(K.active, "active riders")}</div>
         <p class="muted" style="margin:0;font-size:14px">L'IMAD, NMDC and Aurora: QR check-in, attendance, events, reports for sponsors.</p></a>
-      ${isStaff ? `<a class="hub-card band-dept" href="${u.role === "admin" ? "/department" : "/department/me"}"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
+      ${isStaff ? `<a class="hub-card band-dept" href="/department/schedule"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
         ${D ? `<div class="stats">${stat(D.staff, "team members")}${stat(D.inn, "in today")}${stat(D.pending, "leave requests waiting")}</div>` : ""}
         <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Team schedule, leave plans and availability, monthly export for HR." : me && me.rows[0] ? "Enter your schedule and leave plans." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}
     </div>
     ${isStaff ? `<section class="card"><h2>Quick links</h2><div class="toolbar" style="margin:8px 0 0">
       ${u.role === "admin" ? `<a class="btn primary" href="/admin/scanners">Scanner links for staff</a>` : ""}<a class="btn" href="/scan">WMF scan</a><a class="btn" href="/corporate/attendance">Corporate attendance</a><a class="btn" href="/corporate/qr">Corporate QR codes</a>
-      <a class="btn" href="/dashboard#performance">WMF performance</a><a class="btn" href="/corporate/report">Corporate report</a><a class="btn" href="/department/me">My attendance & leave</a></div></section>` : ""}`, { active: "/" }));
+      <a class="btn" href="/dashboard#performance">WMF performance</a><a class="btn" href="/corporate/report">Corporate report</a><a class="btn" href="/department/schedule">Team schedule</a></div></section>` : ""}`, { active: "/" }));
 }));
 
 // ======================= WMF home =======================

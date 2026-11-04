@@ -379,6 +379,8 @@ CREATE TABLE IF NOT EXISTS dept_share_links (
   id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, label TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
   created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_opened TIMESTAMPTZ
 );
+-- a personal link belongs to one person, who can change only their own schedule and leave
+ALTER TABLE dept_share_links ADD COLUMN IF NOT EXISTS staff_id INTEGER REFERENCES dept_staff(id);
 CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NOT NULL);
 -- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
 ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
