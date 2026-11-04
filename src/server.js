@@ -145,7 +145,7 @@ app.get("/", need(), wrap(async (req, res) => {
       (SELECT count(*) FROM participation WHERE voided_at IS NULL AND record_type = 'Event Registration' AND record_date >= $1::date) AS events`, [y0]),
     C.stats({ codes: (await C.companies()).map((x) => x.code), start: y0, end: today }),
     u.role === "admin" ? pool.query(`SELECT (SELECT count(*) FROM dept_staff WHERE active) staff, (SELECT count(*) FROM dept_leave WHERE status = 'Pending') pending,
-      (SELECT count(*) FROM dept_attendance WHERE work_date = $1 AND status IN ('Present','Remote','Field/Event')) inn`, [today]) : null,
+      (SELECT count(DISTINCT staff_id) FROM dept_shifts WHERE work_date = $1 AND start_time IS NOT NULL) inn`, [today]) : null,
     isStaff ? pool.query("SELECT 1 FROM dept_staff WHERE lower(email) = lower($1) AND active", [u.email]) : null,
   ]);
   const W = w.rows[0], K = corp.k, D = dept && dept.rows[0];
@@ -163,7 +163,7 @@ app.get("/", need(), wrap(async (req, res) => {
         <p class="muted" style="margin:0;font-size:14px">L'IMAD, NMDC and Aurora: QR check-in, attendance, events, reports for sponsors.</p></a>
       ${isStaff ? `<a class="hub-card band-dept" href="${u.role === "admin" ? "/department" : "/department/me"}"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
         ${D ? `<div class="stats">${stat(D.staff, "team members")}${stat(D.inn, "in today")}${stat(D.pending, "leave requests waiting")}</div>` : ""}
-        <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Staff attendance, annual leave and approvals, exports for HR." : me && me.rows[0] ? "Check in, request leave and see your balance." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}
+        <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Team schedule, leave plans and availability, monthly export for HR." : me && me.rows[0] ? "Enter your schedule and leave plans." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}
     </div>
     ${isStaff ? `<section class="card"><h2>Quick links</h2><div class="toolbar" style="margin:8px 0 0">
       ${u.role === "admin" ? `<a class="btn primary" href="/admin/scanners">Scanner links for staff</a>` : ""}<a class="btn" href="/scan">WMF scan</a><a class="btn" href="/corporate/attendance">Corporate attendance</a><a class="btn" href="/corporate/qr">Corporate QR codes</a>
@@ -652,6 +652,7 @@ require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar") });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
+require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
@@ -672,6 +673,7 @@ async function init() {
   await require("./calendar").seed();
   await require("./corpdata").seedCompanies();
   await require("./corpdata").seedSchedules();
+  await require("./deptschedule").seedTeam();
   const merged = await require("./dupes").autoMergeEmails("system"); // same email = same person
   if (merged) console.log(`Merged ${merged} duplicate member records (same email).`);
   await ensureAdmin();

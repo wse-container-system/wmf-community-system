@@ -360,7 +360,29 @@ CREATE TABLE IF NOT EXISTS scanner_links (
   last_opened TIMESTAMPTZ,
   last_used TIMESTAMPTZ
 );
+-- team schedule: time blocks per person per day (office, WMF ride, corporate ride, event…)
+CREATE TABLE IF NOT EXISTS dept_shifts (
+  id SERIAL PRIMARY KEY,
+  staff_id INTEGER NOT NULL REFERENCES dept_staff(id),
+  work_date DATE NOT NULL,
+  start_time TEXT,
+  end_time TEXT,
+  activity TEXT NOT NULL,
+  note TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS dept_shifts_day ON dept_shifts (work_date, staff_id);
+-- read-only links to the department (e.g. for a manager)
+CREATE TABLE IF NOT EXISTS dept_share_links (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, label TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_opened TIMESTAMPTZ
+);
 CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NOT NULL);
+-- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
+ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
+ALTER TABLE dept_leave ADD CONSTRAINT dept_leave_status_check CHECK (status IN ('Pending','Approved','Rejected','Cancelled','Tentative'));
 `;
 
 const DEFAULT_SETTINGS = {
