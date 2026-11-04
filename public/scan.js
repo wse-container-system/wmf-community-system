@@ -76,7 +76,7 @@
       await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } }, onScan, () => {});
       $("#start").hidden = true; $("#stop").hidden = false;
     } catch (e) {
-      show({ status: "error", message: "Camera unavailable. Allow camera access for this site, or check in by name below." });
+      show({ status: "error", message: window.cameraHelp ? window.cameraHelp(e) : "Camera unavailable. Allow camera access for this site, or check in by name below." });
     }
   });
   $("#stop").addEventListener("click", async () => { try { await scanner.stop(); } catch (e) { /* already stopped */ } $("#start").hidden = false; $("#stop").hidden = true; });

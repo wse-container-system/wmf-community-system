@@ -82,7 +82,7 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
         <form id="byId" class="sc-row"><input class="inp" id="idInput" placeholder="ID number" autocomplete="off" inputmode="text" aria-label="ID number"><button class="btn primary">Check in</button></form></section>
       <section class="card sc-card"><div class="sc-count"><h2>Checked in on this phone</h2><b id="count">0</b></div><ul class="log" id="log"><li class="muted">Nobody yet.</li></ul></section>
       <p class="sc-foot">Tip: add this page to your home screen. Cycling Development · Powered by Aurora</p>`,
-    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/scanner.js"></script>` }));
+    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/scanner.js"></script>` }));
   }));
   app.get("/s/:token/manifest.webmanifest", wrap(async (req, res) => {
     const l = await linkByToken(req.params.token); if (!l) return res.status(404).end();
