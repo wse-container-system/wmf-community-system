@@ -83,6 +83,49 @@ async function exportWorkbook() {
     ["End Time", (r) => r.end_time], ["Location", (r) => r.location], ["Status", (r) => r.status], ["Repeats", (r) => (r.recur ? JSON.stringify(r.recur) : null)],
     ["Cancelled Dates", (r) => (r.exceptions ? Object.keys(r.exceptions).join(", ") : null)], ["Link", (r) => r.url], ["Scanner Ride", (r) => r.ride_slot], ["Linked Event", (r) => r.activity_id],
   ], cal);
+  // ----- Corporate programme and department (added so one backup holds everything)
+  const [co, cp, cs, ca, ds, dl, da, dh, sl] = (await Promise.all([
+    pool.query("SELECT * FROM corp_companies ORDER BY sort_order, code"),
+    pool.query("SELECT * FROM corp_participants ORDER BY company, pid"),
+    pool.query("SELECT s.*, (SELECT count(*) FROM corp_attendance a WHERE a.session_id = s.id)::int AS named FROM corp_sessions s ORDER BY session_date, company, id"),
+    pool.query(`SELECT a.*, p.pid, p.full_name, s.company, s.session_date, s.kind, s.title FROM corp_attendance a
+      JOIN corp_participants p ON p.id = a.participant_id JOIN corp_sessions s ON s.id = a.session_id ORDER BY s.session_date, s.company, p.pid`),
+    pool.query("SELECT * FROM dept_staff ORDER BY full_name"),
+    pool.query("SELECT l.*, s.full_name FROM dept_leave l JOIN dept_staff s ON s.id = l.staff_id ORDER BY l.start_date"),
+    pool.query("SELECT a.*, s.full_name FROM dept_attendance a JOIN dept_staff s ON s.id = a.staff_id ORDER BY a.work_date, s.full_name"),
+    pool.query("SELECT * FROM dept_holidays ORDER BY holiday"),
+    pool.query("SELECT * FROM scanner_links ORDER BY created_at"),
+  ])).map((r) => r.rows);
+  addTable(wb, "Corporate Companies", "CorpCompanies", [
+    ["Code", (r) => r.code], ["Name", (r) => r.name], ["Ride Days", (r) => r.ride_days], ["Ride Time", (r) => r.ride_time], ["Location", (r) => r.location],
+    ["Contact", (r) => r.contact], ["Attendance Method", (r) => r.checkin_mode], ["Work Email Ending", (r) => r.email_domain], ["Codes For", (r) => r.qr_access], ["Active", (r) => (r.active ? "Yes" : "No")],
+  ], co);
+  addTable(wb, "Corporate Participants", "CorpParticipants", [
+    ["ID", (r) => r.pid], ["Company", (r) => r.company], ["Full Name", (r) => r.full_name], ["Work Email", (r) => r.email], ["Employee No", (r) => r.employee_no], ["Gender", (r) => r.gender],
+    ["Community", (r) => r.community], ["Bike Size", (r) => r.bike_size], ["Status", (r) => r.status], ["Joined", (r) => toDate(r.joined), "day"], ["Source", (r) => r.source], ["Notes", (r) => r.notes],
+  ], cp);
+  addTable(wb, "Corporate Sessions", "CorpSessions", [
+    ["Session No", (r) => r.id], ["Company", (r) => r.company], ["Date", (r) => toDate(r.session_date), "day"], ["Activity", (r) => r.kind], ["Title", (r) => r.title], ["Location", (r) => r.location],
+    ["Status", (r) => r.status], ["Named Check-ins", (r) => r.named], ["Headcount", (r) => r.headcount], ["Emirati", (r) => r.headcount_emirati], ["Expat", (r) => r.headcount_expat], ["New", (r) => r.headcount_new], ["Remarks", (r) => r.remarks],
+  ], cs);
+  addTable(wb, "Corporate Attendance", "CorpAttendance", [
+    ["Session No", (r) => r.session_id], ["Date", (r) => toDate(r.session_date), "day"], ["Company", (r) => r.company], ["Activity", (r) => r.kind], ["Title", (r) => r.title],
+    ["ID", (r) => r.pid], ["Name", (r) => r.full_name], ["How", (r) => r.method], ["When", (r) => toDate(r.at), "date"], ["By", (r) => r.created_by],
+  ], ca);
+  addTable(wb, "Department Staff", "DeptStaff", [
+    ["Name", (r) => r.full_name], ["Email", (r) => r.email], ["Employee No", (r) => r.employee_no], ["Job Title", (r) => r.job_title], ["Start Date", (r) => toDate(r.start_date), "day"],
+    ["Leave Entitlement", (r) => Number(r.leave_entitlement)], ["Carried Over", (r) => Number(r.carry_over)], ["Active", (r) => (r.active ? "Yes" : "No")],
+  ], ds);
+  addTable(wb, "Department Leave", "DeptLeave", [
+    ["Name", (r) => r.full_name], ["Type", (r) => r.leave_type], ["First Day", (r) => toDate(r.start_date), "day"], ["Last Day", (r) => toDate(r.end_date), "day"], ["Working Days", (r) => Number(r.days)],
+    ["Status", (r) => r.status], ["Reason", (r) => r.reason], ["Requested By", (r) => r.requested_by], ["Decided By", (r) => r.decided_by], ["Decision Note", (r) => r.decision_note],
+  ], dl);
+  addTable(wb, "Department Attendance", "DeptAttendance", [
+    ["Name", (r) => r.full_name], ["Date", (r) => toDate(r.work_date), "day"], ["Status", (r) => r.status], ["Check In", (r) => r.check_in], ["Check Out", (r) => r.check_out], ["Note", (r) => r.notes], ["Recorded By", (r) => r.updated_by],
+  ], da);
+  addTable(wb, "Public Holidays", "DeptHolidays", [["Date", (r) => toDate(r.holiday), "day"], ["Holiday", (r) => r.name]], dh);
+  // scanner links: names only, never the secret part of the address
+  addTable(wb, "Scanner Links", "ScannerLinks", [["For", (r) => r.label], ["Programmes", (r) => r.scope], ["On", (r) => (r.active ? "Yes" : "No")], ["Check-ins", (r) => r.scans], ["Last Used (UTC)", (r) => r.last_used]], sl);
   addTable(wb, "Audit Log", "WMFAuditLog", [
     ["When (UTC)", (r) => r.at], ["Who", (r) => r.actor], ["Action", (r) => r.action], ["Entity", (r) => r.entity], ["Record", (r) => r.entity_id],
     ["Reason", (r) => r.reason], ["Before", (r) => (r.before ? JSON.stringify(r.before).slice(0, 32000) : null)], ["After", (r) => (r.after ? JSON.stringify(r.after).slice(0, 32000) : null)],

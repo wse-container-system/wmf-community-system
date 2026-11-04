@@ -123,8 +123,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .sc-card h2 { font-size: 17px; }
 .sc-field { display: grid; gap: 4px; font-weight: 600; color: var(--ink-2); font-size: 14px; }
 .sc-field .inp { font-size: 17px; min-height: 48px; }
-.sc-reader { border-radius: 12px; overflow: hidden; }
-.sc-reader:empty { display: none; }
+/* the camera box must have a real width before the camera starts, or the preview and the scan area come out 0 px wide */
+.sc-reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; }
+.sc-reader video { width: 100% !important; height: auto !important; display: block; }
+#reader { width: 100%; }
 .sc-go { width: 100%; justify-content: center; min-height: 56px; font-size: 18px; }
 .sc-note { margin: 0; color: var(--muted); font-size: 13.5px; }
 .sc-row { display: flex; gap: 8px; } .sc-row .inp { flex: 1; min-height: 48px; font-size: 17px; }
@@ -132,3 +134,4 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .sc-count b { font: 700 28px/1 var(--f-display); }
 .sc-foot { text-align: center; color: var(--muted); font-size: 12.5px; margin: 0; }
 .sc-off { text-align: center; } .sc-off h1 { font-size: 22px; }
+.sc-photo { background: var(--surface); color: var(--accent); border: 1px dashed var(--accent); font-size: 15px; text-align: center; cursor: pointer; }

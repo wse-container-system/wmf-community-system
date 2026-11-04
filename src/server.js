@@ -27,6 +27,8 @@ app.use((req, res, next) => {
   if (PROD) res.set("Strict-Transport-Security", "max-age=31536000");
   next();
 });
+// wake-up address for a free "keep awake" service: answers without touching the database, so Neon can still sleep
+app.get("/ping", (req, res) => res.set("Cache-Control", "no-store").type("text").send("ok"));
 app.get("/healthz", async (req, res) => { try { await pool.query("SELECT 1"); res.send("ok"); } catch (e) { res.status(503).send("db unavailable"); } });
 app.use(express.static(path.join(__dirname, "..", "public"), { index: false, maxAge: PROD ? "1h" : 0 }));
 app.get("/engine.js", (req, res) => res.type("js").sendFile(path.join(__dirname, "engine.js")));

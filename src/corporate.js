@@ -284,7 +284,13 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <form class="toolbar" method="get">${companySelect(sc)}<label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "Active and inactive", status)}${opt("Active", "Active", status)}${opt("Inactive", "Inactive", status)}</select></label>
         <label class="f"><span>Search</span><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email or ID"></label><button class="btn">Search</button></form>
       ${dups.length ? `<div class="alert warn"><span class="ic">!</span><span><b>Possible duplicates:</b> ${dups.map((d) => `${h(d.names.join(" / "))} (<a href="/corporate/participants/${encodeURIComponent(d.pids[0])}">${h(d.pids.join(", "))}</a>)`).join(" · ")}. Open the first record to merge.</span></div>` : ""}
-      <div class="grid"><section class="card c8">${table(["ID", "Name", "Company", "Community", "Status", "Sessions", "Last attended"], rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), sc.byCode[p.company].name, p.community || "—", raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last)]), { num: [5] })}</section>
+      <div class="grid"><section class="card c8">${table(["ID", "Name", "Company", "Work email", "Community", "Status", "Sessions", "Last attended"], rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), sc.byCode[p.company].name, p.email || raw('<span class="muted">none yet</span>'), p.community || "—", raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last)]), { num: [6] })}</section>
+      <section class="card c4"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b> (employee number, gender and Emirati/Expat are optional). Uploading adds new people and fills in emails for people already here. You'll see a preview first.</p>
+        <form class="form" method="post" action="/corporate/participants/upload" enctype="multipart/form-data">
+          <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
+          <input type="file" name="file" accept=".xlsx,.csv" required>
+          <button class="btn primary">Read list and preview</button></form>
+        <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
       <section class="card c4"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
         <label>Full name<input name="full_name" required maxlength="120"></label><label>Work email<input type="email" name="email" maxlength="160"></label>
@@ -292,6 +298,92 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <label>Gender<select name="gender"><option value="">Not recorded</option><option>Female</option><option>Male</option></select></label></div>
         <label>Bike size<input name="bike_size" maxlength="30" placeholder="Own bike, XS, S, M, L"></label>
         <button class="btn primary">Add participant</button></form></section></div>`, { active: "/corporate/participants" }));
+  }));
+  // ----- staff list upload (from each company's HR): name + work email, optional employee no, gender, community
+  app.get("/corporate/participants/template.xlsx", S, wrap(async (req, res) => {
+    const ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Staff list");
+    ws.addRow(["Full name", "Work email", "Employee number", "Gender", "Emirati / Expat"]).font = { bold: true };
+    ws.addRow(["Example: Sara Al Mansoori", "sara.almansoori@company.ae", "E1234", "Female", "Emirati"]).font = { italic: true, color: { argb: "FF888888" } };
+    [30, 34, 18, 10, 16].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").set("Content-Disposition", 'attachment; filename="Corporate-cycling-staff-list.xlsx"').send(await wb.xlsx.writeBuffer());
+  }));
+  async function readList(file) {
+    let rows = [];
+    if (/\.csv$/i.test(file.originalname) || /text\/csv/.test(file.mimetype)) {
+      const text = file.buffer.toString("utf8").replace(/^\ufeff/, "");
+      const parseLine = (l) => { const out = []; let cur = "", q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (q) { if (ch === '"' && l[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; } else if (ch === '"') q = true; else if (ch === "," || ch === ";") { out.push(cur); cur = ""; } else cur += ch; } out.push(cur); return out; };
+      rows = text.split(/\r?\n/).filter((l) => l.trim()).map(parseLine);
+    } else {
+      const ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(); await wb.xlsx.load(file.buffer);
+      const ws = wb.worksheets[0];
+      ws.eachRow({ includeEmpty: false }, (row) => rows.push(row.values.slice(1).map((v) => (v && typeof v === "object" ? (v.text || v.result || (v.richText ? v.richText.map((t) => t.text).join("") : "")) : v == null ? "" : String(v)))));
+    }
+    const hi = rows.findIndex((r) => r.some((c) => /name/i.test(c)) && r.some((c) => /mail/i.test(c)));
+    if (hi < 0) throw new Error('No header row with a "Name" and an "Email" column.');
+    const head = rows[hi].map((c) => R.clean(c).toLowerCase());
+    const col = (re) => head.findIndex((c) => re.test(c));
+    const iName = col(/name/), iMail = col(/mail/), iEmp = col(/(emp|staff|badge).*(no|num|id)|^id$|number/), iGen = col(/gender|sex/), iCom = col(/emirati|expat|community|national/);
+    return rows.slice(hi + 1).map((r, k) => ({ line: hi + 2 + k, full_name: R.clean(r[iName]), email: R.normEmail(r[iMail]), employee_no: iEmp >= 0 ? R.clean(r[iEmp]) : "",
+      gender: iGen >= 0 ? (/^f/i.test(R.clean(r[iGen])) ? "Female" : /^m/i.test(R.clean(r[iGen])) ? "Male" : "") : "",
+      community: iCom >= 0 ? (/emirati|uae|local/i.test(R.clean(r[iCom])) ? "Emirati" : R.clean(r[iCom]) ? "Expat" : "") : "" }))
+      .filter((r) => (r.full_name || r.email) && !/^example/i.test(r.full_name));
+  }
+  async function planList(co, list) {
+    const plan = { add: [], update: [], same: [], problems: [] }, seen = new Set();
+    for (const r of list) {
+      if (!r.full_name) { plan.problems.push([r.line, r.email, "No name"]); continue; }
+      if (!R.EMAIL_RE.test(r.email)) { plan.problems.push([r.line, r.full_name, r.email ? `Email "${r.email}" doesn't look right` : "No email"]); continue; }
+      if (!domainOk(co, r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} isn't a ${co.name} work email (${domains(co).join(", ")})`]); continue; }
+      if (seen.has(r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} is in the list twice`]); continue; }
+      seen.add(r.email);
+      const byMail = await C.findParticipant(pool, co.code, { email: r.email });
+      if (byMail) { (r.employee_no && byMail.employee_no !== r.employee_no ? plan.update : plan.same).push({ ...r, pid: byMail.pid, id: byMail.id, was: byMail.full_name }); continue; }
+      const byName = await C.findParticipant(pool, co.code, { name: r.full_name });
+      if (byName && byName.email) { plan.problems.push([r.line, r.full_name, `Already listed as ${byName.pid} with a different email (${byName.email})`]); continue; }
+      if (byName) plan.update.push({ ...r, pid: byName.pid, id: byName.id, was: byName.full_name, addEmail: true });
+      else plan.add.push(r);
+    }
+    return plan;
+  }
+  app.post("/corporate/participants/upload", S, upload.single("file"), wrap(async (req, res) => {
+    const co = (await C.companiesFor(user(req))).find((x) => x.code === req.body.company);
+    if (!co || !req.file) { setFlash(req, "err", "Choose a company and a file."); return res.redirect("/corporate/participants"); }
+    let list;
+    try { list = await readList(req.file); } catch (e) { setFlash(req, "err", "Couldn't read that list: " + e.message); return res.redirect("/corporate/participants?company=" + co.code); }
+    const plan = await planList(co, list);
+    for (const [k, v] of previews) if (Date.now() - v.at > 30 * 60e3) previews.delete(k);
+    const t = crypto.randomBytes(16).toString("hex");
+    previews.set(t, { kind: "list", co: co.code, plan, at: Date.now(), name: req.file.originalname });
+    res.send(page(req, "Staff list preview", `<section class="card"><h2>${coChip(co)} staff list: ${h(req.file.originalname)}</h2><p class="lead">Nothing has been saved yet. ${list.length} rows read.</p>
+      <div class="tiles" style="margin-bottom:12px">${tile("New people", nf(plan.add.length), "Get a new ID")}${tile("Email added / updated", nf(plan.update.length), "Already on the list")}${tile("Already up to date", nf(plan.same.length), "")}${tile("Need checking", nf(plan.problems.length), "Not saved")}</div>
+      ${plan.update.length ? `<h3 style="font-size:15px">Matched to people already here</h3>${table(["ID", "On the programme as", "From the list", "Work email"], plan.update.map((r) => [r.pid, r.was, r.full_name, r.email]))}` : ""}
+      ${plan.add.length ? `<h3 style="font-size:15px;margin-top:12px">New people</h3>${table(["Name", "Work email", "Employee no", "Gender", "Emirati / Expat"], plan.add.map((r) => [r.full_name, r.email, r.employee_no, r.gender, r.community]))}` : ""}
+      ${plan.problems.length ? `<h3 style="font-size:15px;margin-top:12px">Need checking (not saved)</h3>${table(["Row", "Name", "Problem"], plan.problems)}` : ""}
+      <form method="post" action="/corporate/participants/upload/commit" style="margin-top:14px"><input type="hidden" name="token" value="${t}"><button class="btn primary big" ${plan.add.length + plan.update.length ? "" : "disabled"}>Save ${plan.add.length + plan.update.length} people</button> <a class="btn" href="/corporate/participants?company=${h(co.code)}">Cancel</a></form></section>`, { active: "/corporate/participants" }));
+  }));
+  app.post("/corporate/participants/upload/commit", S, wrap(async (req, res) => {
+    const pv = previews.get(String(req.body.token || ""));
+    if (!pv || pv.kind !== "list") { setFlash(req, "err", "The preview expired. Upload the list again."); return res.redirect("/corporate/participants"); }
+    const co = (await C.companiesFor(user(req))).find((x) => x.code === pv.co); if (!co) return res.redirect("/corporate/participants");
+    const n = await tx(async (c) => {
+      let added = 0, updated = 0;
+      for (const r of pv.plan.add) {
+        if (await C.findParticipant(c, co.code, { email: r.email })) continue;
+        const p = await C.createParticipant(c, { ...r, company: co.code }, actor(req), "Company staff list");
+        if (r.employee_no) await c.query("UPDATE corp_participants SET employee_no = $2 WHERE id = $1", [p.id, r.employee_no]);
+        added++;
+      }
+      for (const r of pv.plan.update) {
+        await c.query(`UPDATE corp_participants SET email = coalesce(email, $2), employee_no = coalesce(nullif($3, ''), employee_no), gender = coalesce(gender, nullif($4, '')), community = coalesce(community, nullif($5, '')), updated_at = now() WHERE id = $1`,
+          [r.id, r.email, r.employee_no, r.gender, r.community]);
+        updated++;
+      }
+      await audit(c, actor(req), "corp.list.upload", "corp_company", co.code, null, { file: pv.name, added, updated });
+      return { added, updated };
+    });
+    previews.delete(String(req.body.token));
+    setFlash(req, "ok", `${co.name}: ${n.added} people added, ${n.updated} updated. They can now collect their personal QR codes with their work email.`);
+    res.redirect("/corporate/participants?company=" + co.code);
   }));
   app.post("/corporate/participants", S, wrap(async (req, res) => {
     const b = req.body, sc = await scope(req);
@@ -413,6 +505,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
 
   // ===================================================== public self check-in (no sign-in)
   async function companyByToken(t) { return (await pool.query("SELECT * FROM corp_companies WHERE checkin_token = $1 AND active", [String(t || "")])).rows[0]; }
+  /** Short privacy note shown wherever staff type their details. */
+  const privacyNote = (co) => `<p class="muted" style="margin:0;font-size:12.5px;line-height:1.45">Privacy: your name, work email and the sessions you attend are used only to run the ${h(co.name)} cycling programme and to report on it. Only the Cycling Development team sees names; reports for ${h(co.name)} management and sponsors show totals only. Community and gender are optional. To correct or remove your details, ask your ride lead or the Cycling Development team.</p>`;
+  const domains = (co) => String(co.email_domain || "").toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, "")).filter(Boolean);
+  const domainOk = (co, email) => !domains(co).length || domains(co).some((d) => email.endsWith("@" + d));
   function checkinForm(co, sessions, v = {}, err) {
     const many = sessions.length > 1;
     return `<section class="card" style="display:grid;gap:12px">
@@ -426,7 +522,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <label>Community<select name="community"><option value="">Prefer not to say</option>${C.COMMUNITIES.map((x) => opt(x, x, v.community)).join("")}<option ${v.community === "Other" ? "selected" : ""}>Other</option></select></label>
           <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((x) => opt(x, x, v.gender)).join("")}</select></label></div></details>
         <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-        <button class="btn primary big">Check in</button></form>`
+        <button class="btn primary big">Check in</button>${privacyNote(co)}</form>`
     : `<div class="alert info"><span class="ic">i</span><span>There's no ${h(co.name)} session to check in to today. Weekly rides: ${h(co.ride_days)}${co.ride_time ? " " + h(co.ride_time) : ""}.</span></div>`}
     </section>`;
   }
@@ -437,12 +533,12 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
       <form class="form" method="post" id="checkin">
         <label>Your full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
-        <label>Work email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
-        <details><summary>First time? Tell us a little more</summary><div class="row2" style="margin-top:8px">
+        <label>Work email${domains(co).length ? ` <span class="hint">(ending ${h(domains(co).map((d) => "@" + d).join(" or "))})</span>` : ""}<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
+        ${co.qr_access === "list" ? "" : `<details><summary>First time? Tell us a little more</summary><div class="row2" style="margin-top:8px">
           <label>Community<select name="community"><option value="">Prefer not to say</option>${C.COMMUNITIES.map((x) => opt(x, x, v.community)).join("")}<option ${v.community === "Other" ? "selected" : ""}>Other</option></select></label>
-          <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((x) => opt(x, x, v.gender)).join("")}</select></label></div></details>
+          <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((x) => opt(x, x, v.gender)).join("")}</select></label></div></details>`}
         <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-        <button class="btn primary big">Show my QR code</button></form></section>`;
+        <button class="btn primary big">Show my QR code</button>${privacyNote(co)}</form></section>`;
   }
   app.get("/c/:token", wrap(async (req, res) => {
     const co = await companyByToken(req.params.token);
@@ -490,9 +586,12 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const email = R.normEmail(b.email);
     if (R.clean(b.full_name).length < 3) return again("Please enter your full name.");
     if (!R.EMAIL_RE.test(email)) return again("Please enter your work email.");
+    if (!domainOk(co, email)) return again(`Please use your ${co.name} work email (ending ${domains(co).map((d) => "@" + d).join(" or ")}).`);
     const out = await tx(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["corpqr|" + co.code]);
       let p = await C.findParticipant(c, co.code, { email }), created = false;
+      // list only: the email must already be on the company's staff list
+      if (!p && co.qr_access === "list") return { err: `We couldn't find ${email} on the ${co.name} programme list. Check the spelling, or ask your ride lead to add you.` };
       if (!p) {
         const byName = await C.findParticipant(c, co.code, { name: b.full_name });
         if (byName && byName.email && byName.email !== email) return { err: "We have a different email for this name. Use the email you registered with, or ask your ride lead to show your code." };
@@ -617,9 +716,11 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <input class="inp" name="location" value="${h(co.location)}" aria-label="Location" placeholder="Location" style="width:160px">
         <input class="inp" name="contact" value="${h(co.contact)}" aria-label="Contact" placeholder="Company contact" style="width:170px">
         <input type="color" name="color" value="${h(co.color || "#4d5ac2")}" aria-label="Colour">
+        <input class="inp" name="email_domain" value="${h(co.email_domain)}" aria-label="Work email ending" placeholder="Work email ending, e.g. nmdc.ae" title="Only emails ending like this can get a code. Leave empty to allow any email." style="width:200px">
+        <select class="inp" name="qr_access" aria-label="Who can get a personal code">${opt("anyone", "Anyone can get a code", co.qr_access)}${opt("list", "Only people on our list", co.qr_access)}</select>
         <select class="inp" name="checkin_mode" aria-label="How attendance is taken">${opt("personal", "Personal QR codes", co.checkin_mode)}${opt("self", "Self check-in link", co.checkin_mode)}</select>
         <select class="inp" name="active" aria-label="Status">${opt("1", "Active", co.active ? "1" : "0")}${opt("0", "Paused", co.active ? "1" : "0")}</select>
-        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Ride days: the weekly ride opens for scanning on these days (three-letter days, separated by commas). Attendance: <b>Personal QR codes</b> means each person shows their own code to the ride lead and the company link only hands out codes; <b>Self check-in link</b> lets people check themselves in with the company link.</p></section>
+        <button class="btn tblbtn">Save</button></form>`).join("")}<p class="muted" style="font-size:13px">Ride days: the weekly ride opens for scanning on these days (three-letter days, separated by commas). Attendance: <b>Personal QR codes</b> means each person shows their own code to the ride lead and the company link only hands out codes; <b>Self check-in link</b> lets people check themselves in with the company link. <b>Work email ending</b> (e.g. nmdc.ae): only those emails can collect a personal code. <b>Only people on our list</b>: staff can collect a code only if their email is already on the participant list (upload the company's staff list on Corporate → Participants).</p></section>
     </div>`, { active: "/admin" }));
   }));
   app.post("/corporate/admin/companies", A, wrap(async (req, res) => {
@@ -633,8 +734,9 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   }));
   app.post("/corporate/admin/companies/:code", A, wrap(async (req, res) => {
     const b = req.body;
-    await pool.query("UPDATE corp_companies SET name = $2, ride_days = $3, ride_time = $4, location = $5, contact = $6, color = $7, active = $8, checkin_mode = $9 WHERE code = $1",
-      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || "Thu", R.clean(b.ride_time) || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0", b.checkin_mode === "self" ? "self" : "personal"]);
+    await pool.query("UPDATE corp_companies SET name = $2, ride_days = $3, ride_time = $4, location = $5, contact = $6, color = $7, active = $8, checkin_mode = $9, email_domain = $10, qr_access = $11 WHERE code = $1",
+      [req.params.code, R.clean(b.name) || req.params.code, R.clean(b.ride_days) || "Thu", R.clean(b.ride_time) || null, R.clean(b.location) || null, R.clean(b.contact) || null, /^#[0-9a-f]{6}$/i.test(b.color || "") ? b.color : null, b.active !== "0", b.checkin_mode === "self" ? "self" : "personal",
+        String(b.email_domain || "").toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, "")).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).join(", ") || null, b.qr_access === "list" ? "list" : "anyone"]);
     await audit(pool, actor(req), "corp.company.update", "corp_company", req.params.code, null, b);
     setFlash(req, "ok", "Saved.");
     res.redirect("/corporate/admin");
