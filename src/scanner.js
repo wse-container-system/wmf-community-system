@@ -34,7 +34,7 @@ ${manifest ? `<link rel="manifest" href="${manifest}">` : ""}
 </head><body class="scanner-app"><main id="main" class="sc-wrap">${body}</main>${scripts}</body></html>`;
 }
 
-module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limit, checkIn, rideActivities, scanReply, calendar }) {
+module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limit, checkIn, rideActivities, scanReply, calendar, qrSend, qrDataUrl }) {
   const A = need("admin");
   const linkUrl = (req, l) => `${req.protocol}://${req.get("host")}/s/${l.token}`;
 
@@ -78,16 +78,58 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
         <div id="result" class="scan-result" hidden aria-live="assertive"></div>
         <p class="sc-note" id="queue" hidden></p>
       </section>
-      <section class="card sc-card"><h2>No QR code?</h2><p class="sc-note">Type their ID: <b>WMF</b> members, e.g. 123 or WMF-000123 · <b>Corporate</b> staff, e.g. NMDC-0012 or nmdc 12.</p>
-        <form id="byId" class="sc-row"><input class="inp" id="idInput" placeholder="ID number" autocomplete="off" inputmode="text" aria-label="ID number"><button class="btn primary">Check in</button></form></section>
+      <section class="card sc-card"><h2>No QR code?</h2>
+        <p class="sc-note"><span data-panel="wmf" ${showW ? "" : "hidden"}>Search their name, email or phone, or type their Member ID.</span><span data-panel="corp" ${showW ? "hidden" : ""}>Type their ID, e.g. NMDC-0012 or nmdc 12.</span></p>
+        <form id="byId" class="sc-row"><input class="inp" id="idInput" placeholder="Name, email, phone or ID" autocomplete="off" aria-label="Name, email, phone or ID"><button class="btn primary">Go</button></form>
+        <ul class="log sc-hits" id="hits"></ul></section>
+      ${showW ? `<section class="card sc-card" data-panel="wmf"><details id="newRider"><summary><h2 style="display:inline">New rider? Register</h2></summary>
+        <form id="walkin" class="form" style="margin-top:10px">
+          <label>Full name<input name="full_name" required maxlength="120" autocomplete="off"></label>
+          <label>Mobile<input name="mobile" required maxlength="30" inputmode="tel" autocomplete="off" placeholder="05x xxx xxxx"></label>
+          <label>Email<input name="email" type="email" maxlength="160" autocomplete="off"></label>
+          <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>The rider accepts the WMF waiver (rides at own risk, follows the ride leader's instructions and road safety rules)</span></label>
+          <button class="btn primary big">Register and check in</button></form>
+        <div id="newDone" hidden></div></details></section>` : ""}
       <section class="card sc-card"><div class="sc-count"><h2>Checked in on this phone</h2><b id="count">0</b></div><ul class="log" id="log"><li class="muted">Nobody yet.</li></ul></section>
       <p class="sc-foot">Tip: add this page to your home screen. Cycling Development · Powered by Aurora</p>`,
-    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/scanner.js"></script>` }));
+    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/ui.js"></script><script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/scanner.js"></script>` }));
   }));
   app.get("/s/:token/manifest.webmanifest", wrap(async (req, res) => {
     const l = await linkByToken(req.params.token); if (!l) return res.status(404).end();
     res.type("application/manifest+json").send(JSON.stringify({ name: "Attendance scanner", short_name: "Scanner", start_url: `/s/${l.token}`, scope: `/s/${l.token}`, display: "standalone", background_color: "#f7f6fb", theme_color: "#4d5ac2",
       icons: [{ src: "/brand/apple-touch-icon.png", sizes: "180x180", type: "image/png" }] }));
+  }));
+
+  // ----- WMF: find a member who has no QR code with them (shows only names and a hint, never full contact details)
+  app.post("/s/:token/find", limit("scanfind", 240, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkByToken(req.params.token);
+    if (!l || l.scope === "corporate") return res.status(403).json([]);
+    const q = R.clean((req.body || {}).q).slice(0, 60);
+    if (q.length < 3) return res.json([]);
+    const like = "%" + q.replace(/[%_]/g, "") + "%", digits = q.replace(/\D/g, "");
+    const r = await pool.query(`SELECT member_id, full_name, primary_email, mobile FROM members WHERE merged_into IS NULL
+      AND (full_name ILIKE $1 OR primary_email ILIKE $1 OR member_id ILIKE $1 ${digits.length >= 4 ? "OR regexp_replace(coalesce(mobile, ''), '\\D', '', 'g') LIKE $2" : ""}) ORDER BY full_name LIMIT 6`, digits.length >= 4 ? [like, "%" + digits + "%"] : [like]);
+    res.json(r.rows.map((m) => ({ id: m.member_id, name: m.full_name, hint: [m.primary_email ? R.maskEmail(m.primary_email) : "", m.mobile ? R.maskPhone(m.mobile) : ""].filter(Boolean).join(" · ") })));
+  }));
+  // ----- WMF: register a new rider on the spot, check them in, and hand back their personal QR link to send
+  app.post("/s/:token/walkin", limit("scanwalkin", 60, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkByToken(req.params.token);
+    if (!l || l.scope === "corporate") return res.status(403).json({ status: "error", message: "This scanner is for corporate staff only." });
+    const b = req.body || {}, by = "Scanner link: " + l.label;
+    if (R.clean(b.full_name).length < 3) return res.json({ status: "error", message: "Enter the rider's full name." });
+    if (R.normPhone(b.mobile).length < 9) return res.json({ status: "error", message: "Enter the rider's mobile number." });
+    if (b.email && !R.EMAIL_RE.test(R.normEmail(b.email))) return res.json({ status: "error", message: "That email doesn't look right." });
+    if (!b.waiver_consent) return res.json({ status: "error", message: "The rider must accept the waiver." });
+    const out = await tx(async (c) => {
+      let member = await R.findMember(c, { email: b.email, phone: b.mobile }), created = false;
+      if (!member) { member = await R.createMember(c, { full_name: b.full_name, email: b.email, mobile: b.mobile, waiver_consent: true }, by, "WMF Scanner Walk-in"); created = true; }
+      const r = await checkIn(c, { member, activityId: b.activityId, date: R.todayLocal(), source: "WMF Ride Lead Check-in", by });
+      return { r, member, created };
+    });
+    if (out.r.status === "error") return res.json(out.r);
+    const x = scanReply(out.r);
+    res.json({ status: out.r.status, name: x.name, id: x.memberId, detail: `${x.series || "WMF"}${out.created ? " · new member, welcome!" : " · already a member"}`, created: out.created,
+      qr: await qrDataUrl(out.member.qr_value || out.member.member_id), ...qrSend(req, out.member) });
   }));
 
   app.post("/s/:token/scan", limit("scanlink", 900, 60 * 60e3), wrap(async (req, res) => {

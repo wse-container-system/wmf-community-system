@@ -321,7 +321,7 @@ app.post("/api/walkin", need(...STAFF), wrap(async (req, res) => {
     if (r.status === "error") throw Object.assign(new Error(r.message), { expose: true });
     return { ...r, created };
   }).catch((e) => { if (e.expose) return { status: "error", message: e.message }; throw e; });
-  res.json({ ...scanReply(out), created: out.created });
+  res.json({ ...scanReply(out), created: out.created, ...(out.member ? qrSend(req, out.member) : {}) });
 }));
 const browseLimit = limit("browse", 300, 3600e3, { perUser: true, skip: (req) => req.session.user && req.session.user.role === "admin" });
 app.get("/api/members/search", need(...STAFF), browseLimit, wrap(async (req, res) => {
@@ -338,6 +338,25 @@ app.get("/api/members/search", need(...STAFF), browseLimit, wrap(async (req, res
 const QRCode = require("qrcode");
 const qrPng = (value) => QRCode.toBuffer(value, { errorCorrectionLevel: "M", margin: 2, width: 600 });
 const qrDataUrl = (value) => QRCode.toDataURL(value, { errorCorrectionLevel: "M", margin: 2, width: 480 });
+
+// ======================= personal QR link (sent to a new rider by WhatsApp or email) =======================
+// /q/WMF-000123.<signature>: the signature makes the address impossible to guess, so nobody can browse other members' codes
+const qrSig = (id) => crypto.createHmac("sha256", SECRET).update("qr|" + id).digest("base64url").slice(0, 12);
+const qrLink = (req, id) => `${req.protocol}://${req.get("host")}/q/${encodeURIComponent(id)}.${qrSig(id)}`;
+app.get("/q/:code", wrap(async (req, res) => {
+  const m = /^(WMF-\d{6})\.([A-Za-z0-9_-]{12})$/.exec(req.params.code || "");
+  const ok = m && crypto.timingSafeEqual(Buffer.from(m[2]), Buffer.from(qrSig(m[1])));
+  const mem = ok ? (await pool.query("SELECT member_id, full_name, qr_value, merged_into FROM members WHERE member_id = $1", [m[1]])).rows[0] : null;
+  if (!mem) return res.status(404).send(page(req, "QR code", `<section class="card"><h2>This link doesn't work</h2><p class="lead">Ask your ride leader to send it again.</p></section>`, { wide: false }));
+  const img = await qrDataUrl(mem.qr_value || mem.member_id);
+  res.set("Cache-Control", "no-store").send(page(req, "My WMF QR code", `<section class="card" style="display:grid;gap:12px;text-align:center">
+    <h2>Hi ${h(String(mem.full_name || "").split(" ")[0])}!</h2><p class="lead" style="margin:0 auto">This is your personal WMF QR code. Show it to the ride leader at every ride.</p>
+    <div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(mem.qr_value || mem.member_id)}</span></div>
+    <a class="btn primary big" href="${img}" download="${h(mem.member_id)}-WMF-QR.png" style="justify-content:center">Download my QR code</a>
+    <p class="muted" style="margin:0">Tip: take a screenshot too. Your Member ID is ${h(mem.member_id)}.</p></section>`, { wide: false }));
+}));
+/** What a ride lead needs to send the code: the link, plus the rider's phone (international digits) and email. */
+const qrSend = (req, m) => ({ qrUrl: qrLink(req, m.member_id), phone: R.normPhone(m.mobile), email: R.normEmail(m.primary_email || m.email), first: String(m.full_name || "").split(" ")[0] });
 app.get("/members/:id/qr.png", need(...STAFF), wrap(async (req, res) => {
   const m = (await pool.query("SELECT member_id, qr_value FROM members WHERE member_id = $1", [req.params.id])).rows[0];
   if (!m) return res.status(404).send("Not found");
@@ -650,7 +669,7 @@ app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
-require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar") });
+require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar"), qrSend, qrDataUrl });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });

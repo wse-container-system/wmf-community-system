@@ -209,6 +209,20 @@ test("cycling development hub", async (t) => {
     assert.ok(["ok", "duplicate"].includes(ws.json().status), ws.text);
     assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: String(+m.member_id.slice(4)), activityId: "RIDE-MORNING" } })).json().status, "duplicate");
     assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "hello", activityId: "RIDE-MORNING" } })).json().status, "error");
+    // WMF: no QR code? search by name, email or phone; check in from the result
+    await tx((c) => R.createMember(c, { full_name: "Fatima Search Test", email: "fatima.search@example.org", mobile: "0507654321", waiver_consent: true }, "test", "test"));
+    const found = (await pub(`/s/${l.token}/find`, { method: "POST", json: { q: "fatima sea" } })).json();
+    assert.equal(found.length, 1); assert.doesNotMatch(JSON.stringify(found), /fatima\.search@example\.org|0507654321/, "contact details stay hidden");
+    assert.equal((await pub(`/s/${l.token}/find`, { method: "POST", json: { q: "7654321" } })).json()[0].id, found[0].id, "found by phone");
+    assert.equal((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: found[0].id, activityId: "RIDE-MORNING" } })).json().status, "ok");
+    // WMF: a new rider registered on the spot, checked in, with a personal QR link to send
+    const wk = (await pub(`/s/${l.token}/walkin`, { method: "POST", json: { full_name: "Brand New Rider", mobile: "0501112299", email: "new.rider@example.org", waiver_consent: "1", activityId: "RIDE-MORNING" } })).json();
+    assert.equal(wk.status, "ok"); assert.equal(wk.created, true); assert.equal(wk.phone, "971501112299"); assert.match(wk.qrUrl, /\/q\/WMF-\d{6}\.[\w-]{12}$/); assert.match(wk.qr, /^data:image\/png/);
+    const again = (await pub(`/s/${l.token}/walkin`, { method: "POST", json: { full_name: "Brand New Rider", mobile: "050 111 2299", waiver_consent: "1", activityId: "RIDE-MORNING" } })).json();
+    assert.equal(again.created, false, "same phone: no second member"); assert.equal(again.status, "duplicate");
+    const qp = await pub(new URL(wk.qrUrl).pathname); assert.equal(qp.status, 200); assert.match(qp.text, /Hi Brand!/);
+    assert.equal((await pub(new URL(wk.qrUrl).pathname.replace(/\.[\w-]{12}$/, ".AAAAAAAAAAAA"))).status, 404, "guessed links don't work");
+    assert.equal((await pub(`/s/${l.token}/walkin`, { method: "POST", json: { full_name: "No Waiver", mobile: "0501112200", activityId: "RIDE-MORNING" } })).json().status, "error");
     // scope and switching off
     await admin(`/admin/scanners/${l.id}`, { method: "POST", form: { label: "Jas phone", scope: "wmf" } });
     assert.match((await pub(`/s/${l.token}/scan`, { method: "POST", json: { code: "CORP-NMDC-0011", session: "ride:NMDC" } })).json().message, /WMF only/);
