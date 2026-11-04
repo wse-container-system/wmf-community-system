@@ -16,8 +16,9 @@ const SECTIONS = [
     ["/corporate", "Dashboard", ALL], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
     ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
-    ["/department", "Overview", ["admin"]], ["/department/me", "My attendance & leave", STAFF], ["/department/attendance", "Attendance", ["admin"]],
-    ["/department/leave", "Leave", ["admin"]], ["/department/staff", "Staff", ["admin"]], ["/department/hr", "HR export", ["admin"]]] },
+    ["/department", "Overview", ["admin"]], ["/department/schedule", "Team schedule", STAFF], ["/department/availability", "Availability", STAFF],
+    ["/department/me", "My schedule & leave", STAFF], ["/department/leave", "Leave", ["admin"]], ["/department/staff", "Staff", ["admin"]],
+    ["/department/hr", "HR export", ["admin"]], ["/department/share", "Share", ["admin"]]] },
 ];
 const sectionsFor = (u) => SECTIONS.filter((s) => s.roles.includes(u.role) && (!u.company || s.scoped));
 

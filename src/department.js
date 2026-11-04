@@ -33,7 +33,7 @@ async function workingDays(a, b, half) {
 async function balances(year, staffIds) {
   const r = await pool.query(`SELECT s.id, s.leave_entitlement::float ent, s.carry_over::float co,
       coalesce(sum(l.days) FILTER (WHERE l.status = 'Approved' AND l.leave_type = 'Annual'), 0)::float taken,
-      coalesce(sum(l.days) FILTER (WHERE l.status = 'Pending' AND l.leave_type = 'Annual'), 0)::float pending,
+      coalesce(sum(l.days) FILTER (WHERE l.status IN ('Pending','Tentative') AND l.leave_type = 'Annual'), 0)::float pending,
       coalesce(sum(l.days) FILTER (WHERE l.status = 'Approved' AND l.leave_type = 'Sick'), 0)::float sick,
       coalesce(sum(l.days) FILTER (WHERE l.status = 'Approved' AND l.leave_type NOT IN ('Annual','Sick')), 0)::float other
     FROM dept_staff s LEFT JOIN dept_leave l ON l.staff_id = s.id AND extract(year FROM l.start_date) = $1
@@ -68,26 +68,26 @@ module.exports = function department(app, { need, page, setFlash, actor, user, w
   // ===================================================== overview (admin)
   app.get("/department", S, wrap(async (req, res) => {
     if (user(req).role !== "admin") return res.redirect("/department/me");
+    const DS = require("./deptschedule");
     const today = R.todayLocal(), staff = await activeStaff();
-    const g = await grid(staff, today, today);
+    const D = await DS.load(today, today);
     const pend = (await pool.query("SELECT l.*, s.full_name FROM dept_leave l JOIN dept_staff s ON s.id = l.staff_id WHERE l.status = 'Pending' ORDER BY l.start_date")).rows;
-    const upcoming = (await pool.query("SELECT l.*, s.full_name FROM dept_leave l JOIN dept_staff s ON s.id = l.staff_id WHERE l.status = 'Approved' AND l.end_date >= $1 AND l.start_date <= $2 ORDER BY l.start_date", [today, addDays(today, 30)])).rows;
+    const upcoming = (await pool.query("SELECT l.*, s.full_name FROM dept_leave l JOIN dept_staff s ON s.id = l.staff_id WHERE l.status IN ('Approved','Tentative') AND l.end_date >= $1 AND l.start_date <= $2 ORDER BY l.start_date", [today, addDays(today, 45)])).rows;
     const bal = await balances(today.slice(0, 4));
-    const count = (st) => staff.filter((s) => (g.get(s.id, today) || {}).status === st).length;
-    const notIn = staff.filter((s) => !(g.get(s.id, today) || {}).status).length;
+    const x = staff.map((s0) => D.day(s0.id, today));
+    const working = x.filter((d) => d.hours > 0).length, away = x.filter((d) => d.leave && d.leave.status === "Approved").length;
     res.send(page(req, "Department", `
-      <div class="card-head"><div><h2 style="font-size:22px">Cycling Development department</h2><p class="muted" style="margin:2px 0 0">${fmtDate(today)}${g.holidays.get(today) ? " · " + h(g.holidays.get(today)) : isWeekend(today) ? " · weekend" : ""}</p></div>
-        <div class="toolbar" style="margin:0"><a class="btn" href="/department/attendance">Attendance month</a><a class="btn primary" href="/department/hr">Export for HR</a></div></div>
-      ${!staff.length ? `<div class="alert info"><span class="ic">i</span><span>Start by adding the team on the <a href="/department/staff">Staff</a> page. Use the same email as their sign-in so they can record their own attendance and request leave.</span></div>` : ""}
-      <div class="tiles">${tile("Team members", nf(staff.length), "Active")}${tile("In today", nf(count("Present") + count("Remote") + count("Field/Event")), `${count("Present")} office · ${count("Remote")} remote · ${count("Field/Event")} field`)}
-        ${tile("On leave today", nf(count("Leave") + count("Sick")), `${count("Sick")} sick`)}${tile("Not recorded yet", nf(notIn), "Today")}${tile("Leave requests waiting", nf(pend.length), "Need a decision", "/department/leave?status=Pending")}</div>
+      <div class="card-head"><div><h2 style="font-size:22px">Cycling Development department</h2><p class="muted" style="margin:2px 0 0">${fmtDate(today)}${D.holidays.get(today) ? " · " + h(D.holidays.get(today)) : isWeekend(today) ? " · weekend" : ""}</p></div>
+        <div class="toolbar" style="margin:0"><a class="btn" href="/department/schedule">Team schedule</a><a class="btn" href="/department/availability">Availability</a><a class="btn primary" href="/department/schedule/export.xlsx?month=${today.slice(0, 7)}">This month for HR</a></div></div>
+      ${!staff.length ? `<div class="alert info"><span class="ic">i</span><span>Start by adding the team on the <a href="/department/staff">Staff</a> page. Use the same email as their sign-in so they can enter their own schedule and leave.</span></div>` : ""}
+      <div class="tiles">${tile("Team members", nf(staff.length), "Active")}${tile("Working today", nf(working), "Have hours on today's schedule")}${tile("On leave today", nf(away), "Confirmed leave")}
+        ${tile("Leave coming up", nf(upcoming.length), "Next 45 days, confirmed and tentative", "/department/availability")}${pend.length ? tile("Leave requests waiting", nf(pend.length), "Need a decision", "/department/leave?status=Pending") : ""}</div>
       <div class="grid">
-        <section class="card c6"><h2>Today</h2>${table(["Name", "Status", "In", "Out", ""], staff.map((s) => { const v = g.get(s.id, today) || {}; return [s.full_name, raw(chip(v.status || "Not recorded")), v.check_in || "", v.check_out || "",
-          raw(`<form class="inline-form" method="post" action="/department/attendance/set"><input type="hidden" name="staff_id" value="${s.id}"><input type="hidden" name="from" value="${today}"><input type="hidden" name="back" value="/department"><select class="inp" name="status" aria-label="Set status for ${h(s.full_name)}">${STATUSES.map((x) => opt(x, x, v.status)).join("")}</select><button class="btn tblbtn">Set</button></form>`)]; }), { empty: "No staff yet." })}</section>
-        <section class="card c6"><h2>Leave waiting for a decision</h2>${pend.length ? pend.map((l) => decisionForm(l)).join("") : `<p class="muted">Nothing waiting.</p>`}
-          <h2 style="margin-top:16px">On leave in the next 30 days</h2>${table(["Name", "Type", "From", "To", "Days"], upcoming.map((l) => [l.full_name, l.leave_type, fmtDate(l.start_date), fmtDate(l.end_date), nf(l.days, 1)]), { num: [4], empty: "No approved leave coming up." })}</section>
-        <section class="card c12"><h2>Annual leave balances ${today.slice(0, 4)}</h2><p class="lead">Working days. Remaining = entitlement + carried over − approved annual leave this year.</p>
-          ${table(["Name", "Entitlement", "Carried over", "Taken", "Pending", "Remaining", "Sick days", "Other leave"], staff.map((s) => { const b = bal.get(s.id) || {}; return [s.full_name, nf(b.ent, 1), nf(b.co, 1), nf(b.taken, 1), nf(b.pending, 1), raw(`<b>${nf(b.remaining, 1)}</b>`), nf(b.sick, 1), nf(b.other, 1)]; }), { num: [1, 2, 3, 4, 5, 6, 7] })}</section>
+        <section class="card c7"><div class="card-head"><h2>Today</h2><a class="btn tblbtn" href="/department/schedule?view=day&date=${today}">Day timeline</a></div>${DS.todayList(D, today) || `<p class="muted">No staff yet.</p>`}</section>
+        <section class="card c5"><h2>Leave coming up</h2>${table(["Name", "Type", "From", "To", "Plan"], upcoming.map((l) => [l.full_name, l.leave_type, fmtDate(l.start_date), fmtDate(l.end_date), raw(`<span class="status-chip st-${l.status === "Approved" ? "Approved" : "Tentative"}">${l.status === "Approved" ? "Confirmed" : "Tentative"}</span>`)]), { empty: "No leave planned in the next 45 days." })}
+          ${pend.length ? `<h2 style="margin-top:16px">Waiting for a decision</h2>${pend.map((l) => decisionForm(l)).join("")}` : ""}</section>
+        <section class="card c12"><h2>Annual leave balances ${today.slice(0, 4)}</h2><p class="lead">Working days. Remaining = entitlement + carried over − confirmed annual leave this year. Planned = tentative (not yet counted).</p>
+          ${table(["Name", "Entitlement", "Carried over", "Taken", "Planned", "Remaining", "Sick days", "Other leave"], staff.map((s0) => { const b0 = bal.get(s0.id) || {}; return [s0.full_name, nf(b0.ent, 1), nf(b0.co, 1), nf(b0.taken, 1), nf(b0.pending, 1), raw(`<b>${nf(b0.remaining, 1)}</b>`), nf(b0.sick, 1), nf(b0.other, 1)]; }), { num: [1, 2, 3, 4, 5, 6, 7] })}</section>
       </div>`, { active: "/department" }));
   }));
   const decisionForm = (l) => `<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;display:grid;gap:6px">
@@ -97,28 +97,31 @@ module.exports = function department(app, { need, page, setFlash, actor, user, w
 
   // ===================================================== my attendance & leave (any staff account linked by email)
   app.get("/department/me", S, wrap(async (req, res) => {
-    const s = await me(req), today = R.todayLocal();
-    if (!s) return res.send(page(req, "My attendance & leave", `<section class="card"><h2>Your account isn't on the staff list yet</h2><p class="lead">An administrator adds you on Department → Staff using your sign-in email (${h(user(req).email)}). Then you can record your attendance and request leave here.</p></section>`, { active: "/department/me" }));
-    const m = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : today.slice(0, 7);
-    const g = await grid([s], m + "-01", monthEnd(m)), t = (await grid([s], today, today)).get(s.id, today) || {};
-    const bal = (await balances(today.slice(0, 4), [s.id])).get(s.id) || {};
-    const reqs = (await pool.query("SELECT * FROM dept_leave WHERE staff_id = $1 ORDER BY start_date DESC LIMIT 30", [s.id])).rows;
-    const rows = days(m + "-01", monthEnd(m)).filter((d) => d <= today).reverse().map((d) => { const v = g.get(s.id, d) || {}; return [fmtDate(d) + " " + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow(d)], raw(chip(v.status || "Not recorded")), v.check_in || "", v.check_out || "", v.notes || ""]; });
-    res.send(page(req, "My attendance & leave", `
+    const s0 = await me(req), today = R.todayLocal();
+    if (!s0) return res.send(page(req, "My schedule & leave", `<section class="card"><h2>Your account isn't on the team list yet</h2><p class="lead">An administrator adds you on Department → Staff using your sign-in email (${h(user(req).email)}). Then you can enter your schedule and leave plans here.</p></section>`, { active: "/department/me" }));
+    const DS = require("./deptschedule"), mon = DS.mondayOf(today);
+    const D = await DS.load(mon, addDays(mon, 6), { staffIds: [s0.id] }), wk = await DS.weekHours(s0.id, mon);
+    const bal = (await balances(today.slice(0, 4), [s0.id])).get(s0.id) || {};
+    const reqs = (await pool.query("SELECT * FROM dept_leave WHERE staff_id = $1 AND status <> 'Cancelled' ORDER BY start_date DESC LIMIT 30", [s0.id])).rows;
+    const t = D.day(s0.id, today);
+    const planChip = (st) => `<span class="status-chip st-${st === "Approved" ? "Approved" : st === "Tentative" ? "Tentative" : st}">${st === "Approved" ? "Confirmed" : st === "Pending" ? "Requested" : st}</span>`;
+    res.send(page(req, "My schedule & leave", `
       <div class="grid">
-        <section class="card c6"><h2>Today · ${fmtDate(today)}</h2><p class="lead">Now: ${chip(t.status || "Not recorded")}${t.check_in ? ` · in ${h(t.check_in)}` : ""}${t.check_out ? ` · out ${h(t.check_out)}` : ""}</p>
-          <form class="toolbar" method="post" action="/department/me/clock" style="margin:0">
-            <button class="btn primary big" name="action" value="Present">Check in · office</button><button class="btn big" name="action" value="Remote">Working remotely</button>
-            <button class="btn big" name="action" value="Field/Event">At a ride / event</button><button class="btn big" name="action" value="out">Check out</button></form>
-          <label class="f" style="display:grid;gap:4px;margin-top:10px"><span class="muted" style="font-size:13px">Times are taken from the server in UAE time.</span></label></section>
-        <section class="card c6"><h2>Annual leave ${today.slice(0, 4)}</h2>
-          <div class="tiles" style="margin-bottom:10px">${tile("Remaining", nf(bal.remaining, 1), "Working days")}${tile("Taken", nf(bal.taken, 1), "")}${tile("Waiting for approval", nf(bal.pending, 1), "")}</div>
-          <details><summary><b>Request leave</b></summary>${leaveForm("/department/me/leave", null)}</details></section>
-        <section class="card c6"><h2>My requests</h2>${table(["Type", "Dates", "Days", "Status", ""], reqs.map((l) => [l.leave_type, `${fmtDate(l.start_date)}${l.end_date !== l.start_date ? " – " + fmtDate(l.end_date) : ""}`, nf(l.days, 1), raw(chip(l.status) + (l.decision_note ? `<br><span class="muted">${h(l.decision_note)}</span>` : "")),
-          raw(l.status === "Pending" || (l.status === "Approved" && l.start_date > today) ? `<form method="post" action="/department/me/leave/${l.id}/cancel" data-confirm="Cancel this request?"><button class="btn tblbtn">Cancel</button></form>` : "")]), { num: [2], empty: "No requests yet." })}</section>
-        <section class="card c6"><div class="card-head"><h2>${h(monLabel(m, true))}</h2><form class="inline-form" method="get"><input class="inp" type="month" name="month" value="${m}" max="${today.slice(0, 7)}" data-autosubmit aria-label="Month"></form></div>${table(["Day", "Status", "In", "Out", "Note"], rows)}</section>
+        <section class="card c7"><div class="card-head"><div><h2>My week</h2><p class="lead" style="margin:2px 0 0">${hmText(wk)} this week · today ${t.blocks.length ? "" : "nothing entered yet"}</p></div>
+          <div class="toolbar" style="margin:0"><a class="btn primary" href="/department/schedule/new?staff=${s0.id}&date=${today}">+ Add to my schedule</a><a class="btn" href="/department/schedule?view=week&date=${today}">Team week</a></div></div>
+          <div class="ds-myweek">${days(mon, addDays(mon, 6)).map((d) => { const x = D.day(s0.id, d); return `<div class="ds-myday ${d === today ? "is-today" : ""}"><b>${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow(d)]} ${+d.slice(8)}</b>
+            <div>${x.leave ? `<span class="ds-leave ${x.leave.status === "Approved" ? "conf" : "tent"}">${h(x.leave.leave_type)} leave${x.leave.status === "Approved" ? "" : " (tentative)"}</span>` : ""}${x.blocks.map((b0) => `<a class="ds-chip" style="--ac:${(DS.ACTS.find((a0) => a0.k === b0.activity) || { c: "#777" }).c}" href="/department/schedule/entry/${b0.id}"><span class="ds-t">${h(b0.start_time ? b0.start_time + "–" + (b0.end_time || "") : "All day")}</span><span class="ds-a">${h(b0.activity)}${b0.note ? " · " + h(b0.note) : ""}</span></a>`).join("") || (x.holiday ? `<span class="ds-leave hol">${h(x.holiday)}</span>` : "")}</div>
+            <a class="ds-add" href="/department/schedule/new?staff=${s0.id}&date=${d}" aria-label="Add">+</a></div>`; }).join("")}</div>
+          <form method="post" action="/department/schedule/copy-week" style="margin-top:10px"><input type="hidden" name="staff_id" value="${s0.id}"><input type="hidden" name="monday" value="${mon}"><button class="btn">Copy last week into this week</button> <span class="muted" style="font-size:13px">Fills only the days that are still empty.</span></form></section>
+        <section class="card c5" id="leave"><h2>My leave ${today.slice(0, 4)}</h2>
+          <div class="tiles" style="margin-bottom:10px">${tile("Remaining", nf(bal.remaining, 1), "Working days")}${tile("Taken", nf(bal.taken, 1), "Confirmed")}${tile("Planned", nf(bal.pending, 1), "Tentative")}</div>
+          <details ${reqs.length ? "" : "open"}><summary><b>Add a leave plan</b></summary>${leaveForm("/department/me/leave", null)}</details>
+          <h3 style="font-size:15px;margin-top:12px">My leave plans</h3>
+          ${table(["Type", "Dates", "Days", "Plan", ""], reqs.map((l) => [l.leave_type, `${fmtDate(l.start_date)}${l.end_date !== l.start_date ? " – " + fmtDate(l.end_date) : ""}`, nf(l.days, 1), raw(planChip(l.status)),
+            raw(`${l.status === "Tentative" ? `<form method="post" action="/department/me/leave/${l.id}/confirm" style="display:inline"><button class="btn tblbtn primary">Confirm</button></form> ` : ""}${["Pending", "Tentative"].includes(l.status) || (l.status === "Approved" && l.start_date > today) ? `<form method="post" action="/department/me/leave/${l.id}/cancel" data-confirm="Remove this leave plan?" style="display:inline"><button class="btn tblbtn">Remove</button></form>` : ""}`)]), { num: [2], empty: "No leave planned yet." })}</section>
       </div>`, { active: "/department/me" }));
   }));
+  const hmText = (n) => (n ? `${Math.floor(n)}${n % 1 ? ":" + String(Math.round((n % 1) * 60)).padStart(2, "0") : ""} hours` : "No hours");
   app.post("/department/me/clock", S, wrap(async (req, res) => {
     const s = await me(req); if (!s) return res.redirect("/department/me");
     const today = R.todayLocal(), a = req.body.action;
@@ -138,31 +141,42 @@ module.exports = function department(app, { need, page, setFlash, actor, user, w
     <div class="row2"><label>First day<input type="date" name="start_date" required></label><label>Last day<input type="date" name="end_date" required></label></div>
     <label class="check"><input type="checkbox" name="half" value="1"> <span>Half day (one-day requests only)</span></label>
     <label>Reason / note <span class="hint">(optional)</span><input name="reason" maxlength="300"></label>
-    ${staff ? `<label class="check"><input type="checkbox" name="approve" value="1" checked> <span>Approve now</span></label>` : ""}
-    <button class="btn primary">${staff ? "Record leave" : "Send request"}</button></form>`;
-  async function createLeave(req, staffId, b, approve) {
+    <fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px"><legend style="font-weight:600;margin-bottom:4px">Plan</legend>
+      <label class="check"><input type="radio" name="plan" value="Confirmed" checked> <span><b>Confirmed</b>: approved or booked</span></label>
+      <label class="check"><input type="radio" name="plan" value="Tentative"> <span><b>Tentative</b>: still planning, may change</span></label></fieldset>
+    <button class="btn primary">Save leave plan</button></form>`;
+  async function createLeave(req, staffId, b) {
+    const status = b.plan === "Tentative" ? "Tentative" : "Approved";
+    const approve = status === "Approved";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(b.start_date || "") || !/^\d{4}-\d{2}-\d{2}$/.test(b.end_date || "") || b.end_date < b.start_date) return "Choose a first and last day (the last day can't be before the first).";
     const n = await workingDays(b.start_date, b.end_date, !!b.half);
     if (!n) return "Those dates are all weekends or public holidays.";
-    const clash = (await pool.query("SELECT 1 FROM dept_leave WHERE staff_id = $1 AND status IN ('Pending','Approved') AND end_date >= $2 AND start_date <= $3", [staffId, b.start_date, b.end_date])).rows[0];
-    if (clash) return "There is already a request for some of those days.";
+    const clash = (await pool.query("SELECT 1 FROM dept_leave WHERE staff_id = $1 AND status IN ('Pending','Approved','Tentative') AND end_date >= $2 AND start_date <= $3", [staffId, b.start_date, b.end_date])).rows[0];
+    if (clash) return "There is already leave planned for some of those days.";
     const type = LEAVE_TYPES.includes(b.leave_type) ? b.leave_type : "Annual";
     await tx(async (c) => {
       const r = (await c.query(`INSERT INTO dept_leave (staff_id, leave_type, start_date, end_date, days, reason, status, requested_by, decided_by, decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-        [staffId, type, b.start_date, b.end_date, n, R.clean(b.reason) || null, approve ? "Approved" : "Pending", actor(req), approve ? actor(req) : null, approve ? new Date() : null])).rows[0];
-      await audit(c, actor(req), "dept.leave.create", "dept_leave", String(r.id), null, { staffId, type, from: b.start_date, to: b.end_date, days: n, status: approve ? "Approved" : "Pending" });
+        [staffId, type, b.start_date, b.end_date, n, R.clean(b.reason) || null, status, actor(req), approve ? actor(req) : null, approve ? new Date() : null])).rows[0];
+      await audit(c, actor(req), "dept.leave.create", "dept_leave", String(r.id), null, { staffId, type, from: b.start_date, to: b.end_date, days: n, status });
     });
     return null;
   }
   app.post("/department/me/leave", S, wrap(async (req, res) => {
     const s = await me(req); if (!s) return res.redirect("/department/me");
-    const err = await createLeave(req, s.id, req.body, false);
-    setFlash(req, err ? "err" : "ok", err || "Request sent. You'll see the decision here.");
+    const err = await createLeave(req, s.id, req.body);
+    setFlash(req, err ? "err" : "ok", err || (req.body.plan === "Tentative" ? "Tentative leave saved. Mark it confirmed when it's booked." : "Leave saved as confirmed."));
     res.redirect("/department/me");
+  }));
+  app.post("/department/me/leave/:id/confirm", S, wrap(async (req, res) => {
+    const s = await me(req); if (!s) return res.redirect("/department/me");
+    const r = await pool.query("UPDATE dept_leave SET status = 'Approved', decided_by = $3, decided_at = now() WHERE id = $1 AND staff_id = $2 AND status = 'Tentative' RETURNING id", [+req.params.id, s.id, actor(req)]);
+    if (r.rowCount) await audit(pool, actor(req), "dept.leave.confirm", "dept_leave", req.params.id, null, null);
+    setFlash(req, "ok", "Marked as confirmed.");
+    res.redirect("/department/me#leave");
   }));
   app.post("/department/me/leave/:id/cancel", S, wrap(async (req, res) => {
     const s = await me(req); if (!s) return res.redirect("/department/me");
-    const r = await pool.query("UPDATE dept_leave SET status = 'Cancelled', decided_by = $3, decided_at = now() WHERE id = $1 AND staff_id = $2 AND (status = 'Pending' OR (status = 'Approved' AND start_date > $4)) RETURNING id", [+req.params.id, s.id, actor(req), R.todayLocal()]);
+    const r = await pool.query("UPDATE dept_leave SET status = 'Cancelled', decided_by = $3, decided_at = now() WHERE id = $1 AND staff_id = $2 AND (status IN ('Pending','Tentative') OR (status = 'Approved' AND start_date > $4)) RETURNING id", [+req.params.id, s.id, actor(req), R.todayLocal()]);
     if (r.rowCount) await audit(pool, actor(req), "dept.leave.cancel", "dept_leave", req.params.id, null, null);
     setFlash(req, r.rowCount ? "ok" : "err", r.rowCount ? "Cancelled." : "That request can't be cancelled any more.");
     res.redirect("/department/me");
@@ -213,27 +227,27 @@ module.exports = function department(app, { need, page, setFlash, actor, user, w
   // ===================================================== leave (admin)
   app.get("/department/leave", A, wrap(async (req, res) => {
     const today = R.todayLocal(), y = /^\d{4}$/.test(req.query.year || "") ? req.query.year : today.slice(0, 4);
-    const st = ["Pending", "Approved", "Rejected", "Cancelled"].includes(req.query.status) ? req.query.status : "";
+    const st = ["Pending", "Approved", "Tentative", "Rejected", "Cancelled"].includes(req.query.status) ? req.query.status : "";
     const rows = (await pool.query(`SELECT l.*, s.full_name FROM dept_leave l JOIN dept_staff s ON s.id = l.staff_id WHERE extract(year FROM l.start_date) = $1 ${st ? "AND l.status = $2" : ""} ORDER BY l.start_date DESC`, [+y, ...(st ? [st] : [])])).rows;
     const staff = await activeStaff();
     res.send(page(req, "Leave", `
       <div class="card-head"><div><h2 style="font-size:22px">Leave ${h(y)}</h2></div><a class="btn primary" href="/department/export/leave.xlsx?year=${h(y)}">Download leave register (.xlsx)</a></div>
       <form class="toolbar" method="get"><label class="f"><span>Year</span><select class="inp" name="year" data-autosubmit>${[+today.slice(0, 4) + 1, +today.slice(0, 4), +today.slice(0, 4) - 1].map((x) => opt(x, x, y)).join("")}</select></label>
-        <label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "All", st)}${["Pending", "Approved", "Rejected", "Cancelled"].map((x) => opt(x, x, st)).join("")}</select></label></form>
+        <label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "All", st)}${[["Approved", "Confirmed"], ["Tentative", "Tentative"], ["Pending", "Requested"], ["Rejected", "Rejected"], ["Cancelled", "Cancelled"]].map(([x, l]) => opt(x, l, st)).join("")}</select></label></form>
       <div class="grid"><section class="card c8">${rows.filter((l) => l.status === "Pending").map(decisionForm).join("")}
-        ${table(["Name", "Type", "From", "To", "Days", "Status", "Requested", "Decided by", ""], rows.map((l) => [l.full_name, l.leave_type, fmtDate(l.start_date), fmtDate(l.end_date), nf(l.days, 1), raw(chip(l.status)), fmtTs(l.requested_at), l.decided_by ? `${l.decided_by}${l.decision_note ? " · " + l.decision_note : ""}` : "",
-          raw(l.status === "Approved" ? `<form method="post" action="/department/leave/${l.id}/decide" data-confirm="Cancel this approved leave?"><input type="hidden" name="decision" value="Cancelled"><button class="btn tblbtn">Cancel</button></form>` : "")]), { num: [4], empty: "No leave recorded." })}</section>
-      <section class="card c4"><h2>Record leave for someone</h2><p class="lead">For requests made by email or on paper. Leave counts working days (Mon–Fri) and skips public holidays.</p>${leaveForm("/department/leave", staff)}</section></div>`, { active: "/department/leave" }));
+        ${table(["Name", "Type", "From", "To", "Days", "Status", "Requested", "Decided by", ""], rows.map((l) => [l.full_name, l.leave_type, fmtDate(l.start_date), fmtDate(l.end_date), nf(l.days, 1), raw(chip(l.status === "Approved" ? "Confirmed" : l.status).replace("st-Confirmed", "st-Approved")), fmtTs(l.requested_at), l.decided_by ? `${l.decided_by}${l.decision_note ? " · " + l.decision_note : ""}` : "",
+          raw(`${l.status === "Tentative" ? `<form method="post" action="/department/leave/${l.id}/decide" style="display:inline"><input type="hidden" name="decision" value="Approved"><button class="btn tblbtn primary">Confirm</button></form> ` : ""}${["Approved", "Tentative"].includes(l.status) ? `<form method="post" action="/department/leave/${l.id}/decide" data-confirm="Cancel this leave?" style="display:inline"><input type="hidden" name="decision" value="Cancelled"><button class="btn tblbtn">Cancel</button></form>` : ""}`)]), { num: [4], empty: "No leave recorded." })}</section>
+      <section class="card c4"><h2>Add leave for someone</h2><p class="lead">Confirmed or tentative. Leave counts working days (Mon–Fri) and skips public holidays.</p>${leaveForm("/department/leave", staff)}</section></div>`, { active: "/department/leave" }));
   }));
   app.post("/department/leave", A, wrap(async (req, res) => {
-    const err = await createLeave(req, +req.body.staff_id, req.body, !!req.body.approve);
+    const err = await createLeave(req, +req.body.staff_id, req.body);
     setFlash(req, err ? "err" : "ok", err || "Leave recorded.");
     res.redirect("/department/leave");
   }));
   app.post("/department/leave/:id/decide", A, wrap(async (req, res) => {
     const d = ["Approved", "Rejected", "Cancelled"].includes(req.body.decision) ? req.body.decision : null;
     if (d) {
-      const r = await pool.query("UPDATE dept_leave SET status = $2, decided_by = $3, decided_at = now(), decision_note = coalesce($4, decision_note) WHERE id = $1 AND status IN ('Pending','Approved') RETURNING *", [+req.params.id, d, actor(req), R.clean(req.body.note) || null]);
+      const r = await pool.query("UPDATE dept_leave SET status = $2, decided_by = $3, decided_at = now(), decision_note = coalesce($4, decision_note) WHERE id = $1 AND status IN ('Pending','Approved','Tentative') RETURNING *", [+req.params.id, d, actor(req), R.clean(req.body.note) || null]);
       if (r.rowCount) await audit(pool, actor(req), "dept.leave." + d.toLowerCase(), "dept_leave", req.params.id, null, { status: d }, R.clean(req.body.note) || null);
       setFlash(req, "ok", `Leave ${d.toLowerCase()}.`);
     }
@@ -303,7 +317,9 @@ module.exports = function department(app, { need, page, setFlash, actor, user, w
     const today = R.todayLocal(), m = addMonths(today.slice(0, 7), -1), base = `${req.protocol}://${req.get("host")}`;
     const feed = !!process.env.HR_FEED_TOKEN;
     res.send(page(req, "HR export", `<div class="grid">
-      <section class="card c6"><h2>Monthly attendance</h2><p class="lead">The attendance month as a grid (one row per person, one column per day) plus a list of every day with times, and totals per person. Ready to send to HR or payroll.</p>
+      <section class="card c12" style="border-color:var(--accent)"><h2>Monthly schedule for HR (use this one)</h2><p class="lead">The team schedule for the month: a summary per person (days worked, hours, hours by activity, weeks over the weekly limit, leave and public holidays worked), one sheet per person with every day's blocks and a total after each week, and a colour-coded team grid.</p>
+        <form class="toolbar" method="get" action="/department/schedule/export.xlsx"><label class="f"><span>Month</span><input class="inp" type="month" name="month" value="${m}" max="${today.slice(0, 7)}"></label><button class="btn primary">Download (.xlsx)</button><a class="btn" href="/department/schedule/print?month=${m}">Print / PDF</a></form></section>
+      <section class="card c6"><h2>Daily status (older check-in records)</h2><p class="lead">The attendance month as a grid (one row per person, one column per day) plus a list of every day with times, and totals per person. Ready to send to HR or payroll.</p>
         <form class="toolbar" method="get" action="/department/export/attendance.xlsx"><label class="f"><span>Month</span><input class="inp" type="month" name="month" value="${m}" max="${today.slice(0, 7)}"></label><button class="btn primary">Download (.xlsx)</button></form></section>
       <section class="card c6"><h2>Leave register</h2><p class="lead">Every leave request for the year with its decision, and each person's annual leave balance.</p>
         <form class="toolbar" method="get" action="/department/export/leave.xlsx"><label class="f"><span>Year</span><input class="inp" type="number" name="year" value="${today.slice(0, 4)}" min="2024" max="2100"></label><button class="btn primary">Download (.xlsx)</button></form></section>
