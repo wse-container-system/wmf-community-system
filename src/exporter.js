@@ -124,6 +124,17 @@ async function exportWorkbook() {
     ["Name", (r) => r.full_name], ["Date", (r) => toDate(r.work_date), "day"], ["Status", (r) => r.status], ["Check In", (r) => r.check_in], ["Check Out", (r) => r.check_out], ["Note", (r) => r.notes], ["Recorded By", (r) => r.updated_by],
   ], da);
   addTable(wb, "Public Holidays", "DeptHolidays", [["Date", (r) => toDate(r.holiday), "day"], ["Holiday", (r) => r.name]], dh);
+  const [sv, sr, so, rn] = (await Promise.all([
+    pool.query("SELECT * FROM surveys ORDER BY created_at"),
+    pool.query("SELECT r.*, s.title FROM survey_responses r JOIN surveys s ON s.id = r.survey_id ORDER BY r.created_at"),
+    pool.query("SELECT * FROM social_counts ORDER BY month, channel, city"),
+    pool.query("SELECT * FROM report_notes ORDER BY period"),
+  ])).map((r) => r.rows);
+  addTable(wb, "Surveys", "WMFSurveys", [["Survey", (r) => r.title], ["Event", (r) => r.activity_id], ["Open", (r) => (r.open ? "Yes" : "No")], ["Created", (r) => r.created_at]], sv);
+  addTable(wb, "Survey Responses", "WMFSurveyResponses", [["Survey", (r) => r.title], ["Rating (1-5)", (r) => r.rating], ["Join again", (r) => r.again], ["First WMF event", (r) => r.first_time],
+    ["Enjoyed", (r) => r.liked], ["Could be better", (r) => r.improve], ["Name", (r) => r.name], ["When", (r) => r.created_at]], sr);
+  addTable(wb, "Social Growth", "WMFSocialGrowth", [["Month", (r) => toDate(r.month), "day"], ["Channel", (r) => r.channel], ["City", (r) => r.city], ["Members", (r) => r.members]], so);
+  addTable(wb, "Report Notes", "WMFReportNotes", [["Period", (r) => r.period], ["Strategy", (r) => r.strategy], ["What's next", (r) => r.next_steps], ["Corporate note", (r) => r.corporate]], rn);
   // scanner links: names only, never the secret part of the address
   addTable(wb, "Scanner Links", "ScannerLinks", [["For", (r) => r.label], ["Programmes", (r) => r.scope], ["On", (r) => (r.active ? "Yes" : "No")], ["Check-ins", (r) => r.scans], ["Last Used (UTC)", (r) => r.last_used]], sl);
   addTable(wb, "Audit Log", "WMFAuditLog", [

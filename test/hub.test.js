@@ -387,4 +387,50 @@ test("cycling development hub", async (t) => {
     const lcsv = await pub(`/api/hr/leave.csv?key=${process.env.HR_FEED_TOKEN}&year=${mon.slice(0, 4)}`);
     assert.match(lcsv.text, /Approved/);
   });
+
+  await t.test("WMF: held event becomes an activation, survey, social growth, report", async () => {
+    const H = E.helpers, past = H.addDays(today, -5), m = past.slice(0, 7);
+    // an event with a Strava link and a partner
+    let r = await admin("/activities", { method: "POST", form: { name: "Test Women Ride", event_date: past, location: "Abu Dhabi", status: "Active", category: "Workshops",
+      partners: "Test Partner", strava_url: "https://www.strava.com/clubs/1/group_events/9", registration_open: "1" } });
+    assert.equal(r.status, 302);
+    const aid = decodeURIComponent(r.location.split("/activities/")[1]);
+    assert.equal((await admin("/activities", { method: "POST", form: { name: "Bad", strava_url: "https://example.com/x" } })).location, "/activities");
+    const mem = await tx((c) => R.createMember(c, { full_name: "Sur Vey", email: "survey@test.local", mobile: "0501112233", gender: "Female", community: "Emirati", waiver_consent: true }, "t", "t"));
+    await pool.query(`INSERT INTO participation (record_id, record_date, record_type, activity_id, activity_name, status, member_id, source, dedupe_key)
+      VALUES ('REG-T1', $1, 'Event Registration', $2, 'Test Women Ride', 'Registered', $3, 'test', 'evt-t1')`, [past + " 09:00:00", aid, mem.member_id]);
+    const pid = (await pool.query("SELECT id FROM participation WHERE record_id = 'REG-T1'")).rows[0].id;
+    await admin(`/participation/${pid}/attended`, { method: "POST", form: { came: "1" } });
+    // the date has passed: the activations page creates it, with sign-ups and who came
+    ok200(await admin("/activations"), "activations");
+    const act = (await pool.query("SELECT * FROM activations WHERE activity_id = $1", [aid])).rows[0];
+    assert.ok(act, "activation created from the event");
+    assert.equal(act.registrants, 1); assert.equal(act.participants, 1); assert.equal(act.category, "Workshops"); assert.ok(act.auto_sync);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM activation_partners WHERE activation_id = $1", [act.id])).rows[0].n, 1);
+    ok200(await admin(`/activations/${act.id}`), "activation page");
+    // survey: create, answer publicly, results
+    r = await admin("/surveys", { method: "POST", form: { activation_id: String(act.id) } });
+    const sid = r.location.split("/surveys/")[1];
+    const tok = (await pool.query("SELECT token FROM surveys WHERE id = $1", [+sid])).rows[0].token;
+    const pub = client();
+    assert.match(ok200(await pub(`/f/${tok}`), "survey form").text, /How was Test Women Ride/);
+    assert.match((await pub(`/f/${tok}`, { method: "POST", form: { rating: "5", again: "Yes", liked: "Great group" } })).text, /Thank you/);
+    const sp = ok200(await admin(`/surveys/${sid}`), "survey results").text;
+    assert.match(sp, /Great group/); assert.match(sp, /wa\.me\/971501112233/);
+    // social growth
+    await admin("/social", { method: "POST", form: { month: m, "whatsapp|Abu Dhabi": "110", "whatsapp|Dubai": "20", "strava|Abu Dhabi": "50" } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM social_counts WHERE to_char(month,'YYYY-MM') = $1", [m])).rows[0].n, 3);
+    // overview shows the database split; nav has no Scan QR
+    const ov = ok200(await admin("/overview"), "overview").text;
+    assert.match(ov, /Who is in the database/); assert.doesNotMatch(ov, />Scan QR</);
+    // report pages and the PowerPoint
+    await admin("/report/notes", { method: "POST", form: { period: `month:${m}`, strategy: "Reach new women riders", back: "/report" } });
+    const rp = ok200(await admin(`/report?period=month&p=${m}`), "report").text;
+    for (const x of ["Programme overview", "Test Women Ride", "Reach new women riders", "Social growth"]) assert.match(rp, new RegExp(x));
+    ok200(await admin(`/report?period=quarter`), "quarter"); ok200(await admin(`/report?period=year`), "year");
+    const pp = await admin(`/report.pptx?period=month&p=${m}`, { raw: true });
+    assert.equal(pp.status, 200); assert.equal(pp.text.slice(0, 2).toString(), "PK");
+    // the calendar share link is on the manage page
+    assert.match(ok200(await admin("/calendar/manage"), "calendar manage").text, /Share the calendar with the community/);
+  });
 });

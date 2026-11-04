@@ -151,6 +151,45 @@ async function loadActivations(where = "TRUE", args = []) {
     WHERE ${where} GROUP BY a.id ORDER BY a.month DESC, a.event_date DESC NULLS LAST, a.id DESC`, args)).rows;
 }
 
+/**
+ * An app event whose date has passed becomes an activation, with its sign-ups, who came, first-timers and partners.
+ * While nobody has edited the activation, the counts keep following the sign-up list; after an edit only empty counts are filled.
+ */
+async function syncHeldEvents(actor = "system") {
+  const today = R.todayLocal();
+  const evs = (await pool.query(`SELECT a.*,
+      (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL AND p.record_type = 'Event Registration')::int AS regs,
+      (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL AND p.record_type = 'Event Registration' AND p.status = 'Attended')::int AS came,
+      (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL AND p.record_type = 'Event Registration' AND p.member_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM participation q WHERE q.member_id = p.member_id AND q.voided_at IS NULL AND q.record_type IN ('Attendance', 'Event Registration')
+          AND q.activity_id IS DISTINCT FROM p.activity_id AND q.record_date < p.record_date))::int AS fresh,
+      x.id AS act_id, x.auto_sync, x.participants AS x_participants, x.registrants AS x_registrants, x.new_contacts AS x_new
+    FROM activities a LEFT JOIN LATERAL (SELECT * FROM activations y WHERE y.activity_id = a.activity_id ORDER BY y.id LIMIT 1) x ON TRUE
+    WHERE a.kind = 'event' AND a.status = 'Active' AND a.event_date IS NOT NULL AND a.event_date < $1::date`, [today])).rows;
+  let created = 0;
+  for (const e of evs) {
+    const d = String(e.event_date).slice(0, 10);
+    const counts = { registrants: e.regs || null, participants: e.came || null, new_contacts: e.fresh || null };
+    if (!e.act_id) {
+      await tx(async (c) => {
+        const row = { title: e.name, month: d.slice(0, 7) + "-01", event_date: d, category: CATEGORIES.includes(e.category) ? e.category : "Themed Community Rides",
+          location: e.location || null, status: "Completed", activity_id: e.activity_id, source: "event", auto_sync: true, link: e.strava_url || null, ...counts };
+        const cols = Object.keys(row);
+        const id = (await c.query(`INSERT INTO activations (${cols}) VALUES (${cols.map((_, i) => "$" + (i + 1))}) RETURNING id`, cols.map((k) => row[k]))).rows[0].id;
+        await setPartners(c, id, String(e.partners || "").split(",").map(R.clean).filter(Boolean));
+        await audit(c, actor, "activation.from_event", "activation", String(id), null, row, "Event date passed");
+      });
+      created++;
+    } else {
+      const keep = (k, cur) => (e.auto_sync ? counts[k] ?? cur : cur ?? counts[k]);
+      const next = { registrants: keep("registrants", e.x_registrants), participants: keep("participants", e.x_participants), new_contacts: keep("new_contacts", e.x_new) };
+      if (next.registrants !== e.x_registrants || next.participants !== e.x_participants || next.new_contacts !== e.x_new)
+        await pool.query("UPDATE activations SET registrants = $2, participants = $3, new_contacts = $4, updated_at = now() WHERE id = $1", [e.act_id, next.registrants, next.participants, next.new_contacts]);
+    }
+  }
+  return created;
+}
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } });
 const previews = new Map();
 
@@ -160,6 +199,7 @@ module.exports = function routes(app, { need, page, setFlash, actor, user, wrap 
   const monthLabel = (m) => { const d = String(m).slice(0, 7); return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+d.slice(5, 7) - 1] + " " + d.slice(0, 4); };
 
   app.get("/activations", READ, wrap(async (req, res) => {
+    await syncHeldEvents(actor(req));
     const years = (await pool.query("SELECT DISTINCT extract(year FROM month)::int y FROM activations ORDER BY y DESC")).rows.map((r) => r.y);
     const year = years.includes(+req.query.year) ? +req.query.year : req.query.year === "all" ? null : years[0] || null;
     const cat = CATEGORIES.includes(req.query.category) ? req.query.category : "";
@@ -199,7 +239,11 @@ module.exports = function routes(app, { need, page, setFlash, actor, user, wrap 
     const evs = (await pool.query("SELECT activity_id, name, event_date FROM activities WHERE kind = 'event' ORDER BY event_date DESC NULLS LAST, name LIMIT 200")).rows;
     const partners = (await pool.query("SELECT name FROM partners ORDER BY name")).rows.map((r) => r.name);
     const ro = !canEdit(req) ? "disabled" : "";
+    const sv = a.activity_id ? (await pool.query(`SELECT s.id, count(r.id)::int AS n, round(avg(r.rating), 1) AS avg FROM surveys s LEFT JOIN survey_responses r ON r.survey_id = s.id
+      WHERE s.activity_id = $1 GROUP BY s.id ORDER BY s.id LIMIT 1`, [a.activity_id])).rows[0] : null;
     return `<section class="card"><h2>${a.id ? h(a.title) : "Add an activation"}</h2>
+      ${a.auto_sync ? `<div class="alert info"><span class="ic">i</span><span>Created from the event when its date passed. Sign-ups, who came and first-timers update by themselves. Add the impact, aim and anything missing, then Save.</span></div>` : ""}
+      ${sv ? `<p class="hint" style="margin:0 0 8px">Survey: <b>${sv.n}</b> answer${sv.n === 1 ? "" : "s"}${sv.avg ? ` · average <b>${sv.avg} / 5</b>` : ""} · <a href="/surveys/${sv.id}">See results</a></p>` : a.activity_id && canEdit(req) ? `<p class="hint" style="margin:0 0 8px"><a href="/surveys?event=${encodeURIComponent(a.activity_id)}">Send a follow-up survey for this event</a></p>` : ""}
       <form class="form" method="post" action="/activations/${a.id || "new"}">
         <label>Title<input name="title" required maxlength="160" value="${h(a.title)}" ${ro}></label>
         <div class="row2"><label>Month<input type="month" name="month" required value="${h(String(a.month || R.todayLocal()).slice(0, 7))}" ${ro}></label>
@@ -209,6 +253,8 @@ module.exports = function routes(app, { need, page, setFlash, actor, user, wrap 
         <label>Partners / collaborations <span class="hint">(comma-separated, e.g. Colnago Caffè, Wolfi's)</span><input name="partners" list="partner-list" value="${h((a.partners || []).join(", "))}" ${ro}><datalist id="partner-list">${partners.map((p) => `<option value="${h(p)}">`).join("")}</datalist></label>
         <div class="row2"><label>Participants (attended)<input type="number" min="0" name="participants" value="${h(a.participants == null ? "" : a.participants)}" ${ro}></label>
           <label>Registrations <span class="hint">(optional)</span><input type="number" min="0" name="registrants" value="${h(a.registrants == null ? "" : a.registrants)}" ${ro}></label></div>
+        <div class="row2"><label>New contacts <span class="hint">(people new to WMF)</span><input type="number" min="0" name="new_contacts" value="${h(a.new_contacts == null ? "" : a.new_contacts)}" ${ro}></label>
+          <label>Aim <span class="hint">(why we ran it: one line)</span><input name="aim" maxlength="200" value="${h(a.aim)}" ${ro} placeholder="e.g. Reach a new community of women"></label></div>
         <div class="row2"><label>Lead<input name="lead_owner" maxlength="80" value="${h(a.lead_owner)}" ${ro}></label><label>Frequency<input name="frequency" maxlength="60" value="${h(a.frequency)}" ${ro} placeholder="one time event, monthly…"></label></div>
         <div class="row2"><label>Location<input name="location" maxlength="120" value="${h(a.location)}" ${ro}></label>
           <label>Linked app event <span class="hint">(sign-ups counted automatically)</span><select name="activity_id" ${ro}><option value="">None</option>${evs.map((e) => `<option value="${h(e.activity_id)}" ${a.activity_id === e.activity_id ? "selected" : ""}>${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</option>`).join("")}</select></label></div>
@@ -234,7 +280,7 @@ module.exports = function routes(app, { need, page, setFlash, actor, user, wrap 
     const row = { title, month, event_date: /^\d{4}-\d{2}-\d{2}$/.test(b.event_date || "") ? b.event_date : null, category: CATEGORIES.includes(b.category) ? b.category : "Other Activations",
       status: STATUSES.includes(b.status) ? b.status : "Completed", participants: n(b.participants), registrants: n(b.registrants), lead_owner: R.clean(b.lead_owner) || null,
       frequency: R.clean(b.frequency) || null, location: R.clean(b.location) || null, activity_id: R.clean(b.activity_id) || null,
-      impact: String(b.impact || "").trim() || null, link: R.clean(b.link) || null };
+      impact: String(b.impact || "").trim() || null, link: R.clean(b.link) || null, new_contacts: n(b.new_contacts), aim: R.clean(b.aim) || null, auto_sync: false };
     const partners = String(b.partners || "").split(",").map(R.clean).filter(Boolean);
     const id = await tx(async (c) => {
       let aid, before = null;
@@ -339,3 +385,4 @@ module.exports.parseActivationWorkbook = parseActivationWorkbook;
 module.exports.commitActivations = commitActivations;
 module.exports.loadActivations = loadActivations;
 module.exports.CATEGORIES = CATEGORIES;
+module.exports.syncHeldEvents = syncHeldEvents;

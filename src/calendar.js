@@ -19,7 +19,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Rows in the shape the calendar page uses (same as the original WMF calendar). */
 function toItem(row, act) {
   const it = { id: row.id, t: row.title, c: row.category, s: row.start_date, e: row.end_date, st: row.start_time || "", et: row.end_time || "",
-    loc: row.location || "", status: row.status, r: row.recur || null, x: row.exceptions || null, u: row.url || "", slot: row.ride_slot || null };
+    loc: row.location || "", status: row.status, r: row.recur || null, x: row.exceptions || null, u: row.url || (act && act.strava_url) || "", slot: row.ride_slot || null };
   if (act && act.registration_open && act.kind === "event" && act.status === "Active" && (!act.event_date || act.event_date >= R.todayLocal())) it.signup = "/events/" + encodeURIComponent(act.activity_id);
   if (act && Number(act.price_aed) > 0) it.fee = "AED " + Number(act.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 });
   return it;
@@ -107,11 +107,20 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
 
   // ---------- staff: manage entries ----------
   app.get("/calendar/manage", STAFF, wrap(async (req, res) => {
+    const link = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "") + "/calendar";
+    const qr = await require("qrcode").toDataURL(link, { margin: 1, width: 360, color: { dark: "#1d1b3a", light: "#ffffff" } });
+    const msg = `The WMN Moving FWD ride calendar: all our rides, events and key dates in one place. Save the link: ${link}`;
     const r = await pool.query(`SELECT ci.*, a.registration_open FROM calendar_items ci LEFT JOIN activities a ON a.activity_id = ci.activity_id
       ORDER BY (coalesce((ci.recur->>'until')::date, ci.end_date) < $1::date), ci.start_date, ci.id`, [R.todayLocal()]);
     const slotName = Object.fromEntries(R.CORE_RIDES.map((x) => [x.activity_id, x.name]));
     const repeat = (x) => x.recur ? `Every ${x.recur.interval > 1 ? x.recur.interval + " weeks, " : ""}${(x.recur.weekdays || []).map((d) => DAYS[d]).join(", ")}${x.recur.until ? " until " + fmtDate(x.recur.until) : ""}` : "";
-    res.send(page(req, "Edit calendar", `<section class="card">
+    res.send(page(req, "Edit calendar", `<section class="card share-cal"><div><h2>Share the calendar with the community</h2>
+        <p class="lead">Anyone with this link sees the rides, events and key dates. No sign-in, nothing personal. Events with open sign-up show a Sign up button.</p>
+        <div class="sc-row" style="max-width:520px"><input class="inp" value="${h(link)}" readonly aria-label="Calendar link"><button class="btn" type="button" data-copy="${h(link)}">Copy</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Share on WhatsApp</a>
+          <a class="btn" href="${qr}" download="WMF-calendar-QR.png">Download QR code</a><a class="btn" href="/calendar" target="_blank" rel="noopener">Open as the community sees it</a></div></div>
+        <img src="${qr}" alt="QR code for the calendar link" width="150" height="150"></section>
+      <section class="card">
       <div class="card-head"><div><h2>WMF calendar</h2><p class="lead">WMF rides tell the scanner which ride is on each day. WMF events get a sign-up page you can open from here.</p></div>
         <div style="display:flex;gap:8px"><a class="btn" href="/calendar">View calendar</a><a class="btn primary" href="/calendar/items/new">Add entry</a></div></div>
       <div class="tw"><table><thead><tr><th>When</th><th>Entry</th><th>Type</th><th>Scanner ride / sign-up</th><th>Status</th></tr></thead><tbody>
