@@ -76,14 +76,96 @@ async function markAttendance(c, session, participant, method, by) {
   const n = Number((await c.query("SELECT count(*) n FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = $1", [participant.id])).rows[0].n);
   return { status: r.rowCount ? "ok" : "duplicate", total: n };
 }
-/** Sessions a person can check in to today: what is scheduled, or the weekly ride on a ride day. */
+// ---------------------------------------------------------------- schedules
+/**
+ * Regular sessions per company, e.g. "every Thursday 06:00" or "1st Thursday of the month 17:00".
+ * week: 0 = every week, 1–4 = that week of the month (1st Thursday = days 1–7), -1 = the last one in the month.
+ */
+const WEEKDAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKS = [[0, "Every week"], [1, "1st of the month"], [2, "2nd of the month"], [3, "3rd of the month"], [4, "4th of the month"], [-1, "Last of the month"]];
+const dayNo = (iso) => new Date(iso + "T12:00:00Z").getUTCDay();
+const daysInMonth = (iso) => new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7), 0)).getUTCDate();
+function occursOn(sc, iso) {
+  if (!sc.active || dayNo(iso) !== sc.weekday) return false;
+  if (sc.starts && iso < String(sc.starts)) return false;
+  if (sc.ends && iso > String(sc.ends)) return false;
+  const d = +iso.slice(8, 10);
+  if (sc.week === 0) return true;
+  if (sc.week === -1) return d + 7 > daysInMonth(iso);
+  return Math.ceil(d / 7) === sc.week;
+}
+const scheduleText = (sc) => `${sc.week === 0 ? "Every" : (WEEKS.find((w) => w[0] === sc.week) || [0, ""])[1].replace(" of the month", "")} ${WEEKDAYS_LONG[sc.weekday]}${sc.week === 0 ? "" : " of the month"}${sc.start_time ? " · " + sc.start_time : ""}`;
+const schedName = (sc, co) => sc.title || (sc.kind === RIDE ? `${co ? co.name + " " : ""}weekly ride` : sc.kind);
+async function schedules(c, codes, { all = false } = {}) {
+  return (await c.query(`SELECT * FROM corp_schedules WHERE company = ANY($1) ${all ? "" : "AND active"} ORDER BY company, week = 0 DESC, week, weekday, start_time`, [codes])).rows;
+}
+/** First run only: the programme's regular sessions as agreed (adjustable on Corporate → Schedule). */
+async function seedSchedules(c = pool) {
+  const done = (await c.query("SELECT 1 FROM settings WHERE key = 'corpSchedulesSeeded'")).rows[0];
+  if (done) return;
+  const today = R.todayLocal();
+  const rows = [["LIMAD", RIDE, "", 4, 0, "06:00"], ["NMDC", RIDE, "", 4, 0, null], ["AURORA", RIDE, "Aurora Ride", 4, 1, "17:00"], ["AURORA", "Running", "Aurora Running", 4, 2, "17:00"], ["AURORA", "Yoga", "Aurora Yoga", 4, 3, "17:00"]];
+  for (const [co, kind, title, wd, wk, t] of rows) {
+    if (!(await c.query("SELECT 1 FROM corp_companies WHERE code = $1", [co])).rows[0]) continue;
+    await c.query("INSERT INTO corp_schedules (company, kind, title, weekday, week, start_time, starts) VALUES ($1,$2,$3,$4,$5,$6,$7)", [co, kind, title, wd, wk, t, today]);
+  }
+  await c.query("INSERT INTO settings (key, value) VALUES ('corpSchedulesSeeded', 'true') ON CONFLICT (key) DO NOTHING");
+}
+/** Every planned occurrence between two dates, with the session already recorded for it (if any). */
+async function occurrences(c, codes, from, to) {
+  const scs = await schedules(c, codes);
+  const sess = (await c.query("SELECT * FROM corp_sessions WHERE company = ANY($1) AND session_date BETWEEN $2 AND $3", [codes, from, to])).rows;
+  const out = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) for (const sc of scs) if (occursOn(sc, d)) {
+    const s = sess.find((x) => x.company === sc.company && x.session_date === d && x.kind === sc.kind && x.title === (sc.title || ""));
+    out.push({ date: d, sc, session: s || null });
+  }
+  return out;
+}
+
+/**
+ * Sessions people can check in to today: anything recorded or scheduled for today, plus each planned session from the
+ * company's schedule that isn't recorded yet (it is created at the first check-in). Companies with no schedule fall back to their ride days.
+ */
 async function todaysSessions(c, co) {
   const today = R.todayLocal();
-  const rows = (await c.query("SELECT * FROM corp_sessions WHERE company = $1 AND session_date = $2 AND status <> 'Cancelled' ORDER BY kind = $3 DESC, id", [co.code, today, RIDE])).rows;
-  const hasRide = rows.some((s) => s.kind === RIDE);
-  const cancelledRide = (await c.query("SELECT 1 FROM corp_sessions WHERE company = $1 AND session_date = $2 AND kind = $3 AND status = 'Cancelled'", [co.code, today, RIDE])).rows[0];
-  if (!hasRide && !cancelledRide && isRideDay(co, today)) rows.unshift({ id: 0, company: co.code, session_date: today, kind: RIDE, title: "", status: "Scheduled", virtual: true });
-  return rows;
+  const all = (await c.query("SELECT * FROM corp_sessions WHERE company = $1 AND session_date = $2 ORDER BY kind = $3 DESC, start_time NULLS LAST, id", [co.code, today, RIDE])).rows;
+  const rows = all.filter((s) => s.status !== "Cancelled");
+  const scs = await schedules(c, [co.code]);
+  if (scs.length) {
+    for (const sc of scs) if (occursOn(sc, today) && !all.some((s) => s.kind === sc.kind && s.title === (sc.title || "")))
+      rows.push({ id: 0, company: co.code, session_date: today, kind: sc.kind, title: sc.title || "", start_time: sc.start_time, location: sc.location, status: "Scheduled", virtual: true, sched: sc.id });
+  } else if (!rows.some((s) => s.kind === RIDE) && !all.some((s) => s.kind === RIDE && s.status === "Cancelled") && isRideDay(co, today)) {
+    rows.push({ id: 0, company: co.code, session_date: today, kind: RIDE, title: "", status: "Scheduled", virtual: true });
+  }
+  return rows.sort((a, b) => String(a.start_time || "99").localeCompare(String(b.start_time || "99")));
+}
+/** The value a form or scanner sends for a session: its number, or a plan to create it at the first check-in. */
+const sessionValue = (s) => (s.virtual ? (s.sched ? `sched:${s.sched}` : `ride:${s.company}`) : String(s.id));
+/**
+ * Turn a sent value into today's session, creating a planned one on first use.
+ * "ride:AUTO" + company = that company's session today (its ride first), or an extra ride when nothing is planned.
+ */
+async function resolveSession(c, value, { by, company } = {}) {
+  const v = String(value || ""), today = R.todayLocal();
+  if (v === "ride:AUTO") {
+    const co = (await c.query("SELECT * FROM corp_companies WHERE code = $1", [company])).rows[0];
+    if (!co) return null;
+    const ss = await todaysSessions(c, co);
+    const pick = ss.find((s) => s.kind === RIDE) || ss[0];
+    return pick ? resolveSession(c, sessionValue(pick), { by }) : ensureSession(c, { company, date: today, kind: RIDE, status: "Held", by });
+  }
+  let m = /^sched:(\d+)$/.exec(v);
+  if (m) {
+    const sc = (await c.query("SELECT * FROM corp_schedules WHERE id = $1", [+m[1]])).rows[0];
+    if (!sc) return null;
+    const s = await ensureSession(c, { company: sc.company, date: today, kind: sc.kind, title: sc.title, status: "Held", by });
+    if (!s.start_time && (sc.start_time || sc.location)) await c.query("UPDATE corp_sessions SET start_time = coalesce(start_time, $2), location = coalesce(location, $3) WHERE id = $1", [s.id, sc.start_time, sc.location]);
+    return s;
+  }
+  m = /^ride:([A-Z]+)$/.exec(v);
+  if (m) return ensureSession(c, { company: m[1], date: today, kind: RIDE, status: "Held", by });
+  return (await c.query("SELECT * FROM corp_sessions WHERE id = $1", [+v || 0])).rows[0] || null;
 }
 const sessionName = (s, co) => s.title || (s.kind === RIDE ? `${co ? co.name + " " : ""}weekly ride` : s.kind);
 
@@ -166,13 +248,9 @@ async function corpScan(c, { code, session, by, codes, method = "Scanned by staf
   if (!pid) return { status: "error", message: "This is not a corporate QR code or ID." };
   const p = (await c.query("SELECT * FROM corp_participants WHERE pid = $1", [pid])).rows[0];
   if (!p || !codes.includes(p.company)) return { status: "error", message: `${pid} isn't on the participant list.` };
-  let s;
-  // "ride:AUTO": today's weekly ride of whichever company the person belongs to
-  if (String(session || "") === "ride:AUTO") session = "ride:" + p.company;
-  const m = /^ride:([A-Z]+)$/.exec(String(session || ""));
-  if (m) { if (!codes.includes(m[1])) return { status: "error", message: "Choose today's session first." }; s = await ensureSession(c, { company: m[1], date: R.todayLocal(), kind: RIDE, status: "Held", by }); }
-  else s = (await c.query("SELECT * FROM corp_sessions WHERE id = $1", [+session || 0])).rows[0];
-  if (!s) return { status: "error", message: "Choose today's session first." };
+  // "ride:AUTO": today's session of whichever company the person belongs to
+  const s = await resolveSession(c, session, { by, company: p.company });
+  if (!s || !codes.includes(s.company)) return { status: "error", message: "Choose today's session first." };
   if (s.company !== p.company) return { status: "error", message: `${p.full_name} is with ${p.company}, not this session's company. Choose the ${p.company} session.` };
   const r = await markAttendance(c, s, p, method, by);
   return { ...r, name: p.full_name, pid: p.pid, company: p.company };
@@ -201,5 +279,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, corpScan, createParticipant, findParticipant, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };

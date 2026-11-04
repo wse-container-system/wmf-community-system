@@ -13,7 +13,7 @@ const SECTIONS = [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/scan", "Scan QR", STAFF], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/calendar", "Calendar", ALL], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
-    ["/corporate", "Dashboard", ALL], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/events", "Events", STAFF],
+    ["/corporate", "Dashboard", ALL], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
     ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
     ["/department", "Overview", ["admin"]], ["/department/me", "My attendance & leave", STAFF], ["/department/attendance", "Attendance", ["admin"]],

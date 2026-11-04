@@ -159,7 +159,7 @@ app.get("/", need(), wrap(async (req, res) => {
         <div class="stats">${stat(W.members, "members")}${stat(W.rides, "ride check-ins")}${stat(W.events, "event sign-ups")}</div>
         <p class="muted" style="margin:0;font-size:14px">Rides, members, events, calendar, dashboard and monthly export.</p></a>
       <a class="hub-card band-corp" href="/corporate"><span class="eyebrow">Corporate programme</span><h3>Corporate Cycling</h3>
-        <div class="stats">${stat(K.rideSessions, "weekly rides")}${stat(K.attendance, "total attendance")}${stat(K.active, "active riders")}</div>
+        <div class="stats">${stat(K.rideSessions, "rides held")}${stat(K.attendance, "total attendance")}${stat(K.active, "active riders")}</div>
         <p class="muted" style="margin:0;font-size:14px">L'IMAD, NMDC and Aurora: QR check-in, attendance, events, reports for sponsors.</p></a>
       ${isStaff ? `<a class="hub-card band-dept" href="${u.role === "admin" ? "/department" : "/department/me"}"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
         ${D ? `<div class="stats">${stat(D.staff, "team members")}${stat(D.inn, "in today")}${stat(D.pending, "leave requests waiting")}</div>` : ""}
@@ -671,6 +671,7 @@ async function init() {
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
   await require("./corpdata").seedCompanies();
+  await require("./corpdata").seedSchedules();
   const merged = await require("./dupes").autoMergeEmails("system"); // same email = same person
   if (merged) console.log(`Merged ${merged} duplicate member records (same email).`);
   await ensureAdmin();
