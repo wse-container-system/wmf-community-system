@@ -633,7 +633,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <section class="card narrow"><h2>Forgot their QR code?</h2><p class="lead">Type their ID number (e.g. NMDC-0012, or just "nmdc 12"). You can also tick names on the <a href="/corporate/attendance">session page</a>.</p>
         <form class="toolbar" id="byId" style="margin:0"><input class="inp" id="pidInput" placeholder="ID number" autocomplete="off" style="max-width:220px" aria-label="ID number"><button class="btn primary">Check in</button></form></section>
       <section class="card narrow"><h2>This session</h2><ul class="log" id="log"><li class="muted">No scans yet on this device.</li></ul></section>` : ""}`,
-    { active: "/corporate/scan", scripts: options.length ? `<script src="/vendor/html5-qrcode.min.js"></script><script src="/corp-scan.js"></script>` : "" }));
+    { active: "/corporate/scan", scripts: options.length ? `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/corp-scan.js"></script>` : "" }));
   }));
   app.post("/api/corp/scan", S, wrap(async (req, res) => {
     const { code, session } = req.body || {};

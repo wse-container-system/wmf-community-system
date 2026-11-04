@@ -30,7 +30,9 @@ app.use((req, res, next) => {
 // wake-up address for a free "keep awake" service: answers without touching the database, so Neon can still sleep
 app.get("/ping", (req, res) => res.set("Cache-Control", "no-store").type("text").send("ok"));
 app.get("/healthz", async (req, res) => { try { await pool.query("SELECT 1"); res.send("ok"); } catch (e) { res.status(503).send("db unavailable"); } });
-app.use(express.static(path.join(__dirname, "..", "public"), { index: false, maxAge: PROD ? "1h" : 0 }));
+app.use(express.static(path.join(__dirname, "..", "public"), { index: false, maxAge: PROD ? "1h" : 0,
+  // scripts and styles: always check for a newer copy, so a phone never keeps an old scanner after an update
+  setHeaders: (res, file) => { if (/\.(js|css|html)$/.test(file)) res.set("Cache-Control", "no-cache"); } }));
 app.get("/engine.js", (req, res) => res.type("js").sendFile(path.join(__dirname, "engine.js")));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 app.use(express.json({ limit: "200kb" }));
@@ -259,7 +261,7 @@ app.get("/scan", need(...STAFF), wrap(async (req, res) => {
     </section>
     <p class="muted narrow" style="font-size:13px;margin:0">After the ride: <a href="/rides">check the attendance list</a> for usual riders who weren't scanned.</p>
     <section class="card narrow"><h2>This session</h2><ul class="log" id="log"><li class="muted">No check-ins yet on this device.</li></ul></section>`,
-  { active: "/scan", scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/scan.js"></script>` }));
+  { active: "/scan", scripts: `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/scan.js"></script>` }));
 }));
 
 /** Check one member in to a ride. Shared by camera scans, name search and walk-ins. */

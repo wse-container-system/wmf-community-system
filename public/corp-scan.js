@@ -41,7 +41,7 @@
     if (!window.Html5Qrcode) return show({ status: "error", message: "The scanner didn't load. Refresh the page." });
     scanner = scanner || new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
     scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: function (w, h) { var s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } }, onScan, function () {})
-      .then(function () { $("#start").hidden = true; $("#stop").hidden = false; }, function () { show({ status: "error", message: "Camera unavailable. Allow camera access for this site." }); });
+      .then(function () { $("#start").hidden = true; $("#stop").hidden = false; }, function (e) { show({ status: "error", message: window.cameraHelp ? window.cameraHelp(e) : "Camera unavailable. Allow camera access for this site." }); });
   });
   $("#stop").addEventListener("click", function () { (scanner ? scanner.stop() : Promise.resolve()).catch(function () {}).then(function () { $("#start").hidden = false; $("#stop").hidden = true; }); });
 })();
