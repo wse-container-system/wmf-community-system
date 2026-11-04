@@ -75,6 +75,7 @@ function weekView(D, mon, ctx) {
   return `<div class="tw"><table class="sc-week"><thead><tr><th></th>${head}<th>Hours</th></tr></thead><tbody>${rows || `<tr><td class="muted">Add the team first.</td></tr>`}</tbody></table></div>`;
 }
 
+const short = (t) => { const [hh, mm] = String(t || "").split(":"); return hh ? `${+hh}${mm && mm !== "00" ? ":" + mm : ""}` : ""; };
 function monthView(D, m, ctx) {
   const ds = days(m + "-01", monthEnd(m)), today = R.todayLocal();
   const head = ds.map((d) => `<th class="${dow(d) === 0 || dow(d) === 6 ? "we" : ""} ${d === today ? "is-today" : ""}">${+d.slice(8)}<br><span>${DOW[dow(d)][0]}</span></th>`).join("");
@@ -83,10 +84,12 @@ function monthView(D, m, ctx) {
       const main = x.blocks.slice().sort((a, b) => hrs(b) - hrs(a))[0];
       const cls = x.leave ? (x.leave.status === "Approved" ? "conf" : "tent") : x.holiday ? "hol" : x.weekend ? "we" : "";
       const tip = [fmtDate(d), x.leave ? `${x.leave.leave_type} leave${x.leave.status === "Approved" ? "" : " (tentative)"}` : "", x.holiday || "", ...x.blocks.map((b) => `${b.start_time ? b.start_time + "–" + b.end_time + " " : ""}${b.activity}${b.note ? " · " + b.note : ""}`)].filter(Boolean).join("\n");
-      return `<td class="${cls}" title="${h(tip)}">${x.hours ? `<span class="sc-dot" style="background:${actOf(main.activity).c}"></span>${Math.round(x.hours * 10) / 10}` : x.leave ? "L" : main ? `<span class="sc-dot" style="background:${actOf(main.activity).c}"></span>` : ""}</td>`; }).join("");
+      // each block as a short time, coloured by activity: "9–17", "6–8", "19:30–21"
+      const times = x.blocks.map((b) => `<span class="sc-mt" style="--ac:${actOf(b.activity).c}">${b.start_time ? `${short(b.start_time)}–${short(b.end_time)}` : h(b.activity)}</span>`).join("");
+      return `<td class="${cls}" title="${h(tip)}">${x.leave ? `<span class="sc-ml">L</span>` : ""}${times}</td>`; }).join("");
     return `<tr><th>${h(s.full_name)}</th>${cells}<td class="sc-tot">${hm(tot) || "—"}</td></tr>`; }).join("");
   return `<div class="tw"><table class="sc-month"><thead><tr><th></th>${head}<th>Hours</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted" style="font-size:12.5px;margin:6px 0 0">Numbers = hours that day · L = leave (striped = tentative) · hover a day for details</p>`;
+    <p class="muted" style="font-size:12.5px;margin:6px 0 0">Times are in 24-hour format (9–17 = 09:00 to 17:00), coloured by activity · L = leave (striped = tentative) · hover a day for details</p>`;
 }
 
 // ---------------------------------------------------------------- HR timesheet (short)

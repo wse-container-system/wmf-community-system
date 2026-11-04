@@ -258,3 +258,8 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .sc-month .hol { background: #d8f0e0; } .sc-month .is-today { box-shadow: inset 0 -2px 0 var(--accent); }
 .sc-dot { display: block; width: 14px; height: 4px; border-radius: 2px; margin: 0 auto 2px; }
 @media (max-width: 560px) { .sc-step b { min-width: 0; font-size: 15px; } }
+
+/* month: short times per block */
+.sc-month td { vertical-align: top; min-width: 44px; padding: 3px 2px; height: auto; }
+.sc-mt { display: block; font-size: 11px; font-weight: 600; line-height: 1.25; white-space: nowrap; border-left: 3px solid var(--ac); background: color-mix(in srgb, var(--ac) 12%, transparent); border-radius: 3px; padding: 1px 3px; margin-bottom: 2px; text-align: left; }
+.sc-ml { display: block; font-size: 11px; font-weight: 700; }

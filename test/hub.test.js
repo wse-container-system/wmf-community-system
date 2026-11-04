@@ -322,7 +322,7 @@ test("cycling development hub", async (t) => {
     const bad = await admin("/department/schedule/entries", { method: "POST", form: { staff_id: String(jas.id), activity: "Office", work_date: monday, start_time: "10:00", end_time: "09:00" } });
     assert.match(bad.location, /err=/);
     assert.equal(await DS.weekHours(jas.id, monday), 42);
-    for (const v of ["week", "month"]) assert.match(ok200(await admin(`/department/schedule?view=${v}&date=${E.helpers.addDays(monday, 3)}`), v).text, v === "week" ? /Corporate Ride/ : /sc-dot/);
+    for (const v of ["week", "month"]) assert.match(ok200(await admin(`/department/schedule?view=${v}&date=${E.helpers.addDays(monday, 3)}`), v).text, v === "week" ? /Corporate Ride/ : /sc-mt[^>]*>6–8</);
     await admin("/department/schedule/copy-week", { method: "POST", form: { staff_id: String(jas.id), monday: E.helpers.addDays(monday, 7) } });
     assert.equal(await DS.weekHours(jas.id, E.helpers.addDays(monday, 7)), 42);
     const hwb = await xlsx((await admin(`/department/schedule/export.xlsx?month=${today.slice(0, 7)}`, { raw: true })).text);
