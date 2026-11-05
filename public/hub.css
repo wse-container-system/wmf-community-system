@@ -432,3 +432,7 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
   body:has(.mg-wrap) { margin: 0 !important; } body:has(.mg-wrap) .flash { display: none !important; }
   .mg-wrap { display: block; } .mg-page { width: 13.333in; max-width: none; height: 7.45in; aspect-ratio: auto; box-shadow: none; break-inside: avoid; page-break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+/* department: ready timings */
+.ds-times { display: grid; gap: 6px; } .ds-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 14px var(--f-body); color: var(--ink); cursor: pointer; min-height: 38px; }
+.ds-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
