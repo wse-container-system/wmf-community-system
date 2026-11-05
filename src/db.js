@@ -385,6 +385,40 @@ CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NO
 -- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
 ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
 ALTER TABLE dept_leave ADD CONSTRAINT dept_leave_status_check CHECK (status IN ('Pending','Approved','Rejected','Cancelled','Tentative'));
+
+-- WMF events: Strava link and partners; a held event becomes an activation automatically
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS strava_url TEXT;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS partners TEXT;
+ALTER TABLE activations ADD COLUMN IF NOT EXISTS new_contacts INTEGER;
+ALTER TABLE activations ADD COLUMN IF NOT EXISTS aim TEXT;
+ALTER TABLE activations ADD COLUMN IF NOT EXISTS auto_sync BOOLEAN NOT NULL DEFAULT FALSE;
+-- follow-up surveys after an event
+CREATE TABLE IF NOT EXISTS surveys (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, activity_id TEXT, activation_id INTEGER REFERENCES activations(id) ON DELETE SET NULL,
+  title TEXT NOT NULL, open BOOLEAN NOT NULL DEFAULT TRUE, created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS survey_responses (
+  id SERIAL PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+  rating INTEGER CHECK (rating BETWEEN 1 AND 5), again TEXT, first_time TEXT, liked TEXT, improve TEXT, name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- WhatsApp and Strava community sizes, entered once a month
+CREATE TABLE IF NOT EXISTS social_counts (
+  month DATE NOT NULL, channel TEXT NOT NULL CHECK (channel IN ('whatsapp','strava')), city TEXT NOT NULL CHECK (city IN ('Abu Dhabi','Dubai')),
+  members INTEGER NOT NULL CHECK (members >= 0), updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (month, channel, city)
+);
+-- end-of-season surveys (summer / winter), including past ones imported from Microsoft Forms
+CREATE TABLE IF NOT EXISTS season_surveys (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, title TEXT NOT NULL, season TEXT NOT NULL CHECK (season IN ('Summer','Winter','Community')), year INTEGER NOT NULL,
+  opened DATE, source TEXT NOT NULL DEFAULT 'app', open BOOLEAN NOT NULL DEFAULT TRUE, questions JSONB NOT NULL, focus TEXT, created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS season_answers (
+  id SERIAL PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES season_surveys(id) ON DELETE CASCADE, answers JSONB NOT NULL, at TIMESTAMPTZ
+);
+-- what the team writes into a report: strategy, what's next
+CREATE TABLE IF NOT EXISTS report_notes (
+  period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 const DEFAULT_SETTINGS = {

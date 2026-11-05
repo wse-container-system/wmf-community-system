@@ -8,6 +8,7 @@ const R = require("./rules");
 const E = require("./engine");
 const { buildData } = require("./snapshot");
 const { loadActivations } = require("./activations");
+const { databaseMix } = require("./demographics");
 const { h, fmtDate } = require("./views");
 
 const H = E.helpers;
@@ -66,13 +67,21 @@ function hbars(rows, { label, color = "var(--s2)" }) {
   return `<div class="hbars" role="list" aria-label="${h(label)}">${rows.map((r) => `<div class="hbar" role="listitem" ${tipAttr(nf(r.value) + (r.unit || ""), r.tip || r.label)}>
     <span class="hbar-l">${h(r.label)}</span><span class="hbar-t"><span style="width:${Math.max(2, (r.value / max) * 100)}%;background:${color}"></span></span><span class="hbar-v">${nf(r.value)}${r.note ? ` <span class="muted">${h(r.note)}</span>` : ""}</span></div>`).join("")}</div>`;
 }
+/** One stacked bar with its numbers, e.g. Abu Dhabi 412 · Dubai 98. Empty parts are left out. */
+function split(label, parts) {
+  const total = parts.reduce((a, p) => a + p[1], 0);
+  const shown = parts.filter((p) => p[1] > 0);
+  return `<div class="split"><div class="split-h"><b>${h(label)}</b></div>
+    <div class="split-bar" role="img" aria-label="${h(label + ": " + shown.map((p) => `${p[0]} ${p[1]}`).join(", "))}">${shown.map((p) => `<span style="flex:${p[1]};background:${p[2]}" ${tipAttr(nf(p[1]) + " · " + Math.round((p[1] / total) * 100) + "%", p[0])}></span>`).join("")}</div>
+    <div class="split-k">${shown.map((p) => `<span><i style="background:${p[2]}"></i>${h(p[0])} <b>${nf(p[1])}</b> <span class="muted">${Math.round((p[1] / total) * 100)}%</span></span>`).join("") || '<span class="muted">No data yet.</span>'}</div></div>`;
+}
 const tableToggle = (id, head, rows) => `<details class="tview"><summary>Show as table</summary><div class="tw"><table id="${id}"><thead><tr>${head.map((x, i) => `<th${i ? ' class="n"' : ""}>${h(x)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="n"' : ""}>${h(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></details>`;
 
 module.exports = function overview(app, { need, page, wrap }) {
   app.get("/overview", need(), wrap(async (req, res) => {
     const today = R.todayLocal();
     const [data, settings] = await Promise.all([buildData(), getSettings()]);
-    const acts = await loadActivations();
+    const [acts, mix] = await Promise.all([loadActivations(), databaseMix()]);
     const years = [...new Set(acts.map((a) => +String(a.month).slice(0, 4)).concat([+today.slice(0, 4)]))].sort((a, b) => b - a);
     const year = years.includes(+req.query.year) ? +req.query.year : +today.slice(0, 4);
     const isCurrent = year === +today.slice(0, 4);
@@ -136,6 +145,13 @@ module.exports = function overview(app, { need, page, wrap }) {
         ${tile("Events & activations", nf(done.length), delta(done.length, donePrev.length, `in ${year - 1}`), `${nf(people(done))} participants${big.length ? ` (+${nf(big.reduce((s, a) => s + (a.participants || 0), 0))} at ${h(big.map((b) => b.title).join(", "))})` : ""}`)}
         ${tile("Partners", nf(partnerStats.size), `<span class="delta">${newPartners.length} new in ${year}</span>`, `${done.length ? Math.round((withPartner.length / done.length) * 100) : 0}% of activations had a partner`)}
       </div>
+
+      <section class="card"><h2>Who is in the database</h2><p class="lead">${nf(mix.total)} members. City is the home city given at registration, otherwise where they ride most.</p>
+        <div class="mix">
+          ${split("City", [["Abu Dhabi", mix.city.auh, "var(--s1)"], ["Dubai", mix.city.dxb, "#e8833a"]])}
+          ${split("Gender", [["Women", mix.gender.women, "var(--s3)"], ["Men", mix.gender.men, "var(--s2)"], ["Not recorded", mix.gender.unknown, "var(--line)"]])}
+          ${split("Community", [["Emirati", mix.group.emirati, "var(--s1)"], ["Arab", mix.group.arab, "var(--s2)"], ["Expat", mix.group.expat, "var(--s3)"], ["Not recorded", mix.group.unknown, "var(--line)"]])}
+        </div></section>
 
       <div class="grid">
         <section class="card c7"><h2>Is the community growing?</h2><p class="lead">Total members in the database, month by month. Each step up is new people registering.</p>

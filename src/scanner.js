@@ -87,6 +87,8 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
           <label>Full name<input name="full_name" required maxlength="120" autocomplete="off"></label>
           <label>Mobile<input name="mobile" required maxlength="30" inputmode="tel" autocomplete="off" placeholder="05x xxx xxxx"></label>
           <label>Email<input name="email" type="email" maxlength="160" autocomplete="off"></label>
+          <div class="row2"><label>Gender<select name="gender"><option value="">—</option><option>Female</option><option>Male</option></select></label>
+            <label>City<select name="city"><option>Abu Dhabi</option><option>Dubai</option></select></label></div>
           <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>The rider accepts the WMF waiver (rides at own risk, follows the ride leader's instructions and road safety rules)</span></label>
           <button class="btn primary big">Register and check in</button></form>
         <div id="newDone" hidden></div></details></section>` : ""}
@@ -122,7 +124,8 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
     if (!b.waiver_consent) return res.json({ status: "error", message: "The rider must accept the waiver." });
     const out = await tx(async (c) => {
       let member = await R.findMember(c, { email: b.email, phone: b.mobile }), created = false;
-      if (!member) { member = await R.createMember(c, { full_name: b.full_name, email: b.email, mobile: b.mobile, waiver_consent: true }, by, "WMF Scanner Walk-in"); created = true; }
+      if (!member) { member = await R.createMember(c, { full_name: b.full_name, email: b.email, mobile: b.mobile, gender: ["Female", "Male"].includes(b.gender) ? b.gender : "",
+        community: b.city === "Dubai" ? "Dubai" : "", waiver_consent: true }, by, "WMF Scanner Walk-in"); created = true; }
       const r = await checkIn(c, { member, activityId: b.activityId, date: R.todayLocal(), source: "WMF Ride Lead Check-in", by });
       return { r, member, created };
     });

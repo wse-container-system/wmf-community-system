@@ -197,9 +197,10 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       ${tile("/dashboard#performance", "Monthly export", "Excel", "Attendance per month: rides, events, impact")}
     </div>
     <section class="card"><h2>Links to share with the community</h2>
-      <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link.</p>
+      <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link, and the calendar shows every ride and event.</p>
       <dl class="kv"><dt>Registration</dt><dd><a href="/join">${h(req.protocol + "://" + req.get("host"))}/join</a></dd>
-      <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd></dl></section>`, { active: "/wmf" }));
+      <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd>
+      <dt>Ride calendar</dt><dd><a href="/calendar">${h(req.protocol + "://" + req.get("host"))}/calendar</a> · <a href="/calendar/manage">Share it (WhatsApp, QR code)</a></dd></dl></section>`, { active: "/wmf" }));
 }));
 
 // ======================= dashboard =======================
@@ -374,7 +375,8 @@ function joinForm(v = {}, err) {
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel" inputmode="tel"></label></div>
       <div class="row2"><label>Community<select name="community"><option value="">Choose…</option>${["Emirati", "Arab", "Expat"].map((c) => `<option ${v.community === c ? "selected" : ""}>${c}</option>`).join("")}</select></label>
-      <label>Home city<select name="city"><option>Abu Dhabi</option><option ${v.city === "Dubai" ? "selected" : ""}>Dubai</option><option ${v.city === "Other" ? "selected" : ""}>Other</option></select></label></div>
+      <label>Gender<select name="gender"><option value="">Prefer not to say</option>${["Female", "Male"].map((g) => `<option ${v.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></label></div>
+      <div class="row2"><label>Home city<select name="city"><option>Abu Dhabi</option><option ${v.city === "Dubai" ? "selected" : ""}>Dubai</option><option ${v.city === "Other" ? "selected" : ""}>Other</option></select></label><span></span></div>
       <div class="row2"><label>Emergency contact name<input name="emergency_name" maxlength="120" value="${h(v.emergency_name)}"></label>
       <label>Emergency contact number<input name="emergency_number" maxlength="30" value="${h(v.emergency_number)}" inputmode="tel"></label></div>
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required ${v.waiver_consent ? "checked" : ""}> <span>${consentText}</span></label>
@@ -419,15 +421,18 @@ app.post("/join", limit("join", 8, 60 * 60e3), wrap(async (req, res) => {
 app.get("/events", wrap(async (req, res) => {
   const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
   res.send(page(req, "Events", `<section class="card"><h2>Upcoming WMF events</h2><p class="lead">Choose an event to sign up.</p>
-    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${priceText(e) ? " · " + h(priceText(e)) : " · Free"}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
+    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${priceText(e) ? " · " + h(priceText(e)) : " · Free"}${e.strava_url ? " · on Strava" : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
     <p style="margin-top:14px"><a href="/calendar">See the full WMF calendar</a> · <a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
 }));
 const priceText = (e) => (Number(e.price_aed) > 0 ? "AED " + Number(e.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "");
+const stravaBtn = (e, text = "Join on Strava ↗") => (e.strava_url && /^https:\/\/(www\.)?strava\./i.test(e.strava_url)
+  ? `<a class="btn strava" href="${h(e.strava_url)}" target="_blank" rel="noopener noreferrer">${h(text)}</a>` : "");
 const safePayUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch (err) { return ""; } };
 function eventForm(e, v = {}, err) {
   return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.notes ? "<br>" + h(e.notes) : ""}</p>
     ${priceText(e) ? `<div class="alert info"><span class="ic">i</span><span><b>Fee: ${h(priceText(e))}.</b> After you sign up you'll be taken to the payment page. Your place is confirmed once payment is received.</span></div>` : ""}
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
+    ${e.strava_url ? `<p class="hint" style="margin:0 0 8px">This event is also on Strava. Sign up here first, then ${stravaBtn(e, "join it on Strava ↗")} so your ride is part of it.</p>` : ""}
     <form class="form" method="post">
       <label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>
       <label>Full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
@@ -481,7 +486,8 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   const pay = out.paymentStatus === "Unpaid" && priceText(e) ? `<div class="alert warn"><span class="ic">!</span><span><b>One more step: pay ${h(priceText(e))}.</b> Your place is confirmed once payment is received.${payUrl ? "" : " The WMF team will send you payment details."} Your reference: <b>${h(out.recordId)}</b></span></div>
     ${payUrl ? `<a class="btn primary big" href="${h(payUrl)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none">Pay ${h(priceText(e))} now ↗</a>` : ""}` : out.paymentStatus === "Paid" ? `<p><span class="badge good">Payment received</span></p>` : "";
   res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
-    <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
+    <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}
+    ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
 }));
 
 // ======================= members =======================
@@ -677,6 +683,10 @@ require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
 require("./overview")(app, { need, page, setFlash, actor, user, wrap });
 require("./newsletter")(app, { need, page, setFlash, actor, user, wrap });
+require("./seasonsurvey")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./surveys")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./social")(app, { need, page, setFlash, actor, user, wrap });
+require("./report")(app, { need, page, setFlash, actor, user, wrap });
 
 // ======================= errors =======================
 app.use((req, res) => res.status(404).send(page(req, "Not found", `<section class="card"><h2>Page not found</h2><p class="lead"><a href="/">Back to the start</a></p></section>`, { wide: false })));
@@ -690,6 +700,7 @@ async function init() {
   await migrate();
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
+  await require("./seasonsurvey").seed();
   await require("./corpdata").seedCompanies();
   await require("./corpdata").seedSchedules();
   await require("./deptschedule").seedTeam();
