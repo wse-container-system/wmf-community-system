@@ -683,6 +683,7 @@ require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
 require("./overview")(app, { need, page, setFlash, actor, user, wrap });
 require("./newsletter")(app, { need, page, setFlash, actor, user, wrap });
+require("./seasonsurvey")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./surveys")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./social")(app, { need, page, setFlash, actor, user, wrap });
 require("./report")(app, { need, page, setFlash, actor, user, wrap });
@@ -699,6 +700,7 @@ async function init() {
   await migrate();
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
+  await require("./seasonsurvey").seed();
   await require("./corpdata").seedCompanies();
   await require("./corpdata").seedSchedules();
   await require("./deptschedule").seedTeam();

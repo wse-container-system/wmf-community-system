@@ -275,6 +275,8 @@ test("cycling development hub", async (t) => {
     const yoga = (await pool.query("SELECT id FROM corp_schedules WHERE title = 'Aurora Yoga'")).rows[0];
     const r = await admin(`/corporate/schedule/${yoga.id}`, { method: "POST", form: { kind: "Yoga", title: "Aurora Yoga", week: String(wk > 4 ? -1 : wk), weekday: String(dow), start_time: "17:30", starts: today, active: "1" } });
     assert.equal(r.status, 302);
+    // on the first Thursday of a month Aurora Ride is on today as well: switch it off so AUTO has one choice
+    await pool.query("UPDATE corp_schedules SET active = false WHERE title = 'Aurora Ride'");
     const C = require("../src/corpdata");
     const aur = (await pool.query("SELECT * FROM corp_companies WHERE code = 'AURORA'")).rows[0];
     const ts = await C.todaysSessions(pool, aur);
@@ -432,5 +434,28 @@ test("cycling development hub", async (t) => {
     assert.equal(pp.status, 200); assert.equal(pp.text.slice(0, 2).toString(), "PK");
     // the calendar share link is on the manage page
     assert.match(ok200(await admin("/calendar/manage"), "calendar manage").text, /Share the calendar with the community/);
+  });
+
+  await t.test("WMF end-of-season survey: past surveys loaded, new survey, public answers, comparison", async () => {
+    const past = (await pool.query("SELECT title, (SELECT count(*)::int FROM season_answers a WHERE a.survey_id = s.id) AS n FROM season_surveys s WHERE source = 'import' ORDER BY id")).rows;
+    assert.equal(past.length, 5); assert.ok(past.every((x) => x.n >= 17));
+    assert.equal((await pool.query("SELECT count(*)::int n FROM season_answers WHERE answers::text ~ '@'")).rows[0].n, 0, "no email addresses kept");
+    let r = await admin("/surveys/seasons/new", { method: "POST", form: { season: "Winter", year: "2027", activities: "Training Camp\nMountain Ride", rides: "Monday Madness" } });
+    const id = r.location.split("/").pop();
+    const sp = ok200(await admin(`/surveys/seasons/${id}`), "season survey").text;
+    const tok = /\/fs\/([\w-]+)/.exec(sp)[1];
+    const pub = client();
+    const f = ok200(await pub(`/fs/${tok}`), "public form").text;
+    assert.match(f, /Training Camp/); assert.match(f, /what held you back/i);
+    const body = new URLSearchParams([["q_freq", "Weekly"], ["q_act0", "Excellent"], ["q_act1", "Didn't join"], ["q_barriers", "Location"], ["q_barriers", "Weather / heat"], ["q_org", "5"], ["q_ideas", "A beginner group on Mondays"]]).toString();
+    r = await pub(`/fs/${tok}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, raw: false, multipart: body });
+    assert.match(r.text, /Thank you/);
+    const a = (await pool.query("SELECT answers FROM season_answers WHERE survey_id = $1", [+id])).rows[0].answers;
+    assert.deepEqual(a.barriers, ["Location", "Weather / heat"]); assert.equal(a.act0, "Excellent");
+    const cmp = ok200(await admin("/surveys/seasons"), "compare").text;
+    for (const x of ["Where to focus", "What people keep asking for", "End of Winter Season Survey 2026", "Ride times"]) assert.match(cmp, new RegExp(x));
+    ok200(await admin("/surveys"), "surveys");
+    await admin(`/surveys/seasons/${id}/toggle`, { method: "POST" });
+    assert.equal((await pub(`/fs/${tok}`)).status, 404);
   });
 });

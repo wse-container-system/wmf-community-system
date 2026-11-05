@@ -373,3 +373,14 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
   .rp-slide { width: 13.333in; max-width: none; height: 7.5in; aspect-ratio: auto; border-radius: 0; box-shadow: none; break-after: page; page-break-after: always;
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- season surveys */
+.ss-group { margin: 16px 0 6px; font-size: 16px; }
+.ss-q { margin: 14px 0; } .ss-q h4 { margin: 0 0 6px; font-size: 15px; }
+.ss-r .hbar-l { white-space: normal; }
+.ss-focus { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 8px; font-size: 14.5px; }
+.ss-themes td.ss-heat { background: color-mix(in srgb, var(--s3) calc(var(--a) * 70%), transparent); font-variant-numeric: tabular-nums; }
+.ss-checks { display: grid; gap: 6px; }
+.ss-gridset { display: grid; gap: 12px; }
+.ss-grow { display: grid; gap: 6px; } .ss-grow > span { font-weight: 600; font-size: 15px; }
+.rate-row.sm span { min-width: 0; min-height: 38px; padding: 0 10px; font-size: 13.5px; font-weight: 500; }

@@ -407,6 +407,14 @@ CREATE TABLE IF NOT EXISTS social_counts (
   month DATE NOT NULL, channel TEXT NOT NULL CHECK (channel IN ('whatsapp','strava')), city TEXT NOT NULL CHECK (city IN ('Abu Dhabi','Dubai')),
   members INTEGER NOT NULL CHECK (members >= 0), updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (month, channel, city)
 );
+-- end-of-season surveys (summer / winter), including past ones imported from Microsoft Forms
+CREATE TABLE IF NOT EXISTS season_surveys (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, title TEXT NOT NULL, season TEXT NOT NULL CHECK (season IN ('Summer','Winter','Community')), year INTEGER NOT NULL,
+  opened DATE, source TEXT NOT NULL DEFAULT 'app', open BOOLEAN NOT NULL DEFAULT TRUE, questions JSONB NOT NULL, focus TEXT, created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS season_answers (
+  id SERIAL PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES season_surveys(id) ON DELETE CASCADE, answers JSONB NOT NULL, at TIMESTAMPTZ
+);
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

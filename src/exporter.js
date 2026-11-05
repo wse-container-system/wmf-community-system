@@ -134,6 +134,10 @@ async function exportWorkbook() {
   addTable(wb, "Survey Responses", "WMFSurveyResponses", [["Survey", (r) => r.title], ["Rating (1-5)", (r) => r.rating], ["Join again", (r) => r.again], ["First WMF event", (r) => r.first_time],
     ["Enjoyed", (r) => r.liked], ["Could be better", (r) => r.improve], ["Name", (r) => r.name], ["When", (r) => r.created_at]], sr);
   addTable(wb, "Social Growth", "WMFSocialGrowth", [["Month", (r) => toDate(r.month), "day"], ["Channel", (r) => r.channel], ["City", (r) => r.city], ["Members", (r) => r.members]], so);
+  const ss = (await pool.query("SELECT s.id, s.title, s.questions, a.answers, a.at FROM season_answers a JOIN season_surveys s ON s.id = a.survey_id ORDER BY s.id, a.at, a.id")).rows;
+  const ssRows = [];
+  for (const r of ss) for (const q of r.questions) { const v = r.answers[q.id]; if (v != null && v !== "") ssRows.push({ title: r.title, at: r.at, group: q.group, q: q.q, v: Array.isArray(v) ? v.join("; ") : v }); }
+  addTable(wb, "Season Survey Answers", "WMFSeasonSurveyAnswers", [["Survey", (r) => r.title], ["When", (r) => r.at], ["Section", (r) => r.group], ["Question", (r) => r.q], ["Answer", (r) => String(r.v).slice(0, 32000)]], ssRows);
   addTable(wb, "Report Notes", "WMFReportNotes", [["Period", (r) => r.period], ["Strategy", (r) => r.strategy], ["What's next", (r) => r.next_steps], ["Corporate note", (r) => r.corporate]], rn);
   // scanner links: names only, never the secret part of the address
   addTable(wb, "Scanner Links", "ScannerLinks", [["For", (r) => r.label], ["Programmes", (r) => r.scope], ["On", (r) => (r.active ? "Yes" : "No")], ["Check-ins", (r) => r.scans], ["Last Used (UTC)", (r) => r.last_used]], sl);

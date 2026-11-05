@@ -45,8 +45,13 @@ module.exports = function surveys(app, { need, page, setFlash, actor, wrap, limi
       ORDER BY coalesce(a.event_date, a.month) DESC LIMIT 80`)).rows;
     const pre = R.clean(req.query.event);
     const when = (a) => (a.event_date ? fmtDate(a.event_date) : fmtDate(String(a.month).slice(0, 10)).replace(/^1 /, ""));
-    res.send(page(req, "Surveys", `<div class="grid">
-      <section class="card c5"><h2>Send a follow-up survey</h2><p class="lead">Choose the event. You get one link to send to the people who came. Five quick questions, answered in under a minute.</p>
+    const seasons = (await pool.query("SELECT s.id, s.title, s.open, s.source, (SELECT count(*)::int FROM season_answers a WHERE a.survey_id = s.id) AS n FROM season_surveys s ORDER BY coalesce(s.opened, s.created_at::date) DESC, s.id DESC LIMIT 3")).rows;
+    res.send(page(req, "Surveys", `<section class="card"><div class="card-head"><div><h2>End-of-season surveys</h2>
+        <p class="lead">One survey to the whole community at the end of each summer and winter, compared with past seasons.</p></div>
+        <div class="toolbar" style="margin:0"><a class="btn" href="/surveys/seasons">Compare seasons</a><a class="btn primary" href="/surveys/seasons/new">New end-of-season survey</a></div></div>
+        ${seasons.length ? `<ul class="log">${seasons.map((x) => `<li><a href="/surveys/seasons/${x.id}"><b>${h(x.title)}</b></a><span class="muted">${x.n} answers${x.source === "app" ? (x.open ? " · open" : " · closed") : ""}</span></li>`).join("")}</ul>` : ""}</section>
+      <div class="grid">
+      <section class="card c5"><h2>After an event</h2><p class="lead">Choose the event. You get one link to send to the people who came. Five quick questions, answered in under a minute.</p>
         ${acts.length ? `<form class="form" method="post" action="/surveys">
           <label>Event<select name="activation_id" required>${acts.map((a) => `<option value="${a.id}" ${pre && a.activity_id === pre ? "selected" : ""}>${h(a.title)} · ${when(a)}</option>`).join("")}</select></label>
           <button class="btn primary">Create the survey link</button></form>` : `<p class="muted">Every event of the last six months already has a survey. Events move to <a href="/activations">Activations</a> once their date has passed.</p>`}
