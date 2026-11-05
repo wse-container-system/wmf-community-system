@@ -686,6 +686,7 @@ require("./newsletter")(app, { need, page, setFlash, actor, user, wrap });
 require("./seasonsurvey")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./surveys")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./social")(app, { need, page, setFlash, actor, user, wrap });
+require("./leadrides")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./report")(app, { need, page, setFlash, actor, user, wrap });
 
 // ======================= errors =======================

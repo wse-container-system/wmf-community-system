@@ -9,9 +9,9 @@ const STAFF = ["admin", "coordinator"], ALL = ["admin", "coordinator", "viewer",
  * A user limited to one corporate partner (users.company) only sees the Corporate reports.
  */
 const SECTIONS = [
-  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|report)(\/|$)/, links: [
+  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|report|dubai)(\/|$)/, links: [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
-    ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
+    ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/dubai", "Dubai rides", STAFF], ["/calendar", "Calendar", ALL],
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
     ["/corporate", "Dashboard", ALL], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],

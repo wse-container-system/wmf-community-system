@@ -415,6 +415,21 @@ CREATE TABLE IF NOT EXISTS season_surveys (
 CREATE TABLE IF NOT EXISTS season_answers (
   id SERIAL PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES season_surveys(id) ON DELETE CASCADE, answers JSONB NOT NULL, at TIMESTAMPTZ
 );
+-- rides reported by a city lead (Dubai) through a share link: type, date, headcount and photos
+CREATE TABLE IF NOT EXISTS lead_links (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, label TEXT NOT NULL, city TEXT NOT NULL DEFAULT 'Dubai', active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS lead_rides (
+  id SERIAL PRIMARY KEY, link_id INTEGER REFERENCES lead_links(id) ON DELETE SET NULL, city TEXT NOT NULL DEFAULT 'Dubai',
+  ride_type TEXT NOT NULL, title TEXT, ride_date DATE NOT NULL, participants INTEGER NOT NULL CHECK (participants >= 0),
+  entered_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lead_rides_date ON lead_rides (ride_date);
+CREATE TABLE IF NOT EXISTS lead_photos (
+  id SERIAL PRIMARY KEY, ride_id INTEGER NOT NULL REFERENCES lead_rides(id) ON DELETE CASCADE, mime TEXT NOT NULL, data BYTEA NOT NULL, bytes INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
