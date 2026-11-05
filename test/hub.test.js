@@ -421,7 +421,8 @@ test("cycling development hub", async (t) => {
     assert.match(sp, /Great group/); assert.match(sp, /wa\.me\/971501112233/);
     // social growth
     await admin("/social", { method: "POST", form: { month: m, "whatsapp|Abu Dhabi": "110", "whatsapp|Dubai": "20", "strava|Abu Dhabi": "50" } });
-    assert.equal((await pool.query("SELECT count(*)::int n FROM social_counts WHERE to_char(month,'YYYY-MM') = $1", [m])).rows[0].n, 3);
+    assert.ok((await pool.query("SELECT count(*)::int n FROM social_counts WHERE to_char(month,'YYYY-MM') = $1", [m])).rows[0].n >= 3);
+    assert.equal((await pool.query("SELECT members FROM social_counts WHERE month = '2026-09-01' AND channel = 'whatsapp' AND city = 'Abu Dhabi'")).rows[0].members, 329, "the team's sheet is loaded at first start");
     // overview shows the database split; nav has no Scan QR
     const ov = ok200(await admin("/overview"), "overview").text;
     assert.match(ov, /Who is in the database/); assert.doesNotMatch(ov, />Scan QR</);
@@ -457,5 +458,51 @@ test("cycling development hub", async (t) => {
     ok200(await admin("/surveys"), "surveys");
     await admin(`/surveys/seasons/${id}/toggle`, { method: "POST" });
     assert.equal((await pub(`/fs/${tok}`)).status, 404);
+  });
+
+  await t.test("WMF Dubai: lead link sends rides with photos; they count as Dubai rides", async () => {
+    await admin("/dubai/links", { method: "POST", form: { label: "Dubai Lead" } });
+    const tok = (await pool.query("SELECT token FROM lead_links WHERE label = 'Dubai Lead'")).rows[0].token;
+    const pub = client();
+    assert.match(ok200(await pub(`/l/${tok}`), "lead page").text, /Which ride\?/);
+    const fd = new FormData();
+    fd.append("ride_type", "Thursday"); fd.append("day", today); fd.append("participants", "11");
+    fd.append("photos", new Blob([Buffer.from("ffd8ffe000104a464946", "hex")], { type: "image/jpeg" }), "ride.jpg");
+    let r = await fetch(`${base}/l/${tok}`, { method: "POST", body: fd, redirect: "manual", headers: { origin: base } });
+    assert.equal(r.status, 303);
+    const fd2 = new FormData(); fd2.append("ride_type", "Thursday"); fd2.append("day", today); fd2.append("participants", "12");
+    await fetch(`${base}/l/${tok}`, { method: "POST", body: fd2, redirect: "manual", headers: { origin: base } });
+    const rows = (await pool.query("SELECT r.*, (SELECT count(*)::int FROM lead_photos p WHERE p.ride_id = r.id) AS photos FROM lead_rides r")).rows;
+    assert.equal(rows.length, 1, "same ride and date replaces"); assert.equal(rows[0].participants, 12); assert.equal(rows[0].photos, 1);
+    const bad = new FormData(); bad.append("day", today); bad.append("participants", "5");
+    assert.equal((await fetch(`${base}/l/${tok}`, { method: "POST", body: bad, headers: { origin: base } })).status, 400);
+    // counted as a Dubai ride, and it doesn't hide Abu Dhabi check-ins on the same day
+    const { buildData } = require("../src/snapshot");
+    const P = E.prepare(await buildData());
+    const dx = E.compute(P, { start: today, end: today, location: "Dubai" }, today).kpis;
+    assert.equal(dx.rideAttendance, 12); assert.equal(dx.rideSessions, 1);
+    assert.ok(!P.rows.some((x) => x.coveredByHistory && x.d === today));
+    const adm = ok200(await admin("/dubai"), "dubai page").text;
+    assert.match(adm, /Thursday ride/); assert.match(adm, /\/dubai\/photo\/\d+/);
+    await admin(`/dubai/links/${(await pool.query("SELECT id FROM lead_links")).rows[0].id}`, { method: "POST", form: { active: "0" } });
+    assert.equal((await pub(`/l/${tok}`)).status, 404);
+  });
+
+  await t.test("WMF marketing report: page, Excel, and a view-only link", async () => {
+    const m = today.slice(0, 7);
+    const pg = ok200(await admin(`/report/marketing?period=month&p=${m}`), "marketing page").text;
+    for (const x of ["Ride participation", "Events &amp; impact", "Download Excel", "Share with marketing"]) assert.match(pg, new RegExp(x));
+    const x = await admin(`/report/marketing.xlsx?period=month&p=${m}`, { raw: true });
+    assert.equal(x.status, 200);
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.text);
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ["Dashboard", "Events & impact", "Rides by month"]);
+    await admin("/report/marketing/links", { method: "POST", form: { label: "Marketing" } });
+    const tok = (await pool.query("SELECT token, id FROM report_links WHERE label = 'Marketing'")).rows[0];
+    const pub = client();
+    const pp = ok200(await pub(`/m/${tok.token}?period=year`), "shared page").text;
+    assert.match(pp, /marketing report/i); assert.doesNotMatch(pp, /@test\.local|Share with marketing/);
+    assert.equal((await pub(`/m/${tok.token}/excel?period=year`, { raw: true })).status, 200);
+    await admin(`/report/marketing/links/${tok.id}`, { method: "POST", form: { active: "0" } });
+    assert.equal((await pub(`/m/${tok.token}`)).status, 404);
   });
 });

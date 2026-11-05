@@ -384,3 +384,24 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .ss-gridset { display: grid; gap: 12px; }
 .ss-grow { display: grid; gap: 6px; } .ss-grow > span { font-weight: 600; font-size: 15px; }
 .rate-row.sm span { min-width: 0; min-height: 38px; padding: 0 10px; font-size: 13.5px; font-weight: 500; }
+
+/* ---------- ride report link (city lead) */
+.lr-card .rate-row span { min-height: 48px; }
+.lr-types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .lr-types span { width: 100%; }
+.lr-days { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; } .lr-days span { width: 100%; }
+.lr-count { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; }
+.lr-count .btn { min-height: 52px; font-size: 24px; justify-content: center; } .lr-count .inp { text-align: center; font-size: 24px; font-weight: 700; min-height: 52px; }
+.lr-prev { display: flex; flex-wrap: wrap; gap: 6px; } .lr-prev img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.lr-link { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); } .lr-link.off { opacity: .6; }
+.lr-link img { border-radius: 8px; background: #fff; border: 1px solid var(--line); }
+.lr-thumbs { display: flex; gap: 4px; flex-wrap: wrap; } .lr-thumbs img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
+
+/* ---------- marketing report */
+.mk-head { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; justify-content: space-between; }
+.mk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mk-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.mk-ev { border: 1px solid var(--line); border-left: 4px solid #5b7cf0; border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; background: var(--surface); }
+.mk-ev.dxb { border-left-color: #e8833a; }
+.mk-ev h3 { margin: 0; font-size: 17px; } .mk-ev-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.mk-n { margin: 0; font-size: 14px; } .mk-n b { font-size: 18px; } .mk-impact { margin: 0; font-size: 14px; color: var(--ink-2); }
+@media print { .mk-actions { display: none; } }

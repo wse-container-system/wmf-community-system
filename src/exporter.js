@@ -138,6 +138,9 @@ async function exportWorkbook() {
   const ssRows = [];
   for (const r of ss) for (const q of r.questions) { const v = r.answers[q.id]; if (v != null && v !== "") ssRows.push({ title: r.title, at: r.at, group: q.group, q: q.q, v: Array.isArray(v) ? v.join("; ") : v }); }
   addTable(wb, "Season Survey Answers", "WMFSeasonSurveyAnswers", [["Survey", (r) => r.title], ["When", (r) => r.at], ["Section", (r) => r.group], ["Question", (r) => r.q], ["Answer", (r) => String(r.v).slice(0, 32000)]], ssRows);
+  const lr = (await pool.query("SELECT r.*, l.label, (SELECT count(*)::int FROM lead_photos p WHERE p.ride_id = r.id) AS photos FROM lead_rides r LEFT JOIN lead_links l ON l.id = r.link_id ORDER BY r.ride_date, r.id")).rows;
+  addTable(wb, "Dubai Rides", "WMFLeadRides", [["Date", (r) => toDate(r.ride_date), "day"], ["City", (r) => r.city], ["Ride", (r) => r.ride_type], ["Special ride name", (r) => r.title],
+    ["Participants", (r) => r.participants], ["Photos", (r) => r.photos], ["Sent by", (r) => r.label || r.entered_by]], lr);
   addTable(wb, "Report Notes", "WMFReportNotes", [["Period", (r) => r.period], ["Strategy", (r) => r.strategy], ["What's next", (r) => r.next_steps], ["Corporate note", (r) => r.corporate]], rn);
   // scanner links: names only, never the secret part of the address
   addTable(wb, "Scanner Links", "ScannerLinks", [["For", (r) => r.label], ["Programmes", (r) => r.scope], ["On", (r) => (r.active ? "Yes" : "No")], ["Check-ins", (r) => r.scans], ["Last Used (UTC)", (r) => r.last_used]], sl);

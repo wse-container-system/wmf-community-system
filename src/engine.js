@@ -133,8 +133,9 @@
 
     const historyRides = (data.historyRides || []).map((h) => ({ ...h, d: day(h.date), m: month(h.date) }));
     const historyEvents = (data.historyEvents || []).map((h) => ({ ...h, d: day(h.month), m: month(h.month), separate: separate.has(norm(h.name)) }));
-    const historyEnd = historyRides.reduce((a, h) => (h.d > a ? h.d : a), "");
-    const historyDays = new Set(historyRides.map((h) => h.d));
+    // headcounts sent by a city lead (h.lead) add rides; only the historical summary replaces live check-ins on its dates
+    const historyEnd = historyRides.filter((h) => !h.lead).reduce((a, h) => (h.d > a ? h.d : a), "");
+    const historyDays = new Set(historyRides.filter((h) => !h.lead).map((h) => h.d));
     for (const r of rows) r.coveredByHistory = r.kind === "ride" && r.d <= historyEnd && historyDays.has(r.d);
 
     const P = { meta: data.meta || {}, config: cfg, members, rows, persons, historyRides, historyEvents, historyEnd, rules: RULES,

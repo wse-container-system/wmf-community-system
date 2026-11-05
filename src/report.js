@@ -59,6 +59,7 @@ async function reportData(per) {
     const rides = x.activities.filter((a) => a.kind === "Ride" && a.sessions);
     const top = rides.filter((a) => a.sessions >= 2).sort((a, b) => b.perSession - a.perSession)[0] || rides.sort((a, b) => b.perSession - a.perSession)[0] || null;
     city[c] = { att: x.kpis.rideAttendance, sess: x.kpis.rideSessions, avg: x.kpis.rideSessions ? x.kpis.rideAttendance / x.kpis.rideSessions : null, top,
+      rides: rides.map((a) => ({ name: a.name, sessions: a.sessions, attendance: a.attendance, avg: a.perSession })).sort((a, b) => b.attendance - a.attendance),
       trend: x.trend.map((t) => ({ m: t.month, v: t.rideAttendance })) };
   }
   // the same weekday in both cities is two rides: count sessions per city
@@ -413,7 +414,7 @@ module.exports = function report(app, { need, page, setFlash, actor, user, wrap 
     res.send(page(req, `${per.kind} report`, `
       <section class="card noprint"><div class="card-head"><div><h2>WMF ${h(per.kind.toLowerCase())} report · ${h(per.label)}</h2>
           <p class="lead">Built from the rides, events, activations, surveys, social counts and corporate sessions in the app, in the layout of the WMF Canva report.</p></div>
-          <div class="toolbar" style="margin:0"><button class="btn" data-print>Save as PDF</button><a class="btn primary" href="/report.pptx?${qs(per)}">Download for Canva (PowerPoint)</a></div></div>
+          <div class="toolbar" style="margin:0"><a class="btn" href="/report/marketing?${qs(per)}">Marketing report &amp; Excel</a><button class="btn" data-print>Save as PDF</button><a class="btn primary" href="/report.pptx?${qs(per)}">Download for Canva (PowerPoint)</a></div></div>
         <div class="toolbar" style="gap:14px;margin:6px 0 0;align-items:center">
           <span class="seg">${["month", "quarter", "year"].map((t) => `<a href="/report?period=${t}" class="${per.type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
           ${per.type === "month" ? sel("month", monthOpts) : per.type === "quarter" ? sel("quarter", qOpts.map((q) => `<option ${q === per.p ? "selected" : ""} value="${q}">${q.replace("-", " ")}</option>`).join("")) : sel("year", yOpts.map((y) => `<option ${y === per.p ? "selected" : ""}>${y}</option>`).join(""))}</div>
