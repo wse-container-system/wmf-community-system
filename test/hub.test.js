@@ -520,4 +520,17 @@ test("cycling development hub", async (t) => {
     await admin("/report/management/notes", { method: "POST", form: { period: `month:${m}`, reset: "1" } });
     assert.doesNotMatch(ok200(await admin(`/report/management?period=month&p=${m}`), "reset").text, /Record Dubai ride/);
   });
+
+  await t.test("WMF attendance per ride: check someone in by name", async () => {
+    const R2 = require("../src/rules");
+    await tx(async (c) => { await R2.ensureCoreRides(c); await R2.createMember(c, { full_name: "Zoe Uniquename", email: "zoe.unique@test.local", mobile: "0507654321", waiver_consent: true }, "t", "t"); });
+    const date = today, back = `/rides/${date}/RIDE-WEDNESDAY-SOCIAL`;
+    let r = await admin("/rides/checkin", { method: "POST", form: { memberId: "Uniquename", date, activityId: "RIDE-WEDNESDAY-SOCIAL", back } });
+    assert.equal(r.status, 302);
+    const n = (await pool.query("SELECT count(*)::int n FROM participation p JOIN members m ON m.member_id = p.member_id WHERE m.full_name = 'Zoe Uniquename' AND p.voided_at IS NULL")).rows[0].n;
+    assert.equal(n, 1, "one match: checked in straight away");
+    await tx((c) => R2.createMember(c, { full_name: "Zoe Uniquename-Two", email: "zoe.two@test.local", waiver_consent: true }, "t", "t"));
+    r = await admin("/rides/checkin", { method: "POST", form: { memberId: "Uniquename", date, activityId: "RIDE-WEDNESDAY-SOCIAL", back } });
+    assert.match(r.location, /find=Uniquename/, "several matches: shows the list");
+  });
 });
