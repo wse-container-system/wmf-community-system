@@ -505,4 +505,19 @@ test("cycling development hub", async (t) => {
     await admin(`/report/marketing/links/${tok.id}`, { method: "POST", form: { active: "0" } });
     assert.equal((await pub(`/m/${tok.token}`)).status, 404);
   });
+
+  await t.test("WMF management one-pager: monthly, quarterly, annual; words editable; PowerPoint", async () => {
+    const m = today.slice(0, 7);
+    for (const q of [`period=month&p=${m}`, "period=quarter", "period=year"]) {
+      const r = ok200(await admin(`/report/management?${q}`), "management " + q).text;
+      for (const x of ["Key Execution Wins", "Ride Type", "COMMUNITY ACTIVATIONS", "Cross collaborations"]) assert.match(r, new RegExp(x));
+    }
+    await admin("/report/management/notes", { method: "POST", form: { period: `month:${m}`, wins: "Record Dubai ride\nNew partner", closing: "A strong month.", back: "/report/management" } });
+    const r = ok200(await admin(`/report/management?period=month&p=${m}`), "after save").text;
+    assert.match(r, /Record Dubai ride/); assert.match(r, /A strong month\./);
+    const pp = await admin(`/report/management.pptx?period=month&p=${m}`, { raw: true });
+    assert.equal(pp.status, 200); assert.equal(pp.text.slice(0, 2).toString(), "PK");
+    await admin("/report/management/notes", { method: "POST", form: { period: `month:${m}`, reset: "1" } });
+    assert.doesNotMatch(ok200(await admin(`/report/management?period=month&p=${m}`), "reset").text, /Record Dubai ride/);
+  });
 });

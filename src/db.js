@@ -439,6 +439,7 @@ CREATE TABLE IF NOT EXISTS report_links (
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE report_notes ADD COLUMN IF NOT EXISTS mgmt JSONB;
 `;
 
 const DEFAULT_SETTINGS = {
