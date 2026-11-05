@@ -47,6 +47,17 @@ function activityForKey(key, date, core) {
   return { Monday: "RIDE-MONDAY-MADNESS", Wednesday: "RIDE-WEDNESDAY-SOCIAL", Saturday: "RIDE-WEEKEND-LONG", Sunday: "RIDE-WEEKEND-LONG" }[wd] || "RIDE-MORNING";
 }
 
+/** Members matching a name, email, phone or ID (contact details shortened). */
+async function findPeople(q) {
+  q = R.clean(q).slice(0, 60);
+  if (q.length < 2) return [];
+  const like = "%" + q.replace(/[%_]/g, "") + "%", digits = q.replace(/\D/g, "");
+  const r = await pool.query(`SELECT member_id, full_name, primary_email, mobile FROM members WHERE merged_into IS NULL
+    AND (full_name ILIKE $1 OR primary_email ILIKE $1 OR alt_emails ILIKE $1 OR member_id ILIKE $1 ${digits.length >= 4 ? "OR regexp_replace(coalesce(mobile, ''), '\\D', '', 'g') LIKE $2" : ""})
+    ORDER BY full_name LIMIT 8`, digits.length >= 4 ? [like, "%" + digits + "%"] : [like]);
+  return r.rows.map((m) => ({ ...m, hint: [m.primary_email ? R.maskEmail(m.primary_email) : "", m.mobile ? R.maskPhone(m.mobile) : ""].filter(Boolean).join(" · ") }));
+}
+
 module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkIn }) {
   const STAFF = need("admin", "coordinator");
 
@@ -112,19 +123,27 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
     const rideName = coreRide ? coreRide.name : key.replace(/^S:/, "");
     const canAdd = date >= H.addDays(R.todayLocal(), -CORRECT_DAYS);
     const actId = activityForKey(key, date, core);
+    const back = `/rides/${date}/${encodeURIComponent(key)}`;
+    const checkBtn = (id) => `<form method="post" action="/rides/checkin" style="margin:0"><input type="hidden" name="memberId" value="${h(id)}"><input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn primary">Check in</button></form>`;
+    const found = canAdd && R.clean(req.query.find).length >= 2 ? await findPeople(req.query.find) : [];
     res.send(page(req, `${rideName} ${date}`, `
       <section class="card"><div class="card-head"><div><h2>${h(rideName)} · ${fmtDate(date)}</h2><p class="lead">${R.weekdayOf(date)} · ${here.length} checked in</p></div><a class="btn" href="/rides">All rides</a></div>
         <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Time</th><th>How</th></tr></thead><tbody>
         ${here.map((r, i) => `<tr><td>${i + 1}</td><td>${r.member_id ? `<a href="/members/${encodeURIComponent(r.merged_into || r.member_id)}">${h(r.full_name || r.member_name || r.member_id)}</a> <span class="muted">${h(r.merged_into || r.member_id)}</span>` : h(r.member_name || "—")}</td>
           <td>${r.late ? `<span class="muted">sent ${fmtDate(String(r.record_date).slice(0, 10))}</span>` : String(r.record_date).slice(11, 16) === "00:00" ? "—" : String(r.record_date).slice(11, 16)}</td><td>${h(r.source)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nobody was checked in.</td></tr>`}
-        </tbody></table></div></section>
+        </tbody></table></div>
+        ${canAdd ? `<h3 style="margin:16px 0 6px">Check in someone else</h3>
+        <form method="post" action="/rides/checkin" class="toolbar rd-find" style="margin:0;align-items:center"><input class="inp" name="memberId" id="rdFind" placeholder="Name, email, phone or Member ID" required autocomplete="off" value="${h(req.query.find || "")}" style="max-width:320px" aria-label="Name, email, phone or Member ID">
+          <input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn">Find</button></form>
+        <ul class="log sc-hits" id="rdHits">${found.map((m) => `<li><span><b>${h(m.full_name)}</b> <span class="muted">${h(m.member_id)}${m.hint ? " · " + h(m.hint) : ""}</span></span>${checkBtn(m.member_id)}</li>`).join("") || (req.query.find ? '<li class="muted">Nobody found. Try part of the name, the email or the phone number.</li>' : "")}</ul>
+        <template id="rdBtn">${checkBtn("__ID__")}</template><script src="/ridefind.js" defer></script>` : ""}</section>
       <section class="card"><h2>Usual riders not checked in <span class="badge ${missing.length ? "warn" : "good"}">${missing.length}</span></h2>
         <p class="lead">They came to this ride at least twice in the ${REGULAR_WEEKS} weeks before. If they were there, check them in now${canAdd ? "" : ` (only possible up to ${CORRECT_DAYS} days after the ride)`}.</p>
         <div class="tw"><table><thead><tr><th>Member</th><th class="n">Rides in the ${REGULAR_WEEKS} weeks before</th><th>Last ride</th><th></th></tr></thead><tbody>
         ${missing.map((m) => `<tr><td>${m.memberId ? `<a href="/members/${encodeURIComponent(m.memberId)}">${h(m.name || m.memberId)}</a> <span class="muted">${h(m.memberId)}</span>` : h(m.name || "—")}</td><td class="n">${m.n}</td><td>${fmtDate(m.last)}</td>
           <td>${canAdd && m.memberId ? `<form method="post" action="/rides/checkin"><input type="hidden" name="memberId" value="${h(m.memberId)}"><input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn tblbtn">They were there: check in</button></form>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Everyone who usually comes was checked in.</td></tr>`}
         </tbody></table></div>
-        ${canAdd ? `<form method="post" action="/rides/checkin" class="toolbar" style="margin-top:12px;align-items:center"><input class="inp" name="memberId" placeholder="Member ID, e.g. WMF-000123" required style="max-width:240px"><input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn">Check in someone else</button></form>` : ""}
+
       </section>`, { active: "/activities" }));
   }));
 
@@ -132,10 +151,16 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
     const b = req.body;
     const back = String(b.back || "/rides").startsWith("/rides") ? String(b.back) : "/rides";
     const out = await tx(async (c) => {
-      const member = await R.findMember(c, { memberId: R.memberIdFromScan(b.memberId) || b.memberId });
+      let member = R.memberIdFromScan(b.memberId) ? await R.findMember(c, { memberId: R.memberIdFromScan(b.memberId) }) : null;
+      if (!member) { // a name, email or phone: check in straight away when it's one person, otherwise show who matches
+        const hits = await findPeople(b.memberId);
+        if (hits.length !== 1) return { status: "find", q: R.clean(b.memberId) };
+        member = await R.findMember(c, { memberId: hits[0].member_id });
+      }
       if (!member) return { status: "error", message: "Member not found." };
       return checkIn(c, { member, activityId: b.activityId, date: b.date, source: "Manual Attendance Correction", by: actor(req), maxDays: CORRECT_DAYS });
     });
+    if (out.status === "find") return res.redirect(`${back}${back.includes("?") ? "&" : "?"}find=${encodeURIComponent(out.q)}`);
     setFlash(req, out.status === "error" ? "err" : "ok", out.status === "ok" ? `${out.member.full_name} checked in.` : out.status === "duplicate" ? `${out.member.full_name} was already checked in.` : out.message);
     res.redirect(back);
   }));
