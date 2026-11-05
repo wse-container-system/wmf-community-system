@@ -421,7 +421,8 @@ test("cycling development hub", async (t) => {
     assert.match(sp, /Great group/); assert.match(sp, /wa\.me\/971501112233/);
     // social growth
     await admin("/social", { method: "POST", form: { month: m, "whatsapp|Abu Dhabi": "110", "whatsapp|Dubai": "20", "strava|Abu Dhabi": "50" } });
-    assert.equal((await pool.query("SELECT count(*)::int n FROM social_counts WHERE to_char(month,'YYYY-MM') = $1", [m])).rows[0].n, 3);
+    assert.ok((await pool.query("SELECT count(*)::int n FROM social_counts WHERE to_char(month,'YYYY-MM') = $1", [m])).rows[0].n >= 3);
+    assert.equal((await pool.query("SELECT members FROM social_counts WHERE month = '2026-09-01' AND channel = 'whatsapp' AND city = 'Abu Dhabi'")).rows[0].members, 329, "the team's sheet is loaded at first start");
     // overview shows the database split; nav has no Scan QR
     const ov = ok200(await admin("/overview"), "overview").text;
     assert.match(ov, /Who is in the database/); assert.doesNotMatch(ov, />Scan QR</);

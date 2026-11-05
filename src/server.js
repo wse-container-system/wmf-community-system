@@ -701,6 +701,7 @@ async function init() {
   await tx((c) => R.ensureCoreRides(c));
   await require("./calendar").seed();
   await require("./seasonsurvey").seed();
+  await require("./social").seed();
   await require("./corpdata").seedCompanies();
   await require("./corpdata").seedSchedules();
   await require("./deptschedule").seedTeam();

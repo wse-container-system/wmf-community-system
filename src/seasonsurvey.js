@@ -150,7 +150,7 @@ async function sheetRows(buffer) {
   try {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
-    const ws = wb.worksheets[0];
+    const ws = [...wb.worksheets].sort((a, b) => b.actualRowCount - a.actualRowCount)[0]; // the tab with the data
     if (!ws) throw new Error("no sheet");
     const cellv = (v) => (v && typeof v === "object" && !(v instanceof Date) ? ("result" in v ? v.result : v.richText ? v.richText.map((x) => x.text).join("") : v.text != null ? v.text : null) : v);
     const out = [];
@@ -163,7 +163,9 @@ async function sheetRows(buffer) {
     const un = (t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&#x([0-9a-f]+);/gi, (_, d) => String.fromCodePoint(parseInt(d, 16))).replace(/&amp;/g, "&");
     const texts = (x) => [...x.matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?t>/g)].map((m) => un(m[1])).join("");
     const shared = [...(await read("xl/sharedStrings.xml")).matchAll(/<(?:\w+:)?si>([\s\S]*?)<\/(?:\w+:)?si>/g)].map((m) => texts(m[1]));
-    const sheetName = Object.keys(zip.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
+    const sheets = Object.keys(zip.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+    const sizes = await Promise.all(sheets.map(async (n) => (await read(n)).length));
+    const sheetName = sheets[sizes.indexOf(Math.max(...sizes))];
     if (!sheetName) throw new Error("The file has no sheet.");
     const xml = await read(sheetName), out = [];
     const colNo = (ref) => { let n = 0; for (const ch of ref.replace(/\d+/g, "")) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
