@@ -21,6 +21,14 @@ const ACTS = [
   { k: "Other", c: "#4a6a8a", hours: true },
   { k: "Off", c: "#9a94ab", hours: false, allDay: true },
 ];
+// ready timings for each activity: the first is filled in when the activity is picked
+const TIMES = {
+  Office: [["08:00", "17:00"], ["09:00", "18:00"], ["07:00", "16:00"], ["08:00", "13:00"], ["13:00", "17:00"]],
+  "WMF Ride": [["05:30", "08:30"], ["06:00", "09:00"], ["17:00", "20:00"], ["18:00", "21:00"], ["19:00", "21:30"]],
+  "Corporate Ride": [["05:30", "08:00"], ["06:00", "08:00"], ["16:30", "19:00"], ["17:00", "19:00"]],
+  Event: [["07:00", "12:00"], ["09:00", "17:00"], ["16:00", "21:00"], ["18:00", "22:00"]],
+  Other: [["09:00", "12:00"], ["13:00", "17:00"], ["08:00", "17:00"]],
+};
 const OLD = { "Workshop / Training": "#13917a", Mechanic: "#a87a00", "Business trip": "#4a6a8a", "Lieu day": "#9a94ab" };
 const actOf = (k) => ACTS.find((a) => a.k === k) || (OLD[k] ? { k, c: OLD[k], hours: k !== "Lieu day", allDay: k === "Lieu day" } : { k, c: "#777", hours: true });
 const LEAVE_TYPES = ["Annual", "Sick", "Other"];
@@ -186,9 +194,10 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
     ${c.editable.length > 1 ? `<label>Who<select name="staff_id">${c.editable.map((s) => `<option value="${s.id}" ${String(v.staff_id) === String(s.id) ? "selected" : ""}>${h(s.full_name)}</option>`).join("")}</select></label>` : `<input type="hidden" name="staff_id" value="${c.editable[0].id}">`}
     <div class="ds-acts">${ACTS.map((a) => `<label class="ds-actpick" style="--ac:${a.c}"><input type="radio" name="activity" value="${h(a.k)}" ${v.activity === a.k ? "checked" : ""} required><span>${h(a.k)}</span></label>`).join("")}</div>
     <div class="row2"><label>Date<input type="date" name="work_date" value="${h(v.work_date)}" required></label><label>Note <span class="hint">(optional)</span><input name="note" value="${h(v.note)}" maxlength="60" placeholder="e.g. L'IMAD"></label></div>
-    <div class="row2"><label>From<input type="time" name="start_time" value="${h(v.start_time)}"></label><label>To<input type="time" name="end_time" value="${h(v.end_time)}"></label></div>
+    <div class="ds-times" id="dsTimes" data-times="${h(JSON.stringify(TIMES))}" ${v.activity === "Off" ? "hidden" : ""}><span class="hint">Ready times: tap one</span><div class="ds-chips"></div></div>
+    <div class="row2" id="dsFromTo" ${v.activity === "Off" ? "hidden" : ""}><label>From<input type="time" name="start_time" value="${h(v.start_time)}"></label><label>To<input type="time" name="end_time" value="${h(v.end_time)}"></label></div>
     ${del ? "" : `<details><summary>Repeat</summary><div class="ds-days" style="margin-top:8px">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<label><input type="checkbox" name="repeat" value="${i}"> ${DOW[i]}</label>`).join("")}</div><label style="margin-top:8px">Until<input type="date" name="until"></label></details>`}
-    <div class="toolbar" style="margin:0"><button class="btn primary">Save</button>${del ? `<button class="btn danger" name="action" value="delete" formnovalidate>Remove</button>` : ""}<a class="btn ghost" href="${c.base}/schedule?date=${h(v.work_date || "")}">Cancel</a></div></form>`;
+    <div class="toolbar" style="margin:0"><button class="btn primary">Save</button>${del ? `<button class="btn danger" name="action" value="delete" formnovalidate>Remove</button>` : ""}<a class="btn ghost" href="${c.base}/schedule?date=${h(v.work_date || "")}">Cancel</a></div></form><script src="/deptform.js" defer></script>`;
   function readEntry(b) {
     const a = ACTS.find((x) => x.k === b.activity);
     if (!a) return { err: "Choose what it is." };
