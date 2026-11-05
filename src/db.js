@@ -430,6 +430,11 @@ CREATE TABLE IF NOT EXISTS lead_photos (
   id SERIAL PRIMARY KEY, ride_id INTEGER NOT NULL REFERENCES lead_rides(id) ON DELETE CASCADE, mime TEXT NOT NULL, data BYTEA NOT NULL, bytes INTEGER NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- view-only links to the marketing report (no sign-in)
+CREATE TABLE IF NOT EXISTS report_links (
+  id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, label TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used TIMESTAMPTZ
+);
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

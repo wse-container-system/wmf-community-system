@@ -487,4 +487,22 @@ test("cycling development hub", async (t) => {
     await admin(`/dubai/links/${(await pool.query("SELECT id FROM lead_links")).rows[0].id}`, { method: "POST", form: { active: "0" } });
     assert.equal((await pub(`/l/${tok}`)).status, 404);
   });
+
+  await t.test("WMF marketing report: page, Excel, and a view-only link", async () => {
+    const m = today.slice(0, 7);
+    const pg = ok200(await admin(`/report/marketing?period=month&p=${m}`), "marketing page").text;
+    for (const x of ["Ride participation", "Events &amp; impact", "Download Excel", "Share with marketing"]) assert.match(pg, new RegExp(x));
+    const x = await admin(`/report/marketing.xlsx?period=month&p=${m}`, { raw: true });
+    assert.equal(x.status, 200);
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.text);
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ["Dashboard", "Events & impact", "Rides by month"]);
+    await admin("/report/marketing/links", { method: "POST", form: { label: "Marketing" } });
+    const tok = (await pool.query("SELECT token, id FROM report_links WHERE label = 'Marketing'")).rows[0];
+    const pub = client();
+    const pp = ok200(await pub(`/m/${tok.token}?period=year`), "shared page").text;
+    assert.match(pp, /marketing report/i); assert.doesNotMatch(pp, /@test\.local|Share with marketing/);
+    assert.equal((await pub(`/m/${tok.token}/excel?period=year`, { raw: true })).status, 200);
+    await admin(`/report/marketing/links/${tok.id}`, { method: "POST", form: { active: "0" } });
+    assert.equal((await pub(`/m/${tok.token}`)).status, 404);
+  });
 });
