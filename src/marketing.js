@@ -186,7 +186,7 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     res.send(page(req, "Marketing report", `${pageHtml(M, { periodNav: periodNav(per, "/report/marketing"), excelHref: `/report/marketing.xlsx?${qs(per)}`, staff: true })}
       ${req.session.user.role !== "viewer" ? `<section class="card noprint"><h2>Share with marketing</h2><p class="lead">A view-only link to this page: ride participation, events and impact only. No names or contact details. They can pick the month and download the Excel.</p>
         ${share}<form class="inline-form" method="post" action="/report/marketing/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Marketing" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></section>` : ""}`,
-    { active: "/report" }));
+    { active: "/report/marketing" }));
   }));
   app.get("/report/marketing.xlsx", READ, wrap(async (req, res) => sendXlsx(res, periodOf(req.query))));
   app.post("/report/marketing/links", STAFF, wrap(async (req, res) => {
@@ -210,7 +210,7 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), base = `/m/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF report", pageHtml(await marketingData(per), { periodNav: periodNav(per, base), excelHref: `${base}/excel?${qs(per)}` }), { active: "/report" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF report", pageHtml(await marketingData(per), { periodNav: periodNav(per, base), excelHref: `${base}/excel?${qs(per)}` }), { active: "/wmf" }));
   }));
   app.get("/m/:token/excel", limit("reportlink", 120, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);

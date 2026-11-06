@@ -640,4 +640,22 @@ test("cycling development hub", async (t) => {
     assert.match(pg, /Meydan/);
     assert.equal((await pool.query("SELECT venue FROM ride_venue_defaults WHERE city = 'Dubai' AND series = 'Qudra Loop'")).rows[0].venue, "Al Qudra Cycle Track", "usual stays unless ticked");
   });
+
+  await t.test("Corporate Rides page; Reports in the hub menu", async () => {
+    const co = (await pool.query("SELECT code FROM corp_companies WHERE active ORDER BY code LIMIT 1")).rows[0].code;
+    const d = E.helpers.addDays(today, -1);
+    let r = await admin("/corporate/sessions", { method: "POST", form: { company: co, session_date: d, kind: "Weekly ride", status: "Held", location: "Yas Marina Circuit", headcount: "9" } });
+    const sid = r.location.split("/").pop();
+    const pg = ok200(await admin(`/corporate/rides?period=month&p=${d.slice(0, 7)}`), "corporate rides").text;
+    assert.match(pg, /Every ride/); assert.match(pg, /Yas Marina Circuit/); assert.match(pg, new RegExp(`/corporate/session/${sid}`));
+    r = await admin(`/corporate/session/${sid}/delete`, { method: "POST", form: { back: "/corporate/rides" } });
+    assert.equal(r.location, "/corporate/rides");
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_sessions WHERE id = $1", [+sid])).rows[0].n, 0);
+    // reports: in the hub menu with their own sub-menu; WMF keeps its Reports link
+    const hub = ok200(await admin("/"), "hub").text;
+    assert.match(hub, /<a href="\/report\/management"[^>]*>Reports<\/a>/); assert.match(hub, /band-rep/);
+    const rp = ok200(await admin("/report/management?period=year"), "report").text;
+    assert.match(rp, /Performance report<\/a>/); assert.match(rp, /Marketing<\/a>/);
+    assert.match(ok200(await admin("/wmf"), "wmf").text, /href="\/report"[^>]*>Reports</);
+  });
 });
