@@ -491,16 +491,16 @@ test("cycling development hub", async (t) => {
   await t.test("WMF marketing report: page, Excel, and a view-only link", async () => {
     const m = today.slice(0, 7);
     const pg = ok200(await admin(`/report/marketing?period=month&p=${m}`), "marketing page").text;
-    for (const x of ["Ride participation", "Events &amp; impact", "Download Excel", "Share with marketing"]) assert.match(pg, new RegExp(x));
+    for (const x of ["Ride participation", "Events &amp; impact", "Download Excel", "Link for marketing", "Add marketing"]) assert.match(pg, new RegExp(x));
     const x = await admin(`/report/marketing.xlsx?period=month&p=${m}`, { raw: true });
     assert.equal(x.status, 200);
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.text);
-    assert.deepEqual(wb.worksheets.map((w) => w.name), ["Dashboard", "Events & impact", "Rides by month"]);
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ["Dashboard", "Events & impact", "Marketing", "Rides by month"]);
     await admin("/report/marketing/links", { method: "POST", form: { label: "Marketing" } });
     const tok = (await pool.query("SELECT token, id FROM report_links WHERE label = 'Marketing'")).rows[0];
     const pub = client();
     const pp = ok200(await pub(`/m/${tok.token}?period=year`), "shared page").text;
-    assert.match(pp, /marketing report/i); assert.doesNotMatch(pp, /@test\.local|Share with marketing/);
+    assert.match(pp, /marketing/i); assert.doesNotMatch(pp, /@test\.local|Link for marketing/);
     assert.equal((await pub(`/m/${tok.token}/excel?period=year`, { raw: true })).status, 200);
     await admin(`/report/marketing/links/${tok.id}`, { method: "POST", form: { active: "0" } });
     assert.equal((await pub(`/m/${tok.token}`)).status, 404);
@@ -659,35 +659,35 @@ test("cycling development hub", async (t) => {
     assert.match(ok200(await admin("/wmf"), "wmf").text, /href="\/report"[^>]*>Reports</);
   });
 
-  await t.test("Marketing log: own link to enter posts; impact shows on the management report", async () => {
-    await admin("/report/marketing/log/links", { method: "POST", form: { label: "Marketing team" } });
-    const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'mkinput'")).rows[0];
-    const pub = client();
-    const form = ok200(await pub(`/mk/${l.token}`), "marketing input link").text;
+  await t.test("Marketing: one link to see the report and add posts; other events; shows on the management report", async () => {
+    await admin("/report/marketing/links", { method: "POST", form: { label: "Marketing team" } });
+    const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY id DESC")).rows[0];
+    const pub = client(), base = `/m/${l.token}`;
+    const form = ok200(await pub(base), "marketing link").text;
+    assert.match(form, /Add marketing/); assert.match(form, /Events &amp; impact/);
     assert.doesNotMatch(form, /Department<\/a>|Corporate<\/a>|Sign out|@test\.local/, "no hub menus or emails");
     const ev = /value="(a:\d+|e:[^"]+)"/.exec(form);
-    const d = today;
-    const r = await pub(`/mk/${l.token}`, { method: "POST", form: { target: "", channel: "Instagram", kind: "Reel / video", posted_on: d, title: "Teaser reel", reach: "4,200", engagements: "310" } });
-    assert.equal(r.status, 303);
-    if (ev) { // a post linked to an event sits with that event and its turnout
-      await pub(`/mk/${l.token}`, { method: "POST", form: { target: ev[1], channel: "Strava", kind: "Post", posted_on: d, reach: "100", engagements: "9" } });
+    const d = today, y = `?period=year&p=${today.slice(0, 4)}`;
+    assert.equal((await pub(base + y, { method: "POST", form: { target: "", channel: "Instagram", kind: "Reel / video", posted_on: d, title: "Teaser reel", reach: "4,200", engagements: "310" } })).status, 303);
+    await pub(base + y, { method: "POST", form: { target: "o", other_event: "City fun ride", other_date: d, other_people: "80", channel: "WhatsApp", kind: "Post", posted_on: d, reach: "500", engagements: "40" } });
+    assert.equal((await pool.query("SELECT sum(reach)::int AS n FROM marketing_actions")).rows[0].n, 4700);
+    if (ev) { // a post for a WMF event sits with that event and its turnout
+      await pub(base + y, { method: "POST", form: { target: ev[1], channel: "Strava", kind: "Post", posted_on: d, reach: "100", engagements: "9" } });
       const all = await require("../src/mkinputs").loadInputs({ start: "2000-01-01", end: "2100-12-31" });
-      assert.ok(all.byEvent.some((g) => g.key !== "general" && g.reach === 100), "linked post grouped under its event");
+      assert.ok(all.byEvent.some((g) => !g.other && g.key !== "general" && g.reach === 100), "linked post grouped under its event");
       await pool.query("DELETE FROM marketing_actions WHERE reach = 100");
     }
-    await pub(`/mk/${l.token}`, { method: "POST", form: { target: "", channel: "WhatsApp", kind: "Post", posted_on: d, reach: "500", engagements: "40" } });
-    assert.equal((await pool.query("SELECT sum(reach)::int AS n FROM marketing_actions")).rows[0].n, 4700);
-    const after = ok200(await pub(`/mk/${l.token}?period=year`), "after entries").text;
-    assert.match(after, /4,700/); assert.match(after, /Teaser reel/);
+    const after = ok200(await pub(base + "?period=year"), "after entries").text;
+    assert.match(after, /4,700/); assert.match(after, /City fun ride/); assert.match(after, /Other event \/ activity/);
+    assert.match(ok200(await admin("/report/marketing?period=year"), "team page").text, /Teaser reel/);
+    assert.equal((await admin("/report/marketing/log")).status, 302, "old log address goes to the Marketing page");
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
-    assert.match(mg, /Marketing &amp; impact|Marketing & impact/); assert.match(mg, /4,700/);
-    await admin("/report/management/links", { method: "POST", form: { label: "Mgmt mk" } });
-    const g = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND label = 'Mgmt mk'")).rows[0].token;
-    assert.match(ok200(await pub(`/g/${g}?period=year`), "shared mgmt").text, /4,700/);
-    assert.match(ok200(await admin("/report/marketing/log?period=year"), "team log").text, /Teaser reel/);
-    assert.equal((await pub(`/g/${l.token}`)).status, 404, "an input link isn't a management link");
-    await admin(`/report/marketing/log/links/${l.id}`, { method: "POST", form: { active: "0" } });
-    assert.equal((await pub(`/mk/${l.token}`)).status, 404);
+    assert.match(mg, /Marketing &amp; impact/); assert.match(mg, /4,700/); assert.match(mg, /City fun ride/);
+    assert.equal((await pub(`/g/${l.token}`)).status, 404, "a marketing link isn't a management link");
+    const xl = await xlsx((await pub(`${base}/excel?period=year`, { raw: true })).text);
+    assert.ok(xl.getWorksheet("Marketing"), "Excel has a Marketing sheet");
+    await admin(`/report/marketing/links/${l.id}`, { method: "POST", form: { active: "0" } });
+    assert.equal((await pub(base)).status, 404);
   });
 
   await t.test("Dashboards: every number box opens its details", async () => {

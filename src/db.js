@@ -451,12 +451,16 @@ CREATE TABLE IF NOT EXISTS marketing_actions (
   reach INTEGER, engagements INTEGER, clicks INTEGER, signups INTEGER, notes TEXT,
   entered_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_event TEXT;
+ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_date DATE;
+ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_people INTEGER;
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE report_notes ADD COLUMN IF NOT EXISTS mgmt JSONB;
 ALTER TABLE report_links ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'marketing';
+UPDATE report_links SET kind = 'marketing' WHERE kind = 'mkinput'; -- one marketing link: input links became marketing links
 `;
 
 const DEFAULT_SETTINGS = {
