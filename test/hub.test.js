@@ -586,4 +586,27 @@ test("cycling development hub", async (t) => {
       assert.ok((await pool.query("SELECT voided_at FROM participation WHERE record_id = $1", [rec.record_id])).rows[0].voided_at);
     }
   });
+
+  await t.test("WMF Attendance per ride: edit, move and delete from the ride list", async () => {
+    const R2 = require("../src/rules");
+    let mon = today; while (R2.weekdayOf(mon) !== "Monday") mon = E.helpers.addDays(mon, -1);
+    const a = await tx((c) => R2.createMember(c, { full_name: "Move Me", email: "move@test.local", waiver_consent: true }, "t", "t"));
+    const b = await tx((c) => R2.createMember(c, { full_name: "Stay Put", email: "stay@test.local", waiver_consent: true }, "t", "t"));
+    for (const m of [a, b]) await admin("/rides/checkin", { method: "POST", form: { memberId: m.member_id, date: mon, activityId: "RIDE-MONDAY-MADNESS", back: "/rides" } });
+    // b is already on the Monday before; both are moved there
+    const mon2 = E.helpers.addDays(mon, -7);
+    await admin("/rides/checkin", { method: "POST", form: { memberId: b.member_id, date: mon2, activityId: "RIDE-MONDAY-MAINTENANCE", back: "/rides" } });
+    const list = ok200(await admin("/rides?days=30"), "ride list").text;
+    assert.match(list, /Edit \/ delete/);
+    const recs = (await pool.query("SELECT record_id FROM participation WHERE activity_id = 'RIDE-MONDAY-MADNESS' AND record_date::date = $1 AND voided_at IS NULL AND member_id = ANY($2)", [mon, [a.member_id, b.member_id]])).rows.map((r) => r.record_id);
+    assert.equal(recs.length, 2);
+    assert.match(ok200(await admin(`/wmf/rides/ride?src=q&d=${mon}&recs=${recs.join(",")}&back=/rides`), "edit").text, /Move all 2 check-ins/);
+    await admin("/wmf/rides/ride", { method: "POST", form: { src: "q", recs: recs.join(","), action: "move", d: mon2, activity: "RIDE-MONDAY-MAINTENANCE", back: "/rides" } });
+    const after = (await pool.query("SELECT member_id, activity_id, voided_at IS NOT NULL AS gone FROM participation WHERE record_id = ANY($1)", [recs])).rows;
+    assert.ok(after.find((x) => x.member_id === a.member_id && x.activity_id === "RIDE-MONDAY-MAINTENANCE" && !x.gone), "moved");
+    assert.ok(after.find((x) => x.member_id === b.member_id && x.gone), "already there: removed, not counted twice");
+    // remove one person from the ride page
+    const pg = ok200(await admin(`/rides/${mon2}/RIDE-MONDAY-MAINTENANCE`), "ride page").text;
+    assert.match(pg, /Remove/); assert.match(pg, /Edit \/ delete this ride/);
+  });
 });

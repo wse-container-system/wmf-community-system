@@ -39,7 +39,7 @@ const editHref = (s, back) => `/wmf/rides/ride?${new URLSearchParams(s.src === "
 module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, actor }) {
   const READ = need("admin", "coordinator", "viewer"), STAFF = need("admin", "coordinator");
   const { pool, tx, audit } = require("./db");
-  const safeBack = (b) => (String(b || "").startsWith("/wmf/rides") ? String(b) : "/wmf/rides");
+  const safeBack = (b) => (/^\/(wmf\/rides|rides)([/?]|$)/.test(String(b || "")) ? String(b) : "/wmf/rides");
 
   // ----- one ride: change it, or remove it
   app.get("/wmf/rides/ride", STAFF, wrap(async (req, res) => {
@@ -61,13 +61,19 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
         <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn danger" name="action" value="delete" data-confirm="Delete this ride and its photos?" formnovalidate>Delete this ride</button><a class="btn ghost" href="${h(back)}">Cancel</a></div></form>`;
     } else if (q.src === "q") {
       const recs = String(q.recs || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 300);
-      const rows = recs.length ? (await pool.query(`SELECT p.id, p.record_id, p.record_date, p.source, p.activity_name, m.full_name, m.member_id FROM participation p LEFT JOIN members m ON m.member_id = p.member_id
+      const rows = recs.length ? (await pool.query(`SELECT p.id, p.record_id, p.record_date, p.source, p.activity_id, p.activity_name, m.full_name, m.member_id FROM participation p LEFT JOIN members m ON m.member_id = p.member_id
         WHERE p.record_id = ANY($1) AND p.voided_at IS NULL ORDER BY m.full_name`, [recs])).rows : [];
       if (!rows.length) return res.redirect(back);
       body = `<p class="lead">${rows.length} check-in${rows.length === 1 ? "" : "s"} on ${fmtDate(q.d)}. Remove one person, or delete the whole ride if it shouldn't count.</p>
         <ul class="log">${rows.map((r) => `<li><span><b>${h(r.full_name || "—")}</b> <span class="muted">${h(r.member_id || "")} · ${h(r.activity_name || "")} · ${h(r.source || "")}</span></span>
           <form method="post" action="/wmf/rides/ride" style="margin:0"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(r.record_id)}"><input type="hidden" name="back" value="${h(req.originalUrl)}"><button class="btn tblbtn" name="action" value="delete" data-confirm="Remove ${h(r.full_name || "this check-in")} from this ride?">Remove</button></form></li>`).join("")}</ul>
-        <form method="post" action="/wmf/rides/ride" class="toolbar" style="margin-top:12px"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(recs.join(","))}"><input type="hidden" name="back" value="${h(back)}">
+        <h3 style="margin:18px 0 6px">Recorded on the wrong ride or day?</h3>
+        <form method="post" action="/wmf/rides/ride" class="form"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(recs.join(","))}"><input type="hidden" name="back" value="${h(back)}">
+          <div class="row2"><label>Date<input type="date" name="d" value="${h(q.d || "")}" max="${R.todayLocal()}" required></label>
+            <label>Ride<select name="activity">${(await pool.query("SELECT activity_id, name FROM activities WHERE core AND kind = 'ride' ORDER BY sort_order")).rows.map((a) => `<option value="${h(a.activity_id)}" ${rows[0].activity_id === a.activity_id ? "selected" : ""}>${h(a.name)}</option>`).join("")}</select></label></div>
+          <button class="btn primary" name="action" value="move">Move all ${rows.length} check-in${rows.length === 1 ? "" : "s"}</button>
+          <p class="hint" style="margin:0">If someone is already checked in on that ride and day, their extra check-in here is removed instead, so nobody counts twice.</p></form>
+        <form method="post" action="/wmf/rides/ride" class="toolbar" style="margin-top:14px"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(recs.join(","))}"><input type="hidden" name="back" value="${h(back)}">
           <button class="btn danger" name="action" value="delete" data-confirm="Delete the whole ride (all ${rows.length} check-ins)?">Delete the whole ride</button><a class="btn ghost" href="${h(back)}">Back</a></form>
         <p class="hint">To add someone, use <a href="/rides">Attendance per ride</a>.</p>`;
     } else return res.redirect(back);
@@ -91,6 +97,23 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
           const type = ["Monday", "Thursday", "Weekend", "Special ride"].includes(b.type) ? b.type : old.ride_type;
           await c.query("UPDATE lead_rides SET ride_date = $2, ride_type = $3, title = $4, participants = $5, updated_at = now() WHERE id = $1", [old.id, b.d, type, type === "Special ride" ? R.clean(b.name).slice(0, 80) || null : null, n]); }
         await audit(c, by, del ? "ride.delete" : "ride.update", "lead_ride", String(old.id), old, del ? null : { date: b.d, type: b.type, riders: n });
+      } else if (b.src === "q" && b.action === "move") {
+        const act = (await c.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'ride'", [b.activity])).rows[0];
+        if (!act || !okD) { msg = "Check the date and the ride."; return; }
+        const recs = String(b.recs || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 300);
+        const series = R.seriesFor(act, b.d);
+        let moved = 0, dup = 0;
+        for (const p of (await c.query("SELECT * FROM participation WHERE record_id = ANY($1) AND voided_at IS NULL", [recs])).rows) {
+          const key = `ride|${p.member_id}|${b.d}|${series}`;
+          const other = (await c.query("SELECT 1 FROM participation WHERE dedupe_key = $1 AND id <> $2 AND voided_at IS NULL", [key, p.id])).rows[0];
+          if (other) { await c.query("UPDATE participation SET voided_at = now(), void_reason = 'Duplicate after moving ride' WHERE id = $1", [p.id]); dup++; continue; }
+          const time = String(p.record_date).slice(11, 19) || "00:00:00"; // stored as local time text
+          await c.query(`UPDATE participation SET record_date = $2, activity_id = $3, activity_name = $4, activity_type = coalesce($5, activity_type), dedupe_key = $6 WHERE id = $1`,
+            [p.id, `${b.d} ${time}`, act.activity_id, act.name, act.activity_type, key]);
+          moved++;
+        }
+        await audit(c, by, "ride.checkins_moved", "participation", recs.slice(0, 5).join(","), null, { to: b.d, ride: act.name, moved, duplicates: dup });
+        msg = `Moved ${moved} check-in${moved === 1 ? "" : "s"} to ${act.name}, ${b.d}${dup ? ` (${dup} already there, removed)` : ""}.`;
       } else if (b.src === "q" && del) {
         const recs = String(b.recs || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 300);
         const r = await c.query("UPDATE participation SET voided_at = now(), void_reason = 'Removed from the Rides page' WHERE record_id = ANY($1) AND voided_at IS NULL RETURNING record_id", [recs]);
