@@ -21,7 +21,7 @@ function sessions(P, city, start, end) {
   // each imported or lead-sent ride stays its own line, so a ride entered twice shows up as two lines
   for (const x of P.historyRides) if (x.d >= start && x.d <= end && x.location === city) {
     const k = x.lead ? "l" + x.lid : "h" + (x.hid || x.d + x.series);
-    out.set(k, { d: x.d, series: x.series, n: x.attendees || 0, lead: !!x.lead, src: x.lead ? "l" : "h", id: x.lead ? x.lid : x.hid, label: x.initiative });
+    out.set(k, { d: x.d, series: x.series, n: x.attendees || 0, lead: !!x.lead, manual: !!x.manual, src: x.lead ? "l" : "h", id: x.lead ? x.lid : x.hid, label: x.initiative });
   }
   for (const r of P.rows) if (r.kind === "ride" && r.qualifying && !r.coveredByHistory && r.d >= start && r.d <= end && r.location === city) {
     const k = r.d + "|" + r.series, s = out.get(k) || { d: r.d, series: r.series, people: new Set(), src: "q", recs: [] };
@@ -41,6 +41,53 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
   const { pool, tx, audit } = require("./db");
   const safeBack = (b) => (/^\/(wmf\/rides|rides)([/?]|$)/.test(String(b || "")) ? String(b) : "/wmf/rides");
 
+  // ----- add a ride: a new ride name, or a ride that's missing (with check-ins by name, or a headcount)
+  const coreRides = async () => (await pool.query("SELECT activity_id, name, location FROM activities WHERE kind = 'ride' AND core AND status = 'Active' ORDER BY sort_order, name")).rows;
+  app.get("/wmf/rides/new", STAFF, wrap(async (req, res) => {
+    const rides = await coreRides(), city = req.query.city === "dxb" ? "Dubai" : "Abu Dhabi", back = safeBack(req.query.back || `/wmf/rides?city=${req.query.city === "dxb" ? "dxb" : "auh"}`);
+    res.send(page(req, "Add a ride", `<section class="card narrow"><h2>Add a ride</h2>
+      <p class="lead">A ride that's missing from the list, or a new ride. Count it by checking people in by name, or with the number of riders only.</p>
+      <form class="form" method="post" action="/wmf/rides/new" id="rdAdd"><input type="hidden" name="back" value="${h(back)}">
+        <fieldset class="rate"><legend>City</legend><div class="rate-row">${["Abu Dhabi", "Dubai"].map((c) => `<label><input type="radio" name="city" value="${c}" ${c === city ? "checked" : ""}><span>${c}</span></label>`).join("")}</div></fieldset>
+        <label>Date<input type="date" name="d" value="${R.todayLocal()}" max="${R.todayLocal()}" required></label>
+        <label>Ride<select name="activity" id="rdAct">${rides.map((a) => `<option value="${h(a.activity_id)}">${h(a.name)}</option>`).join("")}<option value="new">+ New ride…</option></select></label>
+        <label id="rdNewName">Name of the new ride <span class="hint">(it's added to the scanner and the ride lists, e.g. “Thursday Social”)</span><input name="name" maxlength="60" placeholder="e.g. Thursday Social"></label>
+        <fieldset class="rate"><legend>How to count it</legend><div class="rate-row">
+          <label><input type="radio" name="mode" value="names" checked><span>Check people in by name</span></label><label><input type="radio" name="mode" value="count"><span>Number of riders only</span></label></div></fieldset>
+        <label id="rdCount">Number of riders<input type="number" name="n" min="0" max="999" inputmode="numeric"></label>
+        <div class="toolbar" style="margin:0"><button class="btn primary">Add the ride</button><a class="btn ghost" href="${h(back)}">Cancel</a></div></form></section>
+      <script src="/rideadd.js" defer></script>`, { active: "/wmf/rides", wide: false }));
+  }));
+  app.post("/wmf/rides/new", STAFF, wrap(async (req, res) => {
+    const b = req.body || {}, by = actor(req), city = b.city === "Dubai" ? "Dubai" : "Abu Dhabi";
+    const back = safeBack(b.back), d = /^\d{4}-\d{2}-\d{2}$/.test(b.d || "") && b.d <= R.todayLocal() ? b.d : null;
+    const fail = (m) => { setFlash(req, "err", m); return res.redirect("/wmf/rides/new?" + new URLSearchParams({ city: city === "Dubai" ? "dxb" : "auh", back })); };
+    if (!d) return fail("Check the date.");
+    const name = R.clean(b.name).slice(0, 60);
+    let act = b.activity && b.activity !== "new" && !name ? (await pool.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'ride'", [b.activity])).rows[0] : null;
+    if (!act) {
+      if (!name) return fail("Choose a ride, or type the name of the new ride.");
+      act = (await pool.query("SELECT * FROM activities WHERE kind = 'ride' AND lower(name) = lower($1)", [name])).rows[0];
+      if (!act) {
+        const id = "RIDE-" + name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+        act = (await pool.query(`INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, core, sort_order)
+          VALUES ($1, $2, 'Community Ride', 'Ride Initiative', 'ride', $3, 'Active', TRUE, 100 + (SELECT count(*) FROM activities WHERE core))
+          ON CONFLICT (activity_id) DO UPDATE SET core = TRUE, status = 'Active', kind = 'ride' RETURNING *`, [id, name, city])).rows[0];
+        await audit(pool, by, "ride.new_type", "activity", act.activity_id, null, { name, city });
+      } else if (!act.core || act.status !== "Active") await pool.query("UPDATE activities SET core = TRUE, status = 'Active' WHERE activity_id = $1", [act.activity_id]);
+    }
+    if (b.mode === "count") {
+      const n = /^\d{1,3}$/.test(String(b.n || "")) ? +b.n : null;
+      if (n == null) return fail("Enter the number of riders.");
+      const id = (await pool.query("INSERT INTO lead_rides (city, ride_type, title, ride_date, participants, entered_by) VALUES ($1, 'Manual', $2, $3, $4, $5) RETURNING id", [city, act.name, d, n, by])).rows[0].id;
+      await audit(pool, by, "ride.add_headcount", "lead_ride", String(id), null, { city, ride: act.name, date: d, riders: n });
+      setFlash(req, "ok", `Added ${act.name}, ${d}: ${n} riders.`);
+      return res.redirect(back);
+    }
+    setFlash(req, "ok", `${act.name} is ready. Find each rider by name below and tap Check in.`);
+    res.redirect(`/rides/${d}/${encodeURIComponent(act.activity_id)}`);
+  }));
+
   // ----- one ride: change it, or remove it
   app.get("/wmf/rides/ride", STAFF, wrap(async (req, res) => {
     const q = req.query, back = safeBack(q.back);
@@ -56,8 +103,9 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
       const r = (await pool.query("SELECT *, ride_date::text AS d, (SELECT count(*)::int FROM lead_photos p WHERE p.ride_id = r.id) AS photos FROM lead_rides r WHERE id = $1", [+q.id || 0])).rows[0];
       if (!r) return res.redirect(back);
       body = `<p class="lead">Sent by the ride lead${r.photos ? `, with ${r.photos} photo${r.photos === 1 ? "" : "s"}` : ""}.</p><form class="form" method="post" action="/wmf/rides/ride"><input type="hidden" name="src" value="l"><input type="hidden" name="id" value="${r.id}"><input type="hidden" name="back" value="${h(back)}">
-        <div class="row2"><label>Date<input type="date" name="d" value="${h(r.d)}" required></label><label>Ride<select name="type">${["Monday", "Thursday", "Weekend", "Special ride"].map((t) => `<option ${t === r.ride_type ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
-        <div class="row2"><label>Special ride name<input name="name" maxlength="80" value="${h(r.title)}"></label><label>Riders<input type="number" name="n" min="0" max="999" value="${r.participants}" required></label></div>
+        <div class="row2"><label>Date<input type="date" name="d" value="${h(r.d)}" required></label>${r.ride_type === "Manual" ? `<input type="hidden" name="type" value="Manual"><label>City<select name="city"><option ${r.city === "Dubai" ? "" : "selected"}>Abu Dhabi</option><option ${r.city === "Dubai" ? "selected" : ""}>Dubai</option></select></label></div>
+        <div class="row2"><label>Ride<input name="name" maxlength="80" value="${h(r.title)}" required></label>` : `<label>Ride<select name="type">${["Monday", "Thursday", "Weekend", "Special ride"].map((t) => `<option ${t === r.ride_type ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
+        <div class="row2"><label>Special ride name<input name="name" maxlength="80" value="${h(r.title)}"></label>`}<label>Riders<input type="number" name="n" min="0" max="999" value="${r.participants}" required></label></div>
         <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn danger" name="action" value="delete" data-confirm="Delete this ride and its photos?" formnovalidate>Delete this ride</button><a class="btn ghost" href="${h(back)}">Cancel</a></div></form>`;
     } else if (q.src === "q") {
       const recs = String(q.recs || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 300);
@@ -94,8 +142,10 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
         const old = (await c.query("SELECT * FROM lead_rides WHERE id = $1", [+b.id || 0])).rows[0]; if (!old) return;
         if (del) { await c.query("DELETE FROM lead_rides WHERE id = $1", [old.id]); msg = "Ride deleted."; }
         else { if (!okD || n == null) { msg = "Check the date and the number of riders."; return; }
-          const type = ["Monday", "Thursday", "Weekend", "Special ride"].includes(b.type) ? b.type : old.ride_type;
-          await c.query("UPDATE lead_rides SET ride_date = $2, ride_type = $3, title = $4, participants = $5, updated_at = now() WHERE id = $1", [old.id, b.d, type, type === "Special ride" ? R.clean(b.name).slice(0, 80) || null : null, n]); }
+          const type = ["Monday", "Thursday", "Weekend", "Special ride", "Manual"].includes(b.type) ? b.type : old.ride_type;
+          const title = type === "Special ride" || type === "Manual" ? R.clean(b.name).slice(0, 80) || old.title : null;
+          const city = type === "Manual" && b.city ? (b.city === "Dubai" ? "Dubai" : "Abu Dhabi") : old.city;
+          await c.query("UPDATE lead_rides SET ride_date = $2, ride_type = $3, title = $4, participants = $5, city = $6, updated_at = now() WHERE id = $1", [old.id, b.d, type, title, n, city]); }
         await audit(c, by, del ? "ride.delete" : "ride.update", "lead_ride", String(old.id), old, del ? null : { date: b.d, type: b.type, riders: n });
       } else if (b.src === "q" && b.action === "move") {
         const act = (await c.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'ride'", [b.activity])).rows[0];
@@ -172,10 +222,10 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
             <span class="hbar-v"><b>${nf(Math.round(x.people / x.rides))}</b> <span class="muted">avg · ${x.rides} ride${x.rides === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : '<p class="muted">No rides.</p>'}
           <p class="hint" style="margin-top:8px">Average riders per ride. Best turnout: ${bySeries.length ? bySeries.map((x) => `${h(x.name)} ${x.best.n} (${fmtDate(x.best.d)})`).slice(0, 2).join(", ") : "—"}.</p></section>
         <section class="card c12"><div class="card-head"><div><h2>Every ride</h2>${dupes ? `<p class="lead" style="margin:0"><span class="badge warn">${dupes}</span> rides look entered twice (same day, same ride). Open one with Edit / delete to fix or remove it.</p>` : ""}</div>
-          ${cityKey === "auh" ? `<a class="btn" href="/rides">Attendance per ride: check people in</a>` : `<a class="btn" href="/dubai">Dubai lead link &amp; photos</a>`}</div>
+          <div class="toolbar" style="margin:0">${canEdit ? `<a class="btn primary" href="/wmf/rides/new?${h(new URLSearchParams({ city: cityKey, back }).toString())}">+ Add a ride</a>` : ""}${cityKey === "auh" ? `<a class="btn" href="/rides">Attendance per ride: check people in</a>` : `<a class="btn" href="/dubai">Dubai lead link &amp; photos</a>`}</div></div>
           <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th class="n">Riders</th><th>How it was counted</th><th></th></tr></thead><tbody>
           ${list.map((s) => `<tr${s.dupe ? ' class="rd-dupe"' : ""}><td style="white-space:nowrap">${fmtDate(s.d)}</td><td>${h(s.series)}${s.dupe ? ' <span class="badge warn">Possible duplicate</span>' : ""}</td><td class="n"><b>${nf(s.n)}</b></td>
-            <td class="muted">${s.src === "l" ? "Sent by the ride lead" : s.src === "q" ? "QR check-ins" : "Attendance records"}</td>
+            <td class="muted">${s.src === "l" ? (s.manual ? "Number of riders, added by the team" : "Sent by the ride lead") : s.src === "q" ? "QR check-ins" : "Attendance records"}</td>
             <td>${canEdit ? `<a class="btn tblbtn" href="${h(editHref(s, back))}">Edit / delete</a>` : ""}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No rides in ${h(per.label)}.</td></tr>`}
           </tbody></table></div></section>
       </div>`, { active: "/wmf/rides" }));

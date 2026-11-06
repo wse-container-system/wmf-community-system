@@ -609,4 +609,18 @@ test("cycling development hub", async (t) => {
     const pg = ok200(await admin(`/rides/${mon2}/RIDE-MONDAY-MAINTENANCE`), "ride page").text;
     assert.match(pg, /Remove/); assert.match(pg, /Edit \/ delete this ride/);
   });
+
+  await t.test("WMF Rides: add a ride (new ride name, by name or headcount)", async () => {
+    const d = E.helpers.addDays(today, -2);
+    let r = await admin("/wmf/rides/new", { method: "POST", form: { city: "Abu Dhabi", d, activity: "new", name: "Thursday Sunset Ride", mode: "names", back: "/wmf/rides" } });
+    const act = (await pool.query("SELECT * FROM activities WHERE name = 'Thursday Sunset Ride'")).rows[0];
+    assert.ok(act && act.core, "new ride added to the scanner list");
+    assert.equal(r.location, `/rides/${d}/${encodeURIComponent(act.activity_id)}`);
+    assert.match(ok200(await admin(r.location), "ride page").text, /Check in someone else/);
+    r = await admin("/wmf/rides/new", { method: "POST", form: { city: "Dubai", d, activity: act.activity_id, mode: "count", n: "17", back: "/wmf/rides?city=dxb" } });
+    assert.equal(r.location, "/wmf/rides?city=dxb");
+    const pg = ok200(await admin(`/wmf/rides?city=dxb&period=month&p=${d.slice(0, 7)}`), "dxb rides").text;
+    assert.match(pg, /Thursday Sunset Ride/); assert.match(pg, /added by the team/);
+    assert.match(ok200(await admin("/wmf/rides/new?city=dxb"), "form").text, /Thursday Sunset Ride/);
+  });
 });
