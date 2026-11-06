@@ -506,3 +506,7 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .ev-bar-t i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
 .ev-bar-v { font-variant-numeric: tabular-nums; font-size: 13px; }
 @media (max-width: 640px) { .ev-bar { grid-template-columns: 1fr; gap: 4px; } }
+.mi-tot b small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 1px; }
+.sv-dl { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; margin: 4px 0 8px; font-size: 14.5px; }
+.sv-dl dt { font-weight: 600; } .sv-dl dd { margin: 0; }
+@media (max-width: 640px) { .sv-dl { grid-template-columns: 1fr; gap: 2px; } .sv-dl dd { margin-bottom: 6px; } }

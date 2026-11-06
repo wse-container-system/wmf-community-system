@@ -700,6 +700,17 @@ test("cycling development hub", async (t) => {
     assert.equal((await pub(base)).status, 404);
   });
 
+  await t.test("Reports show the latest end-of-season survey; another one can be picked", async () => {
+    const mg = ok200(await admin("/report/management?period=year"), "management").text;
+    assert.match(mg, /Community voice · End of Summer Season Survey 2026/); assert.match(mg, /Community Survey<\/th>/);
+    assert.match(ok200(await admin("/report?period=year"), "performance report").text, /What the community said/);
+    const w = (await pool.query("SELECT id FROM season_surveys WHERE title = 'End of Winter Season Survey 2026'")).rows[0];
+    await admin(`/surveys/seasons/${w.id}/report`, { method: "POST", form: {} });
+    assert.match(ok200(await admin("/report/management?period=year"), "after picking").text, /Community voice · End of Winter Season Survey 2026/);
+    assert.match(ok200(await admin(`/surveys/seasons/${w.id}`), "survey page").text, /Shown in the reports/);
+    await pool.query("DELETE FROM settings WHERE key = 'reportSurvey'");
+  });
+
   await t.test("Dashboards: every number box opens its details", async () => {
     for (const u of ["/report/management?period=year", "/report/marketing?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
       const pg = ok200(await admin(u), u).text;
