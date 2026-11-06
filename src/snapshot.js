@@ -20,7 +20,7 @@ async function buildData() {
     pool.query("SELECT * FROM history_rides ORDER BY ride_date, id"),
     pool.query("SELECT * FROM history_events ORDER BY report_month, id"),
   ]);
-  const lead = (await pool.query("SELECT ride_date, ride_type, title, city, participants FROM lead_rides ORDER BY ride_date, id")).rows;
+  const lead = (await pool.query("SELECT id, ride_date, ride_type, title, city, participants FROM lead_rides ORDER BY ride_date, id")).rows;
   // merged members: their rows count for the surviving member
   const merged = new Map((await pool.query("SELECT member_id, merged_into FROM members WHERE merged_into IS NOT NULL")).rows.map((r) => [r.member_id, r.merged_into]));
   const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -57,9 +57,9 @@ async function buildData() {
       const d = dayOnly(h.ride_date), n = String(h.initiative || "").toLowerCase();
       const w = DAYS.find((x) => n.includes(x));
       return { date: d, initiative: h.initiative, series: w ? w[0].toUpperCase() + w.slice(1) + " Ride" : weekday(d) + " Ride",
-        location: /dxb|dubai/i.test(h.state || "") ? "Dubai" : "Abu Dhabi", attendees: h.attendees };
+        location: /dxb|dubai/i.test(h.state || "") ? "Dubai" : "Abu Dhabi", attendees: h.attendees, hid: h.id };
     }).concat(lead.map((l) => ({ date: dayOnly(l.ride_date), initiative: l.title || l.ride_type, lead: true, location: l.city,
-      series: l.ride_type === "Special ride" ? (l.title ? "Special: " + l.title : "Special ride") : l.ride_type + " Ride", attendees: l.participants }))),
+      series: l.ride_type === "Special ride" ? (l.title ? "Special: " + l.title : "Special ride") : l.ride_type + " Ride", attendees: l.participants, lid: l.id }))),
     historyEvents: he.rows.map((h) => ({ month: dayOnly(h.report_month), name: h.name, attendance: h.attendance })),
   };
 }

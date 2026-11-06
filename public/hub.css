@@ -457,3 +457,4 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .md-onepage-h { margin-top: 8px; }
 @media (max-width: 700px) { .md-dl { grid-template-columns: 1fr; } .md-dl dd { margin-bottom: 6px; } }
 .md-rides td:first-child { min-width: 170px; }
+.rd-dupe td { background: color-mix(in srgb, #e8833a 8%, transparent); }

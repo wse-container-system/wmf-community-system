@@ -565,4 +565,25 @@ test("cycling development hub", async (t) => {
     await admin(`/report/management/links/${l.id}`, { method: "POST", form: { active: "0" } });
     assert.equal((await pub(`/g/${l.token}`)).status, 404);
   });
+
+  await t.test("WMF Rides: duplicates flagged; rides edited and deleted", async () => {
+    const d = E.helpers.addDays(today, -3), m = d.slice(0, 7);
+    const ins = (n) => pool.query("INSERT INTO history_rides (ride_date, initiative, state, attendees) VALUES ($1, 'Friday Ride', 'DXB', $2) RETURNING id", [d, n]).then((r) => r.rows[0].id);
+    const a = await ins(10), b = await ins(10);
+    let pg = ok200(await admin(`/wmf/rides?city=dxb&period=month&p=${m}`), "rides").text;
+    assert.match(pg, /Possible duplicate/);
+    assert.match(ok200(await admin(`/wmf/rides/ride?src=h&id=${a}&back=/wmf/rides?city=dxb`), "edit page").text, /Delete this ride/);
+    await admin("/wmf/rides/ride", { method: "POST", form: { src: "h", id: String(b), action: "delete", back: "/wmf/rides?city=dxb" } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM history_rides WHERE id = $1", [b])).rows[0].n, 0);
+    await admin("/wmf/rides/ride", { method: "POST", form: { src: "h", id: String(a), d, city: "Dubai", name: "Friday Ride", n: "14", back: "/wmf/rides?city=dxb" } });
+    assert.equal((await pool.query("SELECT attendees FROM history_rides WHERE id = $1", [a])).rows[0].attendees, 14);
+    pg = ok200(await admin(`/wmf/rides?city=dxb&period=month&p=${m}`), "rides after").text;
+    assert.doesNotMatch(pg, /Possible duplicate/);
+    // live check-ins: remove the whole ride
+    const rec = (await pool.query("SELECT record_id, record_date::date::text AS d FROM participation WHERE record_type = 'Attendance' AND voided_at IS NULL AND source = 'Manual Attendance Correction' LIMIT 1")).rows[0];
+    if (rec) {
+      await admin("/wmf/rides/ride", { method: "POST", form: { src: "q", recs: rec.record_id, action: "delete", back: "/wmf/rides" } });
+      assert.ok((await pool.query("SELECT voided_at FROM participation WHERE record_id = $1", [rec.record_id])).rows[0].voided_at);
+    }
+  });
 });

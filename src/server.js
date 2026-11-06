@@ -692,7 +692,7 @@ require("./surveys")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./social")(app, { need, page, setFlash, actor, user, wrap });
 require("./management")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./marketing")(app, { need, page, setFlash, actor, user, wrap, limit });
-require("./ridesperf")(app, { need, page, wrap });
+require("./ridesperf")(app, { need, page, wrap, user, setFlash, actor });
 require("./leadrides")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./report")(app, { need, page, setFlash, actor, user, wrap });
 
