@@ -6,7 +6,7 @@ const QRCode = require("qrcode");
 const { pool, tx, audit } = require("./db");
 const R = require("./rules");
 const C = require("./corpdata");
-const { h, fmtDate, monLabel, nf, tile, table, raw, STAFF, ALL } = require("./views");
+const { h, fmtDate, monLabel, nf, tile, table, raw, STAFF, ALL, detailTiles, mini } = require("./views");
 const { columns, hbars } = require("./charts");
 const { addMonths, addDays } = require("./engine").helpers;
 
@@ -79,16 +79,33 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       ${periodControls(per, companySelect(sc))}
       ${named && missed.length ? `<div class="alert warn"><span class="ic">!</span><span><b>${missed.length} planned session${missed.length > 1 ? "s have" : " has"} nothing recorded</b> (no scans and not marked cancelled): ${missed.slice(0, 5).map((o) => `${h(sc.byCode[o.sc.company].name)} ${h(C.schedName(o.sc, sc.byCode[o.sc.company]))} ${fmtDate(o.date)}`).join(" · ")}. Record them on the <a href="/corporate/schedule">Schedule</a> page (tick names or mark cancelled).</span></div>` : ""}
       ${named && st.needsAttendance.length ? `<div class="alert warn"><span class="ic">!</span><span><b>${st.needsAttendance.length} past session${st.needsAttendance.length > 1 ? "s have" : " has"} no attendance recorded.</b> ${st.needsAttendance.slice(0, 4).map((s) => `<a href="/corporate/session/${s.id}">${h(sc.byCode[s.company].name)} ${fmtDate(s.d)}</a>`).join(" · ")}</span></div>` : ""}
-      <div class="tiles">
-        ${tile("Total attendance", nf(k.attendance), "Rides, activities and events")}
-        ${tile("Rides held", nf(k.rideSessions), k.cancelled ? `${k.cancelled} cancelled` : "None cancelled")}
-        ${tile("Average riders per ride", nf(k.avgPerRide, 1), `${nf(k.rideAttendance)} ride check-ins`)}
-        ${tile("Other activities & events", nf(k.events), `${nf(k.eventAttendance)} attendance`)}
-        ${tile("People taking part", nf(k.people), "Named check-ins in the period")}
-        ${tile("New joiners", nf(k.newJoiners), "First session in the period")}
-        ${tile("Active participants", nf(k.active), "2+ sessions in the last 90 days")}
-        ${tile("Came back again", pct(k.repeatRate), `${nf(k.repeat)} of ${nf(k.people)} attended 2+ times`)}
-      </div>
+      ${(() => {
+        const nm = (code) => h((sc.byCode[code] || {}).name || code);
+        const att = (s) => s.attendance;
+        const held = st.sessions.filter((s) => s.status === "Held" && s.d >= per.start && s.d <= per.end);
+        const rides = held.filter((s) => s.kind === C.RIDE), other = held.filter((s) => s.kind !== C.RIDE);
+        const coRows = (f) => st.byCompany.map((b) => [coChip(sc.byCode[b.code]), ...f(b)]);
+        const sessRows = (list) => [...list].sort((a, b) => b.d.localeCompare(a.d)).map((s) => [fmtDate(s.d), nm(s.company), h(s.kind + (s.title ? " · " + s.title : "")), nf(att(s)), named ? `<a href="/corporate/session/${s.id}">Open</a>` : ""]);
+        const ppl = [...st.participants.values()];
+        const fresh = ppl.filter((p) => p.first && p.first >= per.start && p.first <= per.end).sort((a, b) => b.first.localeCompare(a.first));
+        const namesNote = named ? "" : '<p class="hint">Names are visible to the WMF team only.</p>';
+        return detailTiles([
+          { label: "Total attendance", value: nf(k.attendance), note: "Rides, activities and events", detail: { title: "Attendance", html: mini(["Company", "Rides", "Other activities & events", "Total"], coRows((b) => [nf(b.rideAttendance), nf(b.attendance - b.rideAttendance), `<b>${nf(b.attendance)}</b>`]), { num: [1, 2, 3] })
+            + `<h3>By month</h3>${mini(["Month", "Rides", "Other", "Total"], st.months.map((m) => [monLabel(m.month, true), nf(m.rideAttendance), nf(m.eventAttendance), `<b>${nf(m.rideAttendance + m.eventAttendance)}</b>`]), { num: [1, 2, 3] })}` } },
+          { label: "Rides held", value: nf(k.rideSessions), note: k.cancelled ? `${k.cancelled} cancelled` : "None cancelled", detail: { title: "Every ride", html: mini(["Date", "Company", "Ride", "Attendance", ""], sessRows(rides), { num: [3], scroll: true })
+            + (k.cancelled ? `<h3>Cancelled</h3>${mini(["Date", "Company", "Session", "Why"], st.sessions.filter((s) => s.status === "Cancelled" && s.d >= per.start && s.d <= per.end).map((s) => [fmtDate(s.d), nm(s.company), h(s.kind), h(s.remarks || "—")]))}` : "") } },
+          { label: "Average riders per ride", value: nf(k.avgPerRide, 1), note: `${nf(k.rideAttendance)} ride check-ins`, detail: { title: "Average per ride, by company", html: mini(["Company", "Rides", "Ride check-ins", "Average"], coRows((b) => [nf(b.sessions), nf(b.rideAttendance), nf(b.avg, 1)]), { num: [1, 2, 3] }) } },
+          { label: "Other activities & events", value: nf(k.events), note: `${nf(k.eventAttendance)} attendance`, detail: { title: "Other activities & events", html: mini(["Activity", "Attendance"], st.byKind.map((x) => [h(x.name), nf(x.value)]), { num: [1] })
+            + `<h3>Each one</h3>${mini(["Date", "Company", "Activity", "Attendance", ""], sessRows(other), { num: [3], scroll: true })}` } },
+          { label: "People taking part", value: nf(k.people), note: "Named check-ins in the period", detail: { title: "People taking part", html: mini(["Company", "People", "On the roster"], coRows((b) => [nf(b.people), nf(b.roster)]), { num: [1, 2] })
+            + (named && st.top.length ? `<h3>Most sessions</h3>${mini(["Name", "Company", "Sessions"], st.top.map((p) => [h(p.full_name), nm(p.company), nf(p.inRange)]), { num: [2] })}` : namesNote) } },
+          { label: "New joiners", value: nf(k.newJoiners), note: "First session in the period", detail: { title: "New joiners", html: named ? mini(["Name", "Company", "First session"], fresh.map((p) => [h(p.full_name), nm(p.company), fmtDate(p.first)]), { scroll: true, empty: "No named new joiners; headcount sessions may add more." })
+            : mini(["Company", "New joiners"], st.byCompany.map((b) => [coChip(sc.byCode[b.code]), nf(fresh.filter((p) => p.company === b.code).length)]), { num: [1] }) + namesNote } },
+          { label: "Active participants", value: nf(k.active), note: "2+ sessions in the last 90 days", detail: { title: "Active participants", html: mini(["Company", "Active now", "On the roster"], coRows((b) => [nf(b.active), nf(b.roster)]), { num: [1, 2] })
+            + (named && st.lapsed.length ? `<h3>Stopped coming (last 6 months)</h3>${mini(["Name", "Company", "Last session"], st.lapsed.slice(0, 30).map((p) => [h(p.full_name), nm(p.company), fmtDate(p.last)]), { scroll: true })}` : "") } },
+          { label: "Came back again", value: pct(k.repeatRate), note: `${nf(k.repeat)} of ${nf(k.people)} attended 2+ times`, detail: { title: "Came back again", html: named ? mini(["Name", "Company", "Sessions"], st.top.filter((p) => p.inRange >= 2).map((p) => [h(p.full_name), nm(p.company), nf(p.inRange)]), { num: [2] }) + '<p class="hint">The ten most regular people; everyone with 2+ sessions counts.</p>' : namesNote } },
+        ], { cls: "tiles" });
+      })()}
       <div class="grid">
         <section class="card c8"><h2>Attendance by month</h2><p class="lead">${multi ? "Stacked by company." : "Rides and other activities."} Months before the period are shown for context.</p>${chart}</section>
         <section class="card c4"><h2>By activity</h2><p class="lead">Attendance in the period.</p>${hbars(st.byKind.map((x) => ({ ...x, color: x.name === C.RIDE ? "var(--s1)" : "var(--s3)" })))}
@@ -170,8 +187,19 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     res.send(page(req, "Corporate rides", `
       <div class="card-head"><div><h2 style="font-size:22px">Rides${sc.sel ? " · " + coChip(sc.sel) : ""}</h2><p class="muted" style="margin:2px 0 0">Every corporate ride and session with its turnout. Open one to tick names, change it or delete it.</p></div></div>
       ${periodControls(per, companySelect(sc) + `<label class="f"><span>Activity</span><select class="inp" name="kind" data-autosubmit>${opt("", "All activities", kind)}${C.KINDS.map((k) => opt(k, k, kind)).join("")}</select></label>`)}
-      <div class="tiles">${tile("Sessions held", nf(held.length), sess.length - held.length ? `${sess.filter((s) => s.status === "Cancelled").length} cancelled · ${sess.filter((s) => s.status === "Scheduled").length} scheduled` : "")}
-        ${tile("Attendance", nf(people), "")}${tile("Avg. per session", held.length ? nf(Math.round(people / held.length)) : "—", "")}${tile("New joiners", fresh ? nf(fresh) : "—", "From headcount sessions")}</div>
+      ${(() => {
+        const cos = sc.list.filter((co) => sc.codes.includes(co.code));
+        const rowCo = (f) => cos.map((co) => { const hs = held.filter((s) => s.company === co.code); return hs.length || sess.some((s) => s.company === co.code) ? [coChip(co), ...f(hs, co)] : null; }).filter(Boolean);
+        const kinds = C.KINDS.map((kk) => { const hs = held.filter((s) => s.kind === kk); return hs.length ? [h(kk), nf(hs.length), nf(hs.reduce((a, s) => a + att(s), 0)), nf(Math.round(hs.reduce((a, s) => a + att(s), 0) / hs.length))] : null; }).filter(Boolean);
+        return detailTiles([
+          { label: "Sessions held", value: nf(held.length), note: sess.length - held.length ? `${sess.filter((s) => s.status === "Cancelled").length} cancelled · ${sess.filter((s) => s.status === "Scheduled").length} scheduled` : "",
+            detail: { title: "Sessions by company", html: mini(["Company", "Held", "Cancelled", "Scheduled"], rowCo((hs, co) => [nf(hs.length), nf(sess.filter((s) => s.company === co.code && s.status === "Cancelled").length), nf(sess.filter((s) => s.company === co.code && s.status === "Scheduled").length)]), { num: [1, 2, 3] })
+              + `<h3>By activity</h3>${mini(["Activity", "Sessions", "Attendance", "Avg."], kinds, { num: [1, 2, 3] })}` + (sess.some((s) => s.status === "Cancelled") ? `<h3>Cancelled</h3>${mini(["Date", "Company", "Activity", "Why"], sess.filter((s) => s.status === "Cancelled").map((s) => [fmtDate(s.d), h((sc.byCode[s.company] || {}).name || s.company), h(s.kind), h(s.remarks || "—")]))}` : "") } },
+          { label: "Attendance", value: nf(people), detail: { title: "Attendance by company", html: mini(["Company", "Sessions", "Attendance", "Avg. per session"], rowCo((hs) => [nf(hs.length), nf(hs.reduce((a, s) => a + att(s), 0)), hs.length ? nf(Math.round(hs.reduce((a, s) => a + att(s), 0) / hs.length)) : "—"]), { num: [1, 2, 3] }) } },
+          { label: "Avg. per session", value: held.length ? nf(Math.round(people / held.length)) : "—", detail: { title: "Best turnout", html: mini(["Date", "Company", "Activity", "Attendance"], [...held].sort((a, b) => att(b) - att(a)).slice(0, 8).map((s) => [fmtDate(s.d), h((sc.byCode[s.company] || {}).name || s.company), h(s.kind + (s.title ? " · " + s.title : "")), `<b>${nf(att(s))}</b>`]), { num: [3] }) } },
+          { label: "New joiners", value: fresh ? nf(fresh) : "—", note: "From headcount sessions", detail: { title: "New joiners by company", html: mini(["Company", "New joiners"], rowCo((hs) => [nf(hs.reduce((a, s) => a + (s.headcount_new || 0), 0))]), { num: [1] }) + '<p class="hint">New joiners typed on headcount sessions. People ticked by name show on the Participants page with their first session.</p>' } },
+        ], { cls: "tiles" });
+      })()}
       <div class="grid">
         <section class="card c5"><h2>+ Add a ride</h2><p class="lead">Record a ride or session, then tick who came on the next page (or type a headcount there).</p>
           <form class="form" method="post" action="/corporate/sessions">

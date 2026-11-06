@@ -9,7 +9,7 @@ const { pool, audit } = require("./db");
 const R = require("./rules");
 const E = require("./engine");
 const { reportData, periodOf } = require("./report");
-const { h, fmtDate, monLabel, nf } = require("./views");
+const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
 const { columns } = require("./charts");
 
 const AUH = "#5b7cf0", DXB = "#e8833a";
@@ -28,12 +28,26 @@ async function marketingData(per) {
   const events = D.done.map((a) => ({ date: a.event_date || String(a.month).slice(0, 10), dated: !!a.event_date, title: a.title, city: D.isDxb(a) ? "Dubai" : "Abu Dhabi", category: a.category,
     participants: a.participants, registrants: a.registrants, partners: a.partners, impact: a.impact || "", big: D.isBig(a) })).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   return {
-    per, label: per.label, kind: per.kind,
+    per, label: per.label, kind: per.kind, sessions: D.sessionsList,
     ride: { total: D.k.rideAttendance, sessions: D.k.rideSessions, avg: D.k.rideSessions ? D.k.rideAttendance / D.k.rideSessions : null, auh: A.att, dxb: X.att, auhShare: A.share, dxbShare: X.share },
     rideMonths, rides,
     ev: { count: events.length, people: D.evPeople, partners: D.partners.length, withImpact: events.filter((e) => e.impact).length },
     events,
   };
+}
+
+// ---------------------------------------------------------------- what each number is made of
+function details(M) {
+  const pm = M.rideMonths.filter((x) => x.inPeriod);
+  const evRow = (e) => [e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true), h(e.title), e.city === "Dubai" ? "DXB" : "AUH", e.participants != null ? nf(e.participants) : "—", h(e.partners.join(", ") || "—")];
+  return [
+    { title: `Ride participation · ${M.label}`, html: `<h3>By city</h3>${mini(["City", "Participation", "Share"], [["Abu Dhabi", nf(M.ride.auh), M.ride.auhShare + "%"], ["Dubai", nf(M.ride.dxb), M.ride.dxbShare + "%"]], { num: [1, 2] })}
+      <h3>By ride</h3>${mini(["Ride", "City", "Rides", "Participation"], M.rides.map((r) => [h(r.name), r.city === "Dubai" ? "DXB" : "AUH", nf(r.sessions), nf(r.attendance)]), { num: [2, 3] })}
+      ${pm.length > 1 ? `<h3>By month</h3>${mini(["Month", "Abu Dhabi", "Dubai", "Total"], pm.map((x) => [monLabel(x.m, true), nf(x.auh), nf(x.dxb), `<b>${nf(x.total)}</b>`]), { num: [1, 2, 3] })}` : ""}` },
+    { title: `Every ride · ${M.label}`, html: mini(["Date", "City", "Ride", "Riders"], M.sessions.map((s) => [fmtDate(s.d), s.city === "Dubai" ? "DXB" : "AUH", h(s.series), nf(s.n)]), { num: [3], scroll: true }) },
+    { title: `Events · ${M.label}`, html: mini(["Date", "Event", "City", "Participants", "Partners"], M.events.map(evRow), { num: [3], scroll: true }) },
+    { title: "Event participation, biggest first", html: mini(["Date", "Event", "City", "Participants", "Partners"], [...M.events].sort((a, b) => (b.participants || 0) - (a.participants || 0)).map(evRow), { num: [3], scroll: true }) },
+  ];
 }
 
 // ---------------------------------------------------------------- page
@@ -46,7 +60,7 @@ function pageHtml(M, { periodNav, excelHref, staff }) {
   return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing report</div><h2 class="ov-title">${h(M.label)}</h2>
       <p class="lead" style="margin:4px 0 0">Ride participation, events and their impact, Abu Dhabi and Dubai.</p></div>
       <div class="mk-actions">${periodNav}<a class="btn primary" href="${h(excelHref)}">Download Excel</a></div></section>
-    <div class="tiles ov-tiles mk-tiles">${tiles.map(([l, v, n]) => `<div class="tile big"><span class="lbl">${h(l)}</span><span class="val">${v}</span>${n ? `<span class="note">${h(n)}</span>` : ""}</div>`).join("")}</div>
+    ${detailTiles(tiles.map(([l, v, n], i) => ({ label: l, value: v, note: h(n), detail: details(M)[i] })))}
     <div class="grid">
       <section class="card c7"><h2>Ride participation by month</h2><p class="lead">One person at one ride is one participation. Abu Dhabi ${M.ride.auhShare}% · Dubai ${M.ride.dxbShare}% this period.</p>${chart}</section>
       <section class="card c5"><h2>Rides</h2><p class="lead">Participation per ride series this period.</p>

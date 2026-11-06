@@ -658,4 +658,15 @@ test("cycling development hub", async (t) => {
     assert.match(rp, /Performance report<\/a>/); assert.match(rp, /Marketing<\/a>/);
     assert.match(ok200(await admin("/wmf"), "wmf").text, /href="\/report"[^>]*>Reports</);
   });
+
+  await t.test("Dashboards: every number box opens its details", async () => {
+    for (const u of ["/report/management?period=year", "/report/marketing?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
+      const pg = ok200(await admin(u), u).text;
+      assert.match(pg, /class="tile big dt"/, u); assert.match(pg, /class="card dt-panel"/, u); assert.match(pg, /details\.js/, u);
+    }
+    await admin("/report/management/links", { method: "POST", form: { label: "Board" } });
+    const tok = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND label = 'Board'")).rows[0].token;
+    const g = ok200(await client()(`/g/${tok}?period=year`), "shared").text;
+    assert.match(g, /dt-panel/); assert.doesNotMatch(g, /@test\.local/);
+  });
 });
