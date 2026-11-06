@@ -739,6 +739,16 @@ test("cycling development hub", async (t) => {
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM participation WHERE member_id = $1 AND voided_at IS NULL", [id])).rows[0].n, 1, "checked in");
   });
 
+  await t.test("New members can be set by hand for a month", async () => {
+    const m = E.helpers.addMonths(today.slice(0, 7), -1);
+    await admin("/report/management/newmembers", { method: "POST", form: { month: m, n: "10", back: `/report/management?period=month&p=${m}` } });
+    const pg = ok200(await admin(`/report/management?period=month&p=${m}`), "management").text;
+    assert.match(pg, /10 new members joined/); assert.match(pg, /with 10 new in this month/, "the words use it too");
+    assert.match(ok200(await admin(`/report?period=month&p=${m}`), "performance").text, /New members/);
+    await admin("/report/management/newmembers", { method: "POST", form: { month: m, n: "" } });
+    assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'newMembersManual'")).rows[0].value[m], undefined, "back to the app's count");
+  });
+
   await t.test("Dashboards: every number box opens its details", async () => {
     for (const u of ["/report/management?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
       const pg = ok200(await admin(u), u).text;
