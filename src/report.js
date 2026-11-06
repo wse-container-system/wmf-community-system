@@ -99,7 +99,7 @@ async function reportData(per) {
 
   // ---- corporate programme
   const st = cos.length ? await CD.stats({ codes: cos.map((c) => c.code), start, end }) : null;
-  const corp = st ? cos.map((co) => {
+  let corp = st ? cos.map((co) => {
     const b = st.byCompany.find((x) => x.code === co.code) || {};
     const held = st.sessions.filter((s) => s.company === co.code && s.status === "Held");
     const kinds = new Map(); for (const s of held) { const x = kinds.get(s.kind) || { kind: s.kind, n: 0, att: 0 }; x.n++; x.att += s.attendance; kinds.set(s.kind, x); }
@@ -107,7 +107,9 @@ async function reportData(per) {
       + held.filter((s) => !s.named).reduce((a, s) => a + (s.headcount_new || 0), 0);
     return { code: co.code, name: co.name, fresh, sessions: held.length, attendance: b.attendance || 0, avg: held.length ? (b.attendance || 0) / held.length : null, people: b.people || 0,
       kinds: [...kinds.values()].map((x) => ({ ...x, avg: x.n ? x.att / x.n : 0 })), cancelled: b.cancelled || 0 };
-  }).filter((c) => c.sessions || c.cancelled) : [];
+  }) : [];
+  const corpAll = corp; // every programme, also those with no session this period (management lists them all)
+  corp = corp.filter((c) => c.sessions || c.cancelled);
 
   // ---- social
   const soc = growthFor(S, start, end);
@@ -126,7 +128,7 @@ async function reportData(per) {
   if (wins.length < 3 && k.newMembers) wins.push({ big: `+${nf(k.newMembers)} members`, text: `Joined the community in ${per.label}` });
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
-  return { prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  return { prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages

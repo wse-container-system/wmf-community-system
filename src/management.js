@@ -70,16 +70,20 @@ async function mgmtData(per) {
   const A = D.city["Abu Dhabi"], X = D.city.Dubai;
   const comment = (c) => (c.top ? `Most attended: ${c.top.name} (${Math.round(c.top.perSession)} avg)` : c.sess ? "" : "No rides recorded");
   const rides = [
-    { type: "AUH Community Rides", n: A.sess, avg: A.avg, fresh: A.fresh, comment: comment(A) },
-    { type: "DXB Community Rides", n: X.sess, avg: X.avg, fresh: X.fresh, comment: comment(X) },
-    ...D.corp.map((c) => ({ type: `Corporate: ${c.name}`, n: c.sessions, avg: c.avg, fresh: c.fresh, comment: cut(c.kinds.map((x) => `${x.kind} ${x.n}`).join(" · ") + (c.cancelled ? ` · ${c.cancelled} cancelled` : ""), 60) })),
-    { type: "Community events", n: D.done.length, avg: D.done.length ? D.evPeople / D.done.length : null, fresh: D.done.reduce((a, x) => a + (x.new_contacts || 0), 0) || null, comment: D.done.length ? `${nf(D.evPeople)} participants in total` : "" },
+    { type: "AUH Community Rides", city: "auh", n: A.sess, avg: A.avg, fresh: A.fresh, comment: comment(A) },
+    { type: "DXB Community Rides", city: "dxb", n: X.sess, avg: X.avg, fresh: X.fresh, comment: comment(X) },
+    ...(D.corpAll || D.corp).map((c) => ({ type: `Corporate: ${c.name}`, city: "corp", n: c.sessions, avg: c.avg, fresh: c.fresh,
+      comment: c.sessions || c.cancelled ? cut(c.kinds.map((x) => `${x.kind} ${x.n}`).join(" · ") + (c.cancelled ? ` · ${c.cancelled} cancelled` : ""), 60) : "No sessions this period" })),
   ];
   const acts = [...D.done].filter((a) => !D.isBig(a)).sort((a, b) => (b.participants || 0) - (a.participants || 0)).slice(0, 4)
     .map((a) => ({ name: a.title, people: a.participants != null ? `${nf(a.participants)} participants${a.registrants ? ` · ${nf(a.registrants)} registered` : ""}` : "—", note: cut(a.impact || a.aim || "", 120) }));
   const collab = D.partners.slice(0, 4).map((p) => ({ name: p.name, event: cut(p.items.join(", "), 50), note: cut(p.impact, 80) || (p.people ? `${nf(p.people)} people reached` : "") }));
   const s = D.soc, sc = (ch, c) => (s && s[ch][c].now != null ? `${nf(s[ch][c].now)}${s[ch][c].pct != null ? ` (${fmtPct(s[ch][c].pct)})` : ""}` : "—");
-  return { per, W, T, draft, saved, rides, acts, collab, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
+  const ch = D.prev.rideAttendance ? Math.round(((D.k.rideAttendance - D.prev.rideAttendance) / D.prev.rideAttendance) * 100) : null;
+  const kpi = { participation: D.k.rideAttendance, change: ch, rides: D.k.rideSessions, fresh: (A.fresh || 0) + (X.fresh || 0), acts: D.done.length, actPeople: D.evPeople,
+    members: D.db.total, newMembers: D.k.newMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
+  const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
+  return { per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—" };
 }
 
@@ -153,28 +157,115 @@ async function pptx(M) {
   return p.write({ outputType: "nodebuffer" });
 }
 
+
+// ---------------------------------------------------------------- the dashboard (what the management link shows)
+function dashboard(M, { nav, pdf, pptxHref }) {
+  const k = M.kpi, unit = M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year";
+  const li = (t, n = 200) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => `<li>${h(cut(x, n))}</li>`).join("")}</ul>` : '<p class="muted">—</p>'; };
+  const maxAvg = Math.max(1, ...M.rides.map((r) => r.avg || 0));
+  const color = { auh: "#5b7cf0", dxb: "#e8833a", corp: "#2e86c1" };
+  const socTile = (name, list) => `<div class="md-soc"><b>${name}</b>${["Abu Dhabi", "Dubai"].map((c, i) => { const r = list && list[i]; return `<div><span>${c === "Abu Dhabi" ? "AUH" : "DXB"}</span><strong>${r && r.now != null ? nf(r.now) : "—"}</strong>${r && r.pct != null ? `<em class="${r.pct >= 0 ? "rp-up" : "rp-down"}">${fmtPct(r.pct)}</em>` : ""}</div>`; }).join("")}</div>`;
+  return `<section class="mk-head md-head"><div><div class="wc-eyebrow">WMN Moving FWD · ${h(M.W.kind.toLowerCase())} performance</div><h2 class="ov-title">${h(M.per.label)}</h2>
+      <p class="lead" style="margin:4px 0 0">Women's community cycling in Abu Dhabi and Dubai, and the corporate cycling programme.</p></div>
+      <div class="mk-actions">${nav}${pdf}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
+    <div class="tiles ov-tiles mk-tiles md-tiles">
+      <div class="tile big"><span class="lbl">Ride participation</span><span class="val">${nf(k.participation)}</span><span class="note">${k.change != null ? `<span class="${k.change >= 0 ? "rp-up" : "rp-down"}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change)}%</span> vs before · ` : ""}AUH ${nf(k.auh)} · DXB ${nf(k.dxb)}</span></div>
+      <div class="tile big"><span class="lbl">Rides held</span><span class="val">${nf(k.rides)}</span><span class="note">${k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : ""}</span></div>
+      <div class="tile big"><span class="lbl">New riders</span><span class="val">${nf(k.fresh)}</span><span class="note">${nf(k.newMembers)} new members joined</span></div>
+      <div class="tile big"><span class="lbl">Community activations</span><span class="val">${nf(k.acts)}</span><span class="note">${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}</span></div>
+      <div class="tile big"><span class="lbl">Community</span><span class="val">${nf(k.members)}</span><span class="note">members in Abu Dhabi and Dubai</span></div>
+    </div>
+    <div class="md-keys">
+      <section class="card md-k"><h2>Key developments</h2>${li(M.T.developments)}</section>
+      <section class="card md-k win"><h2>Key execution wins</h2>${li(M.T.wins)}</section>
+      <section class="card md-k miss"><h2>Key execution misses</h2>${li(M.T.misses)}</section>
+      <section class="card md-k next"><h2>Forward view (next ${unit.toLowerCase()})</h2>${li(M.T.forward)}</section>
+    </div>
+    <div class="grid">
+      <section class="card c7"><h2>Rides</h2><div class="tw"><table class="md-rides"><thead><tr><th>Ride type</th><th class="n">No. of rides</th><th>Avg. number of riders</th><th class="n">New riders</th><th>Comment</th></tr></thead><tbody>
+        ${M.rides.map((r) => `<tr><td><span class="md-dot" style="background:${color[r.city]}"></span>${h(r.type)}</td><td class="n">${r.n ? nf(r.n) : "—"}</td>
+          <td><div class="md-avg"><span><i style="width:${((r.avg || 0) / maxAvg) * 100}%;background:${color[r.city]}"></i></span><b>${r.avg ? nf(Math.round(r.avg)) : "—"}</b></div></td>
+          <td class="n">${r.fresh ? nf(r.fresh) : "—"}</td><td class="muted">${h(r.comment)}</td></tr>`).join("")}</tbody></table></div></section>
+      <section class="card c5"><h2>Corporate rides &amp; marketing</h2>
+        <div class="md-socs">${socTile("Strava", M.soc && M.soc.strava)}${socTile("WhatsApp", M.soc && M.soc.whatsapp)}</div>
+        <dl class="md-dl"><dt>Social media campaigns</dt><dd>${li(M.T.social, 120)}</dd><dt>Marketing highlights</dt><dd>${li(M.T.marketing, 120)}</dd>
+          <dt>Sponsor activations</dt><dd>${li(M.T.sponsor, 120)}</dd><dt>Community activations</dt><dd>${h(M.community)}</dd></dl></section>
+      <section class="card c7"><h2>Community activations</h2>
+        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div>${a.note ? `<p>${h(a.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
+      <section class="card c5"><h2>Cross collaborations</h2>
+        ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><p><span class="md-ev">${h(c.event)}</span>${c.note ? ` · ${h(c.note)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+      <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
+    </div>`;
+}
+
 // ---------------------------------------------------------------- routes
-module.exports = function management(app, { need, page, setFlash, actor, user, wrap }) {
+module.exports = function management(app, { need, page, setFlash, actor, user, wrap, limit }) {
   const READ = need("admin", "coordinator", "viewer"), STAFF = need("admin", "coordinator");
   const KIND = { month: "Monthly", quarter: "Quarterly", year: "Annual" };
   const qs = (per) => `period=${per.type}&p=${encodeURIComponent(per.p)}`;
-  app.get("/report/management", READ, wrap(async (req, res) => {
-    const per = periodOf(req.query), M = await mgmtData(per), H = E.helpers, today = new Date().toISOString().slice(0, 10), opts = [];
+  /** Month / quarter / year switch for a page at base. */
+  function periodNav(per, base) {
+    const H = E.helpers, today = new Date().toISOString().slice(0, 10), opts = [];
     if (per.type === "month") for (const m of H.monthsBetween("2025-01", today.slice(0, 7)).reverse()) opts.push([m, monLabel(m, true)]);
     if (per.type === "quarter") for (let y = +today.slice(0, 4); y >= 2025; y--) for (let q = 4; q >= 1; q--) if (`${y}-${String(q * 3 - 2).padStart(2, "0")}` <= today.slice(0, 7)) opts.push([`${y}-Q${q}`, `Q${q} ${y}`]);
     if (per.type === "year") for (let y = +today.slice(0, 4); y >= 2025; y--) opts.push([String(y), String(y)]);
+    return `<span class="seg">${Object.keys(KIND).map((t) => `<a href="${base}?period=${t}" class="${per.type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
+      <form method="get" action="${base}" style="margin:0"><input type="hidden" name="period" value="${per.type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form>`;
+  }
+  const onePage = (M) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><p class="lead">The same report in management's template. <b>Download PDF</b> saves this page; PowerPoint gives an editable copy.</p></section>
+    <div class="mg-wrap">${sheet(M)}</div>`;
+
+  app.get("/report/management", READ, wrap(async (req, res) => {
+    const per = periodOf(req.query), M = await mgmtData(per);
     const canEdit = ["admin", "coordinator"].includes(user(req).role);
+    const links = canEdit ? (await pool.query("SELECT * FROM report_links WHERE kind = 'management' ORDER BY active DESC, created_at DESC")).rows : [];
+    const base = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const share = links.map((l) => {
+      const url = `${base}/g/${l.token}`;
+      return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
+        ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
+          <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF performance dashboard")}&body=${encodeURIComponent(`Dear ${l.label},\n\nHere is the WMF performance dashboard. It is always up to date: choose the month, quarter or year at the top, and download the one-page report as PDF or PowerPoint whenever you need it.\n\n${url}\n\nKind regards`)}">Email</a>
+          <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`The WMF performance dashboard, always up to date (choose the month, quarter or year at the top): ${url}`)}" target="_blank" rel="noopener">WhatsApp</a></div>` : ""}</div>
+        <form method="post" action="/report/management/links/${l.id}"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div>`;
+    }).join("");
     res.send(page(req, "Management report", `
-      <section class="card noprint"><div class="card-head"><div><h2>Management report · ${h(per.label)}</h2><p class="lead">One page, in management's template. The figures fill in by themselves; the words start as a suggested draft you can rewrite.</p></div>
-        <div class="toolbar" style="margin:0"><button class="btn" data-print>Save as PDF</button><a class="btn primary" href="/report/management.pptx?${qs(per)}">Download PowerPoint</a></div></div>
-        <div class="toolbar" style="gap:12px;margin:4px 0 0;align-items:center"><span class="seg">${Object.keys(KIND).map((t) => `<a href="/report/management?period=${t}" class="${per.type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
-          <form method="get" style="margin:0"><input type="hidden" name="period" value="${per.type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form>
-          <a href="/report?${qs(per)}">Full report</a></div>
-        ${canEdit ? `<details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(one point per line)</span></summary>
+      ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}` })}
+      ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
+        <details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
           <form class="form" method="post" action="/report/management/notes"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="/report/management?${qs(per)}">
             <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
-            <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>` : ""}</section>
-      <div class="mg-wrap">${sheet(M)}</div>`, { active: "/report" }));
+            <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>
+        <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
+          <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
+          ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details></section>` : ""}
+      ${onePage(M)}`, { active: "/report" }));
+  }));
+  app.post("/report/management/links", STAFF, wrap(async (req, res) => {
+    const label = require("./rules").clean(req.body.label).slice(0, 60);
+    if (label) {
+      await pool.query("INSERT INTO report_links (token, label, kind, created_by) VALUES ($1,$2,'management',$3)", [require("crypto").randomBytes(12).toString("base64url"), label, actor(req)]);
+      setFlash(req, "ok", `Link made for ${label}. Copy it or email it.`);
+    }
+    res.redirect("/report/management");
+  }));
+  app.post("/report/management/links/:id", STAFF, wrap(async (req, res) => {
+    await pool.query("UPDATE report_links SET active = $2 WHERE id = $1 AND kind = 'management'", [+req.params.id || 0, req.body.active === "1"]);
+    res.redirect("/report/management");
+  }));
+  // ----- the management link (no sign-in)
+  const linkOf = async (t) => (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active AND kind = 'management'", [String(t || "").slice(0, 60)])).rows[0];
+  const closed = (req, res) => res.status(404).send(page(req, "WMF performance", `<section class="card"><h2>This link is switched off</h2><p class="lead">Please ask the WMF team for a new one.</p></section>`, { wide: false }));
+  app.get("/g/:token", limit("mgmtlink", 150, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkOf(req.params.token); if (!l) return closed(req, res);
+    const per = periodOf(req.query), M = await mgmtData(per), b = `/g/${encodeURIComponent(l.token)}`;
+    await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${onePage(M)}`, { active: "/report" }));
+  }));
+  app.get("/g/:token/pptx", limit("mgmtlink", 150, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkOf(req.params.token); if (!l) return closed(req, res);
+    const per = periodOf(req.query), M = await mgmtData(per);
+    res.type("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+      .set("Content-Disposition", `attachment; filename="WMF-${M.W.kind}-Report-${per.p}.pptx"`).send(await pptx(M));
   }));
   app.post("/report/management/notes", STAFF, wrap(async (req, res) => {
     const b = req.body || {}, key = String(b.period || "");
