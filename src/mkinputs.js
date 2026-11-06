@@ -93,7 +93,7 @@ function formHtml({ base, tg, editing, pre, cancelHref }) {
   const opt = (v, l, cur) => `<option value="${h(v)}" ${String(cur) === String(v) ? "selected" : ""}>${h(l)}</option>`;
   const e = editing || {};
   const cur = editing ? (e.activation_id ? "a:" + e.activation_id : e.activity_id ? "e:" + e.activity_id : e.other_event ? "o" : "") : pre || "";
-  return `<section class="card c12" id="log"><h2>${editing ? "Edit a post or campaign" : "Add marketing"}</h2>
+  return `<section class="card c12" id="log"><h2>${editing ? "Edit a post or campaign" : pre && pre !== "o" && tg.find((t) => t.v === pre) ? `Add marketing · ${h(tg.find((t) => t.v === pre).label)}` : "Add marketing"}</h2>
     <p class="lead">One line per post, story, email or campaign. Choose the event it was for; it then shows on that event's card with its reach and turnout.</p>
     <form class="form mk-form" method="post" action="${base}${editing ? `?edit=${e.id}` : ""}">
       <label class="mk-wide">Event<select name="target" data-mk-target><option value="">General / brand (not for one event)</option>${tg.map((t) => opt(t.v, t.label, cur)).join("")}${opt("o", "Other event or activity (not a WMF event)…", cur)}</select></label>

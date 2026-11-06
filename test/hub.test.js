@@ -680,6 +680,8 @@ test("cycling development hub", async (t) => {
     const after = ok200(await pub(base + "?period=year"), "after entries").text;
     assert.match(after, /4,700/); assert.match(after, /City fun ride/); assert.match(after, /Other event \/ activity/);
     assert.match(ok200(await admin("/report/marketing?period=year"), "team page").text, /Teaser reel/);
+    const ev1 = new RegExp(`href="${base.replace(/[-/]/g, "\\$&")}\\?[^"]*target=(a%3A\\d+)[^"]*#log"`).exec(after);
+    if (ev1) assert.match(ok200(await pub(`${base}?period=year&target=${ev1[1]}`), "event clicked").text, /Add marketing · /, "clicking an event opens its form");
     assert.equal((await admin("/report/marketing/log")).status, 302, "old log address goes to the Marketing page");
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
     assert.match(mg, /Marketing &amp; impact/); assert.match(mg, /4,700/); assert.match(mg, /City fun ride/);
