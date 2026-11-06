@@ -491,7 +491,7 @@ test("cycling development hub", async (t) => {
   await t.test("WMF marketing report: page, Excel, and a view-only link", async () => {
     const m = today.slice(0, 7);
     const pg = ok200(await admin(`/report/marketing?period=month&p=${m}`), "marketing page").text;
-    for (const x of ["Event participation", "Events &amp; impact", "Download Excel", "Link for marketing", "Add marketing"]) assert.match(pg, new RegExp(x));
+    for (const x of ["Event participation", "Community activations", "Download Excel", "Link for marketing", "Add marketing"]) assert.match(pg, new RegExp(x));
     const x = await admin(`/report/marketing.xlsx?period=month&p=${m}`, { raw: true });
     assert.equal(x.status, 200);
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.text);
@@ -655,7 +655,7 @@ test("cycling development hub", async (t) => {
     const hub = ok200(await admin("/"), "hub").text;
     assert.match(hub, /<a href="\/report\/management"[^>]*>Reports<\/a>/); assert.match(hub, /band-rep/);
     const rp = ok200(await admin("/report/management?period=year"), "report").text;
-    assert.match(rp, /Performance report<\/a>/); assert.match(rp, /Marketing<\/a>/);
+    assert.match(rp, /Performance report<\/a>/); assert.doesNotMatch(rp, /">Marketing<\/a>/, "one report: marketing works through the management report");
     assert.match(ok200(await admin("/wmf"), "wmf").text, /href="\/report"[^>]*>Reports</);
   });
 
@@ -664,7 +664,7 @@ test("cycling development hub", async (t) => {
     const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY id DESC")).rows[0];
     const pub = client(), base = `/m/${l.token}`;
     const form = ok200(await pub(base), "marketing link").text;
-    assert.match(form, /Add marketing/); assert.match(form, /Events &amp; impact/);
+    assert.match(form, /Add marketing/); assert.match(form, /Community activations/);
     assert.doesNotMatch(form, /Department<\/a>|Corporate<\/a>|Sign out|@test\.local/, "no hub menus or emails");
     const ev = /value="(a:\d+|e:[^"]+)"/.exec(form);
     const d = today, y = `?period=year&p=${today.slice(0, 4)}`;
@@ -676,6 +676,12 @@ test("cycling development hub", async (t) => {
       const all = await require("../src/mkinputs").loadInputs({ start: "2000-01-01", end: "2100-12-31" });
       assert.ok(all.byEvent.some((g) => !g.other && g.key !== "general" && g.reach === 100), "linked post grouped under its event");
       await pool.query("DELETE FROM marketing_actions WHERE reach = 100");
+    }
+    const act = (await pool.query("SELECT id, participants FROM activations ORDER BY id LIMIT 1")).rows[0];
+    if (act) { // marketing updates an activation's feedback and strategy; it shows in the management report
+      await pub(`${base}/act/${act.id}${y}`, { method: "POST", form: { participants: String(act.participants ?? ""), registrants: "", new_contacts: "", impact: "Great energy, 5 asked about the next ride.", strategy: "Partner reveal then reminders." } });
+      assert.equal((await pool.query("SELECT impact FROM activations WHERE id = $1", [act.id])).rows[0].impact, "Great energy, 5 asked about the next ride.");
+      assert.equal((await pool.query("SELECT strategy FROM marketing_strategies WHERE target = $1", ["a:" + act.id])).rows[0].strategy, "Partner reveal then reminders.");
     }
     const after = ok200(await pub(base + "?period=year"), "after entries").text;
     assert.match(after, /4,200/); assert.match(after, /City fun ride/); assert.match(after, /not counted in any report/);
@@ -702,7 +708,9 @@ test("cycling development hub", async (t) => {
 
   await t.test("Reports show the latest end-of-season survey; another one can be picked", async () => {
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
-    assert.match(mg, /Community voice · End of Summer Season Survey 2026/); assert.match(mg, /Community Survey<\/th>/);
+    assert.match(mg, /Community voice · End of Summer Season Survey 2026/);
+    assert.match(mg, /Active members/); assert.match(mg, /sv-ring/, "survey shown with score rings");
+    assert.match(mg, /id="mklinks"/, "marketing link made from the management report"); assert.match(mg, /Community Survey<\/th>/);
     assert.match(ok200(await admin("/report?period=year"), "performance report").text, /What the community said/);
     const w = (await pool.query("SELECT id FROM season_surveys WHERE title = 'End of Winter Season Survey 2026'")).rows[0];
     await admin(`/surveys/seasons/${w.id}/report`, { method: "POST", form: {} });

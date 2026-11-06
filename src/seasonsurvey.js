@@ -269,18 +269,25 @@ async function reportSurvey() {
 }
 /** One line for the one-page report. */
 const surveyLine = (S) => (S ? `${S.title}: ${S.responses} answers · organisation ${f1(S.org)}/5 · coaches ${f1(S.coach)}/5${S.asks[0] ? ` · top ask: ${S.asks[0].name.toLowerCase()}` : ""}` : "—");
-/** The card for the dashboards. */
+/** The card for the dashboards: three score rings, what they want, what holds them back. */
 function surveyHtml(S) {
   if (!S) return '<p class="muted">No end-of-season survey yet.</p>';
-  const d = S.prev && S.prev.org != null && S.org != null ? S.org - S.prev.org : null;
-  return `<div class="mi-tot"><div><b>${nf(S.responses)}</b><span>answers</span></div><div><b>${f1(S.org)}<small>/5</small></b><span>organisation${d != null ? ` · ${Math.abs(d) < 0.05 ? "same as" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)} vs`} ${h(S.prev.label)}` : ""}</span></div>
-      <div><b>${f1(S.coach)}<small>/5</small></b><span>coaches</span></div>${S.weekly != null ? `<div><b>${pct(S.weekly)}</b><span>ride every week</span></div>` : ""}</div>
-    <dl class="sv-dl">${S.best ? `<dt>Best rated</dt><dd>${h(S.best.name)} (${f1(S.best.avg)}/5 from ${S.best.joined})</dd>` : ""}
-      ${S.again.length ? `<dt>Most wanted again</dt><dd>${S.again.map(([k, n]) => `${h(k)} (${n})`).join(" · ")}</dd>` : ""}
-      ${S.asks.length ? `<dt>What they ask for</dt><dd>${S.asks.map((a) => `${h(a.name)} (${a.n})`).join(" · ")}</dd>` : ""}
-      ${S.barrier ? `<dt>What holds them back</dt><dd>${h(S.barrier[0])} (${S.barrier[1]} of ${S.responses})</dd>` : ""}
-      ${S.focus ? `<dt>Our focus</dt><dd>${h(S.focus)}</dd>` : ""}</dl>
-    ${S.quote ? `<p class="mk-impact">“${h(S.quote)}”</p>` : ""}`;
+  const ring = (frac, big, lbl, sub, color) => { const C = 2 * Math.PI * 34, f = Math.max(0, Math.min(1, frac || 0));
+    return `<div class="sv-ring"><svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="var(--line)" stroke-width="9"/>
+      <circle cx="42" cy="42" r="34" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/></svg>
+      <b>${big}</b><span>${lbl}</span>${sub ? `<small>${sub}</small>` : ""}</div>`; };
+  const prev = S.prev && S.prev.org != null ? `${h(S.prev.label)}: ${f1(S.prev.org)}` : "";
+  const bars = (items, color) => { const max = Math.max(1, S.responses); return items.length ? `<div class="sv-bars">${items.map(([k, n]) => `<div class="sv-bar"><span class="sv-bl">${h(k)}</span>
+      <span class="sv-bt"><i style="width:${(n / max) * 100}%;background:${color}"></i></span><b>${Math.round((n / max) * 100)}%</b></div>`).join("")}</div>` : '<p class="muted">—</p>'; };
+  const bp = S.barrier ? S.barrier[1] / S.responses : 0;
+  return `<div class="sv-grid">
+      <div class="sv-scores">${ring(S.org / 5, f1(S.org), "Organisation", prev || "out of 5", "#5b7cf0")}${ring(S.coach / 5, f1(S.coach), "Coaches", "out of 5", "#9b7be0")}${S.weekly != null ? ring(S.weekly, pct(S.weekly), "Ride every week", "", "#3fb68b") : ""}
+        <p class="sv-n">${nf(S.responses)} members answered</p></div>
+      <div><h3 class="sv-h">Most wanted again</h3>${bars(S.again, "#5b7cf0")}</div>
+      <div><h3 class="sv-h">What they ask for</h3>${bars(S.asks.map((a) => [a.name, a.n]), "#e8833a")}</div>
+    </div>
+    <div class="sv-foot">${S.barrier ? `<div class="sv-hold"><span class="sv-hl">What holds them back</span><b>${Math.round(bp * 100)}%</b><span>${h(S.barrier[0])} <span class="muted">(${S.barrier[1]} of ${S.responses})</span></span></div>` : ""}
+      ${S.quote ? `<blockquote class="sv-q">“${h(S.quote)}”</blockquote>` : ""}${S.focus ? `<p class="sv-focus"><b>Our focus</b> ${h(S.focus)}</p>` : ""}</div>`;
 }
 
 // ---------------------------------------------------------------- pages

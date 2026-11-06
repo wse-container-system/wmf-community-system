@@ -43,7 +43,7 @@ async function reportData(per) {
     buildData(), getSettings(), loadActivations(), memberProfiles(), loadSocial(), periodResults(start, end),
     pool.query("SELECT * FROM report_notes WHERE period = $1", [per.key]).then((r) => r.rows[0] || {}),
     pool.query("SELECT coalesce(sum(expat),0)::int AS expat, coalesce(sum(arab),0)::int AS arab, coalesce(sum(new_riders),0)::int AS fresh FROM history_rides WHERE ride_date BETWEEN $1 AND $2", [start, end]).then((r) => r.rows[0]),
-    pool.query(`SELECT title, start_date::text AS d, location, category FROM calendar_items WHERE category IN ('wmf_event','generic_event') AND status <> 'Cancelled'
+    pool.query(`SELECT title, start_date::text AS d, location, category FROM calendar_items WHERE category IN ('wmf_event','wmf_ride') AND status <> 'Cancelled'
       AND start_date > $1::date AND start_date <= ($1::date + 75) ORDER BY start_date LIMIT 6`, [end]).then((r) => r.rows),
     CD.companies(),
   ]);

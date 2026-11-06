@@ -1,7 +1,8 @@
 "use strict";
 /**
- * Marketing report: ride participation, events, event participation and impact. Nothing else.
- * A dashboard-style page that can be shared as a view-only link (no sign-in), and the same figures as a styled Excel file.
+ * Marketing inputs: the page marketing works on (through their link, no sign-in) and the team can open from the
+ * management report. Per WMF activation they update the numbers, feedback & impact, marketing strategy and posts;
+ * everything shows in the management report. The Excel has rides, participation, events and their impact.
  */
 const crypto = require("crypto");
 const ExcelJS = require("exceljs");
@@ -23,9 +24,12 @@ async function marketingData(per) {
   const events = D.done.map((a) => {
     const g = mk.byEvent.find((x) => x.act_id && x.act_id === a.id);
     return { act_id: a.id, date: a.event_date || String(a.month).slice(0, 10), dated: !!a.event_date, title: a.title, city: D.isDxb(a) ? "Dubai" : "Abu Dhabi", category: a.category,
-      participants: a.participants, registrants: a.registrants, partners: a.partners, impact: a.impact || "", big: D.isBig(a), mk: g || null, strategy: mk.strategies.get("a:" + a.id) || "" };
+      participants: a.participants, registrants: a.registrants, new_contacts: a.new_contacts, partners: a.partners, impact: a.impact || "", big: D.isBig(a), mk: g || null, strategy: mk.strategies.get("a:" + a.id) || "" };
   }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  return { per, label: per.label, kind: per.kind, events, mk,
+  const A = D.city["Abu Dhabi"], X = D.city.Dubai;
+  const rideMonths = D.months.map((m) => { const a = (A.trend.find((t) => t.m === m) || {}).v || 0, d = (X.trend.find((t) => t.m === m) || {}).v || 0; return { m, auh: a, dxb: d, total: a + d, inPeriod: m >= D.start.slice(0, 7) }; });
+  return { per, label: per.label, kind: per.kind, events, mk, rideMonths,
+    ride: { total: D.k.rideAttendance, sessions: D.k.rideSessions, auh: A.att, dxb: X.att, auhSess: A.sess, dxbSess: X.sess },
     ev: { count: events.length, people: D.evPeople, partners: D.partners.length, registered: events.reduce((s, e) => s + (e.registrants || 0), 0) } };
 }
 const dayLabel = (e) => (e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true));
@@ -61,11 +65,18 @@ function eventCards(M, input) {
   const groups = M.mk.byEvent.filter((g) => g.key !== "general"), mx = MK.maxes(groups);
   const add = (v) => (input ? `<a class="btn tblbtn mk-ev-add noprint" href="${input.base}?${input.qs({ target: v })}#log">+ Add marketing</a>` : "");
   const link = (v, t) => (input ? `<a href="${input.base}?${input.qs({ target: v })}#log">${h(t)}</a>` : h(t));
-  const cards = M.events.map((e) => ({ d: String(e.date), html: `<article class="mk-ev ${e.city === "Dubai" ? "dxb" : "auh"}">
+  const cards = M.events.map((e) => ({ d: String(e.date), html: `<article class="mk-ev ${e.city === "Dubai" ? "dxb" : "auh"}" id="act-${e.act_id}">
       <div class="mk-ev-top"><span class="badge">${h(e.city)} · ${h(e.category)}</span><span class="muted">${dayLabel(e)}</span></div>
       <h3>${link("a:" + e.act_id, e.title)}</h3>
       <p class="mk-n"><b>${e.participants != null ? nf(e.participants) : "—"}</b> participants${e.registrants ? ` · ${nf(e.registrants)} registered` : ""}${e.partners.length ? ` · with ${h(e.partners.join(", "))}` : ""}</p>
-      ${e.strategy ? MK.strategyHtml(e.strategy) : ""}${e.impact ? `<p class="mk-impact">${h(cut(e.impact, 320))}</p>` : ""}${e.mk ? MK.funnel(e.mk, mx) : ""}${add("a:" + e.act_id)}</article>` }));
+      ${e.strategy ? MK.strategyHtml(e.strategy) : ""}${e.impact ? `<p class="mk-impact">${h(input ? e.impact : cut(e.impact, 320))}</p>` : ""}${e.mk ? MK.funnel(e.mk, mx) : ""}
+      ${input ? `<div class="mk-ev-actions">${add("a:" + e.act_id)}<details class="mk-edit"><summary class="btn tblbtn">Edit numbers, feedback &amp; strategy</summary>
+        <form class="form" method="post" action="${input.base}/act/${e.act_id}?${input.qs({})}">
+          <div class="mk-edit-n"><label>Came<input name="participants" inputmode="numeric" value="${e.participants ?? ""}"></label><label>Registered<input name="registrants" inputmode="numeric" value="${e.registrants ?? ""}"></label>
+            <label>New contacts<input name="new_contacts" inputmode="numeric" value="${e.new_contacts ?? ""}"></label></div>
+          <label>Feedback &amp; impact <span class="hint">(what happened, what people said, results)</span><textarea name="impact" rows="3" maxlength="1500">${h(e.impact)}</textarea></label>
+          <label>Marketing strategy<textarea name="strategy" rows="3" maxlength="1200">${h(e.strategy)}</textarea></label>
+          <button class="btn primary">Save</button></form></details></div>` : ""}</article>` }));
   // marketing for WMF events not yet held (coming up)
   for (const g of groups.filter((x) => !M.events.some((e) => e.mk === x))) cards.push({ d: String(g.date), html: `<article class="mk-ev ${g.city === "Dubai" ? "dxb" : "auh"}">
       <div class="mk-ev-top"><span class="badge">${h(g.city || "WMF")} · WMF event</span><span class="muted">${g.date ? fmtDate(g.date) : ""}</span></div>
@@ -84,13 +95,13 @@ function pageHtml(M, { periodNav, excelHref, staff, input }) {
   const others = input && M.mk.others.length ? `<section class="card c12"><h2>Other events &amp; activities</h2><p class="lead">Marketing for events WMF didn't run. Kept here for marketing only: not counted in any report.</p>
       ${mini(["Event", "Date", "Posts", "Reach", "Engagements", "People there"], M.mk.others.map((g) => [h(g.title), g.date ? fmtDate(g.date) : "—", nf(g.actions.length), nf(g.reach), nf(g.eng), g.participants != null ? nf(g.participants) : "—"]), { num: [2, 3, 4, 5] })}</section>` : "";
   const dd = details(M, input);
-  return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing</div><h2 class="ov-title">${h(M.label)}</h2>
-      <p class="lead" style="margin:4px 0 0">WMF events: who came, the marketing strategy behind each one, and how far it reached.</p></div>
+  return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing inputs</div><h2 class="ov-title">${h(M.label)}</h2>
+      <p class="lead" style="margin:4px 0 0">For each WMF activation: update the numbers, feedback and impact, the marketing strategy and the posts. It all shows in the management report.</p></div>
       <div class="mk-actions">${periodNav}<a class="btn primary" href="${h(excelHref)}">Download Excel</a></div></section>
     ${detailTiles(tiles.map(([l, v, n], i) => ({ label: l, value: v, note: h(n), detail: dd[i] })))}
     <div class="grid">
       <section class="card c12"><h2>Events &amp; participation</h2><p class="lead">${M.ev.count ? `${nf(M.ev.count)} event${M.ev.count === 1 ? "" : "s"}, ${nf(M.ev.people)} participants${M.ev.registered ? ` from ${nf(M.ev.registered)} registered` : ""}.` : ""}</p>${eventChart(M)}</section>
-      <section class="card c12"><h2>Events &amp; impact</h2><p class="lead">Each event's marketing strategy, its posts, and the result.${input ? " Click an event or “+ Add marketing” to add to it." : ""}</p>
+      <section class="card c12"><h2>Community activations</h2><p class="lead">Each activation with its strategy, posts and result.${input ? " Use “Edit” for the numbers, feedback and strategy, and “+ Add marketing” for a post." : ""}</p>
         ${MK.totalsHtml(M.mk)}
         ${eventCards(M, input)}${MK.generalLine(M.mk)}</section>
       ${input ? MK.formHtml(input) + others + MK.logHtml(M.mk, { base: input.base, qs: input.qs, label: M.label }) : ""}
@@ -113,22 +124,31 @@ async function workbook(M) {
   ws.mergeCells("B2:I2"); Object.assign(ws.getCell("B2"), { value: "WMN MOVING FWD · MARKETING REPORT", font: { name: F, size: 10, bold: true, color: { argb: BLUE } } });
   ws.mergeCells("B3:I3"); Object.assign(ws.getCell("B3"), { value: M.label, font: { name: F, size: 22, bold: true, color: { argb: INK } } });
   ws.getRow(3).height = 32;
-  ws.mergeCells("B4:I4"); Object.assign(ws.getCell("B4"), { value: "WMF events: participation, marketing strategy and reach · Abu Dhabi & Dubai", font: { name: F, size: 10, color: { argb: MUT } } });
-  const tiles = [["Events", M.ev.count, `${M.ev.partners} partners`], ["Event participation", M.ev.people, M.ev.count ? `${Math.round(M.ev.people / M.ev.count)} per event on average` : ""],
-    ["Marketing reach", t.reach, `${t.actions} posts & campaigns`], ["Engagements", t.eng, t.reach ? `${((t.eng / t.reach) * 100).toFixed(1)}% engagement rate` : ""]];
+  ws.mergeCells("B4:I4"); Object.assign(ws.getCell("B4"), { value: "Rides, participation, WMF events and their impact · Abu Dhabi & Dubai", font: { name: F, size: 10, color: { argb: MUT } } });
   const spans = [[2, 3], [4, 5], [6, 7], [8, 9]];
-  tiles.forEach(([l, v, n], i) => {
+  const tileRow = (r0, tiles) => { tiles.forEach(([l, v, n, fmt], i) => {
     const [c1, c2] = spans[i];
-    for (const r of [6, 7, 8]) { ws.mergeCells(r, c1, r, c2); ws.getCell(r, c1).fill = fill(CARD); }
-    Object.assign(ws.getCell(6, c1), { value: l, font: { name: F, size: 10, bold: true, color: { argb: INK } }, alignment: { indent: 1, vertical: "bottom" } });
-    Object.assign(ws.getCell(7, c1), { value: v, font: { name: F, size: 24, bold: true, color: { argb: INK } }, alignment: { indent: 1, horizontal: "left" }, numFmt: "#,##0" });
-    Object.assign(ws.getCell(8, c1), { value: n, font: { name: F, size: 9, color: { argb: BLUE } }, alignment: { indent: 1, vertical: "top" } });
-  });
-  ws.getRow(6).height = 22; ws.getRow(7).height = 36; ws.getRow(8).height = 20;
-  let row = 10;
-  ws.mergeCells(row, 2, row, 9); Object.assign(ws.getCell(row, 2), { value: "Events & participation", font: { name: F, size: 13, bold: true, color: { argb: INK } } }); ws.getRow(row).height = 22; row++;
-  ["Date", "Event", "City", "Came", "Registered", "Reach", "Engagements", ""].forEach((x, i) => Object.assign(ws.getCell(row, 2 + i), { value: x, font: { name: F, size: 9, bold: true, color: { argb: MUT } }, border, alignment: { horizontal: i >= 3 && i <= 6 ? "right" : "left" } }));
+    for (const r of [r0, r0 + 1, r0 + 2]) { ws.mergeCells(r, c1, r, c2); ws.getCell(r, c1).fill = fill(CARD); }
+    Object.assign(ws.getCell(r0, c1), { value: l, font: { name: F, size: 10, bold: true, color: { argb: INK } }, alignment: { indent: 1, vertical: "bottom" } });
+    Object.assign(ws.getCell(r0 + 1, c1), { value: v, font: { name: F, size: 22, bold: true, color: { argb: INK } }, alignment: { indent: 1, horizontal: "left" }, numFmt: fmt || "#,##0" });
+    Object.assign(ws.getCell(r0 + 2, c1), { value: n, font: { name: F, size: 9, color: { argb: BLUE } }, alignment: { indent: 1, vertical: "top" } });
+  }); ws.getRow(r0).height = 20; ws.getRow(r0 + 1).height = 32; ws.getRow(r0 + 2).height = 18; };
+  tileRow(6, [["Rides held", M.ride.sessions, `AUH ${M.ride.auhSess} · DXB ${M.ride.dxbSess}`], ["Ride participation", M.ride.total, `AUH ${M.ride.auh} · DXB ${M.ride.dxb}`],
+    ["Events", M.ev.count, `${M.ev.partners} partners`], ["Event participation", M.ev.people, M.ev.count ? `${Math.round(M.ev.people / M.ev.count)} per event on average` : ""]]);
+  tileRow(10, [["Marketing reach", t.reach, `${t.actions} posts & campaigns`], ["Engagements", t.eng, t.reach ? `${((t.eng / t.reach) * 100).toFixed(1)}% engagement rate` : ""],
+    ["Registered for events", M.ev.registered, "sign-ups"], ["Came to promoted events", t.attended, "events with marketing"]]);
+  let row = 14;
+  const section = (title) => { ws.mergeCells(row, 2, row, 9); Object.assign(ws.getCell(row, 2), { value: title, font: { name: F, size: 13, bold: true, color: { argb: INK } } }); ws.getRow(row).height = 22; row++; };
+  const headRow = (cells) => { cells.forEach((x, i) => Object.assign(ws.getCell(row, 2 + i), { value: x, font: { name: F, size: 9, bold: true, color: { argb: MUT } }, border, alignment: { horizontal: i >= 2 && i <= 6 ? "right" : "left" } })); row++; };
+  section("Ride participation by month");
+  headRow(["Month", "", "Abu Dhabi", "Dubai", "Total", "", "", ""]);
+  for (const x of M.rideMonths) {
+    [monLabel(x.m, true) + (x.inPeriod ? "" : "  (earlier)"), "", x.auh, x.dxb, x.total].forEach((v, i) => { const c = ws.getCell(row, 2 + i); c.value = v; c.border = border; c.font = { name: F, size: 10, color: { argb: x.inPeriod ? INK : MUT }, bold: i === 4 }; if (i >= 2) c.numFmt = "#,##0"; });
+    row++;
+  }
   row++;
+  section("Events & participation");
+  headRow(["Date", "Event", "City", "Came", "Registered", "Reach", "Engagements", ""]);
   const r0 = row;
   for (const e of M.events) {
     const vals = [dayLabel(e), e.title, e.city === "Dubai" ? "DXB" : "AUH", e.participants, e.registrants, e.mk ? e.mk.reach : null, e.mk ? e.mk.eng : null, e.participants || 0];
@@ -137,14 +157,14 @@ async function workbook(M) {
   }
   if (M.events.length) ws.addConditionalFormatting({ ref: `I${r0}:I${row - 1}`, rules: [{ type: "dataBar", minLength: 0, maxLength: 100, cfvo: [{ type: "num", value: 0 }, { type: "max" }], color: { argb: "FF5B7CF0" }, gradient: false }] });
   else { ws.getCell(row, 2).value = "No WMF events in this period."; row++; }
-  ws.getCell(row + 1, 2).value = "Each event's strategy and impact: see the “Events & impact” sheet. Every post: see “Marketing”."; ws.getCell(row + 1, 2).font = { name: F, size: 9, italic: true, color: { argb: MUT } };
+  ws.getCell(row + 1, 2).value = "Each event's feedback, strategy and impact: see the “Events & impact” sheet. Every post: see “Marketing”."; ws.getCell(row + 1, 2).font = { name: F, size: 9, italic: true, color: { argb: MUT } };
 
   // ----- Events & impact (full text)
   const es = wb.addWorksheet("Events & impact", { views: [{ state: "frozen", ySplit: 1, showGridLines: false }] });
   es.columns = [{ header: "Date", key: "date", width: 13 }, { header: "Event", key: "title", width: 32 }, { header: "City", key: "city", width: 11 }, { header: "Type", key: "category", width: 22 },
     { header: "Came", key: "participants", width: 9 }, { header: "Registered", key: "registrants", width: 11 }, { header: "Partners", key: "partners", width: 22 },
-    { header: "Marketing strategy", key: "strategy", width: 60 }, { header: "Posts", key: "posts", width: 8 }, { header: "Reach", key: "reach", width: 10 }, { header: "Engagements", key: "eng", width: 12 }, { header: "Engagement rate", key: "rate", width: 14 },
-    { header: "Impact", key: "impact", width: 70 }];
+    { header: "New contacts", key: "new_contacts", width: 12 }, { header: "Marketing strategy", key: "strategy", width: 60 }, { header: "Posts", key: "posts", width: 8 }, { header: "Reach", key: "reach", width: 10 }, { header: "Engagements", key: "eng", width: 12 }, { header: "Engagement rate", key: "rate", width: 14 },
+    { header: "Feedback & impact", key: "impact", width: 70 }];
   for (const e of M.events) es.addRow({ ...e, date: dayLabel(e), partners: e.partners.join(", "), posts: e.mk ? e.mk.actions.length : null, reach: e.mk ? e.mk.reach : null, eng: e.mk ? e.mk.eng : null, rate: e.mk ? MK.rateOf(e.mk) || "" : "" });
   es.getRow(1).eachCell((c) => { c.font = { name: F, size: 10, bold: true, color: { argb: "FFFFFFFF" } }; c.fill = fill(BLUE); c.alignment = { vertical: "middle", wrapText: true }; });
   es.getRow(1).height = 22;
@@ -184,14 +204,28 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     const pre = String(req.query.target || "").slice(0, 90);
     return { base, qs: q, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit), pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${base}?${q({})}#log` };
   };
+  /** Marketing updates an activation: numbers, feedback & impact, and its marketing strategy. */
+  const saveActivation = async (req, by) => {
+    const id = +req.params.id || 0, b = req.body || {};
+    const num = (v) => { const x = String(v == null ? "" : v).replace(/[,\s]/g, ""); return /^\d{1,7}$/.test(x) ? +x : null; };
+    const before = (await pool.query("SELECT * FROM activations WHERE id = $1", [id])).rows[0];
+    if (!before) return;
+    const row = { participants: num(b.participants), registrants: num(b.registrants), new_contacts: num(b.new_contacts), impact: String(b.impact || "").replace(/\r/g, "").trim().slice(0, 1500) || null };
+    const numbersChanged = row.participants !== before.participants || row.registrants !== before.registrants;
+    await pool.query(`UPDATE activations SET participants = $2, registrants = $3, new_contacts = $4, impact = $5, auto_sync = CASE WHEN $6 THEN false ELSE auto_sync END, updated_at = now() WHERE id = $1`,
+      [id, row.participants, row.registrants, row.new_contacts, row.impact, numbersChanged]);
+    await audit(pool, by, "activation.marketing", "activation", String(id), { participants: before.participants, registrants: before.registrants, new_contacts: before.new_contacts, impact: before.impact }, row);
+    if (b.strategy != null) await MK.save({ body: { target: "a:" + id, strategy: b.strategy }, query: {} }, by, null);
+  };
   const sendXlsx = async (res, per) => {
     const M = await marketingData(per);
     res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-      .set("Content-Disposition", `attachment; filename="WMF-Marketing-Report-${per.p}.xlsx"`).send(await workbook(M));
+      .set("Content-Disposition", `attachment; filename="WMF-Rides-Events-Impact-${per.p}.xlsx"`).send(await workbook(M));
   };
 
   // ----- the team
   app.get("/report/marketing", READ, wrap(async (req, res) => {
+    if (req.session.user.role === "viewer") return res.redirect("/report/management");
     const per = periodOf(req.query);
     const M = await marketingData(per);
     const canEdit = req.session.user.role !== "viewer";
@@ -201,19 +235,23 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
       const url = `${baseOf(req)}/m/${l.token}`;
       return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
         ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
-          <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Hi ${l.label}, here's the WMF marketing page: rides, events and their impact. Add each post or campaign with its reach and engagement there, and it shows next to the event's attendance: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a>
-          <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's the WMF marketing page: rides, events and their impact.\n\nFor each post or campaign, press “+ Add marketing” on the event (or choose “Other event or activity”) and add the reach and engagement. It shows next to the event's attendance, and management sees it in their report.\n\nYou can choose the month at the top and download it as Excel.\n\n${url}`)}">Email</a></div>` : ""}</div>
+          <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Hi ${l.label}, here's your WMF marketing link. For each activation, add the feedback, marketing strategy and posts with their reach. It shows in the management report, and you can download the Excel there: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a>
+          <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's your WMF marketing link.\n\nFor each community activation you can:\n• update the numbers, feedback and impact (Edit)\n• write the marketing strategy\n• add each post or campaign with its reach and engagement (+ Add marketing)\n\nEverything shows in the management report. Choose the month at the top; Download Excel gives rides, participation, events and their impact.\n\n${url}`)}">Email</a></div>` : ""}</div>
         ${req.session.user.role !== "viewer" ? `<form method="post" action="/report/marketing/links/${l.id}"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form>` : ""}</div>`;
     }).join("");
-    res.send(page(req, "Marketing", `${pageHtml(M, { periodNav: periodNav(per, "/report/marketing"), excelHref: `/report/marketing.xlsx?${qs(per)}`, staff: true, input })}
-      ${canEdit ? `<section class="card noprint"><h2>Link for marketing</h2><p class="lead">One link for marketing: they see this page (rides, events and impact, no names) and add their posts and results. Management sees it in their report.</p>
+    res.send(page(req, "Marketing inputs", `<p class="noprint" style="margin:0"><a href="/report/management?${qs(per)}">← Management report</a></p>${pageHtml(M, { periodNav: periodNav(per, "/report/marketing"), excelHref: `/report/marketing.xlsx?${qs(per)}`, staff: true, input })}
+      ${canEdit ? `<section class="card noprint" id="mklinks"><h2>Link for marketing</h2><p class="lead">Marketing gets this page through their link (no sign-in, no member names). What they add shows in the management report.</p>
         ${share}<form class="inline-form" method="post" action="/report/marketing/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Marketing" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></section>` : ""}`,
-    { active: "/report/marketing" }));
+    { active: "/report/management" }));
   }));
   app.post("/report/marketing", STAFF, wrap(async (req, res) => {
     if (req.query.remove) await MK.remove(req, actor(req)); else await MK.save(req, actor(req), null);
     setFlash(req, "ok", req.query.remove ? "Removed." : "Saved.");
     res.redirect(303, "/report/marketing?" + backQs(req) + "#log");
+  }));
+  app.post("/report/marketing/act/:id", STAFF, wrap(async (req, res) => {
+    await saveActivation(req, actor(req));
+    setFlash(req, "ok", "Saved."); res.redirect(303, "/report/marketing?" + backQs(req) + "#act-" + (+req.params.id || ""));
   }));
   app.get("/report/marketing.xlsx", READ, wrap(async (req, res) => sendXlsx(res, periodOf(req.query))));
   app.post("/report/marketing/links", STAFF, wrap(async (req, res) => {
@@ -223,11 +261,11 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
       await audit(pool, actor(req), "reportlink.create", "report_link", label, null, null);
       setFlash(req, "ok", `Link made for ${label}.`);
     }
-    res.redirect("/report/marketing");
+    res.redirect(String(req.body.back || "").startsWith("/report/management") ? "/report/management#mklinks" : "/report/marketing#mklinks");
   }));
   app.post("/report/marketing/links/:id", STAFF, wrap(async (req, res) => {
     await pool.query("UPDATE report_links SET active = $2 WHERE id = $1 AND kind = 'marketing'", [+req.params.id || 0, req.body.active === "1"]);
-    res.redirect("/report/marketing");
+    res.redirect(String(req.body.back || "").startsWith("/report/management") ? "/report/management#mklinks" : "/report/marketing#mklinks");
   }));
 
   // ----- the shared link (no sign-in)
@@ -245,6 +283,11 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     if (req.query.remove) await MK.remove(req, by); else await MK.save(req, by, l.id);
     setFlash(req, "ok", req.query.remove ? "Removed." : "Saved. Thank you!");
     res.redirect(303, `/m/${encodeURIComponent(l.token)}?` + backQs(req) + "#log");
+  }));
+  app.post("/m/:token/act/:id", limit("reportlinkpost", 200, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkOf(req.params.token); if (!l) return closed(req, res);
+    await saveActivation(req, "Marketing link: " + l.label);
+    setFlash(req, "ok", "Saved. Thank you!"); res.redirect(303, `/m/${encodeURIComponent(l.token)}?` + backQs(req) + "#act-" + (+req.params.id || ""));
   }));
   app.get("/m/:token/excel", limit("reportlink", 120, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
