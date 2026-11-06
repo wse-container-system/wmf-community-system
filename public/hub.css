@@ -474,3 +474,16 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .dt-scroll { max-height: 420px; overflow: auto; }
 .dt-t td, .dt-t th { padding: 7px 10px; }
 @media print { .dt-ic, .dt-close { display: none; } }
+
+/* ---------- marketing impact */
+.mi-tot { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.mi-tot div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.mi-tot b { font: 700 22px/1.1 var(--f-display); } .mi-tot span { font-size: 13px; color: var(--muted); }
+.mi-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.mi-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; background: var(--surface); }
+.mi-h { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; } .mi-h .muted { font-size: 13px; }
+.mi-ch { margin: 0; font-size: 13px; color: var(--muted); }
+.mi-bar { display: grid; grid-template-columns: 92px 1fr 64px; gap: 8px; align-items: center; font-size: 13.5px; }
+.mi-t { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; } .mi-t i { display: block; height: 100%; border-radius: 5px; }
+.mi-bar b { text-align: right; font-variant-numeric: tabular-nums; }
+.mi-k { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }

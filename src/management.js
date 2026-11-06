@@ -59,14 +59,18 @@ function drafts(D) {
   }
   const sponsor = D.partners.slice(0, 3).map((p) => `${p.name} (${cut(p.items[0], 40)})`);
   return { developments: dev.join("\n"), wins: wins.slice(0, 4).join("\n"), misses: misses.slice(0, 3).join("\n"), forward: fwd.join("\n") || (D.notes.next_steps || ""),
-    social: "", marketing: "", sponsor: sponsor.join("\n"), closing, priorities: prio.slice(0, 3).join("\n") };
+    social: require("./mkinputs").campaignLines(D.mk).join("\n"),
+    marketing: D.mk.totals.actions ? `${nf(D.mk.totals.actions)} posts and campaigns reached ${nf(D.mk.totals.reach)} people with ${nf(D.mk.totals.eng)} engagements${D.mk.totals.reach ? ` (${((D.mk.totals.eng / D.mk.totals.reach) * 100).toFixed(1)}% engagement rate)` : ""}.` : "",
+    sponsor: sponsor.join("\n"), closing, priorities: prio.slice(0, 3).join("\n") };
 }
 
 /** Everything on the page: figures plus the words (saved, or the draft). */
 async function mgmtData(per) {
   const D = await reportData(per);
+  D.mk = await require("./mkinputs").loadInputs({ start: D.start, end: D.end });
   const W = words(per), draft = drafts(D), saved = D.notes.mgmt || {};
-  const T = Object.fromEntries(FIELDS.map(([f]) => [f, saved[f] != null ? saved[f] : draft[f]]));
+  // a box left empty uses the suggestion, so marketing's logged posts still show up after the words were saved once
+  const T = Object.fromEntries(FIELDS.map(([f]) => [f, saved[f] != null && String(saved[f]).trim() !== "" ? saved[f] : draft[f]]));
   const A = D.city["Abu Dhabi"], X = D.city.Dubai;
   const comment = (c) => (c.top ? `Most attended: ${c.top.name} (${Math.round(c.top.perSession)} avg)` : c.sess ? "" : "No rides recorded");
   const rides = [
@@ -218,6 +222,7 @@ function dashboard(M, { nav, pdf, pptxHref }) {
         ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div>${a.note ? `<p>${h(a.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
         ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><p><span class="md-ev">${h(c.event)}</span>${c.note ? ` · ${h(c.note)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+      <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
     </div>`;
 }
@@ -257,7 +262,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
         <details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
           <form class="form" method="post" action="/report/management/notes"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="/report/management?${qs(per)}">
-            <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
+            <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
             <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
