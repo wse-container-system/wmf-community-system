@@ -724,6 +724,21 @@ test("cycling development hub", async (t) => {
     await pool.query("DELETE FROM settings WHERE key = 'reportSurvey'");
   });
 
+  await t.test("Older rides: add a new member by name, checked in, with their personal QR code", async () => {
+    let d = E.helpers.addDays(today, -120); while (R.weekdayOf(d) !== "Wednesday") d = E.helpers.addDays(d, -1);
+    const act = "RIDE-WEDNESDAY-SOCIAL";
+    const back = `/rides/${d}/${act}`, nm = "Brand New Rider " + Date.now().toString(36);
+    const pg = ok200(await admin(back + "?add=new"), "old ride page").text;
+    assert.match(pg, /New member \(not in the records yet\)/, "adding is possible on an older ride");
+    const r = await admin("/rides/newmember", { method: "POST", form: { full_name: nm, date: d, activityId: act, back, city: "Abu Dhabi" } });
+    assert.equal(r.status, 302); const id = /new=(WMF-\d{6})/.exec(r.location)[1];
+    const m = (await pool.query("SELECT first_seen::text AS f, primary_email FROM members WHERE member_id = $1", [id])).rows[0];
+    assert.equal(m.f.slice(0, 10), d, "member since the ride date"); assert.equal(m.primary_email, null, "email can be added later");
+    const shown = ok200(await admin(`${back}?new=${id}`), "after adding").text;
+    assert.match(shown, new RegExp(nm + " is now a member")); assert.match(shown, /data:image\/png;base64/, "their QR code is shown");
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM participation WHERE member_id = $1 AND voided_at IS NULL", [id])).rows[0].n, 1, "checked in");
+  });
+
   await t.test("Dashboards: every number box opens its details", async () => {
     for (const u of ["/report/management?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
       const pg = ok200(await admin(u), u).text;

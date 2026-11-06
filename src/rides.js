@@ -10,7 +10,7 @@ const { h, fmtDate } = require("./views");
 
 const H = E.helpers;
 const REGULAR_WEEKS = 8;     // "regular" = 2+ check-ins at the same ride in the 8 weeks before
-const CORRECT_DAYS = 60;     // check-ins can be added up to 60 days after a ride from this page
+const CORRECT_DAYS = 3650;   // staff can correct any past ride from this page (adding missed riders to older rides too)
 
 /** The ride a row belongs to: one of the six scanner rides when it is one, otherwise the weekday series used in reporting. */
 function sessionRide(r, coreById) {
@@ -154,16 +154,17 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
           <td>${r.late ? `<span class="muted">sent ${fmtDate(String(r.record_date).slice(0, 10))}</span>` : String(r.record_date).slice(11, 16) === "00:00" ? "—" : String(r.record_date).slice(11, 16)}</td><td>${h(r.source)}</td>
           <td><form method="post" action="/wmf/rides/ride" style="margin:0"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(r.record_id)}"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn" name="action" value="delete" data-confirm="Remove ${h(r.full_name || r.member_name || "this check-in")} from this ride?">Remove</button></form></td></tr>`).join("") || `<tr><td colspan="5" class="muted">Nobody was checked in.</td></tr>`}
         </tbody></table></div>
-        ${canAdd ? `<h3 style="margin:16px 0 6px">Check in someone else</h3>
+        ${canAdd ? `<h3 style="margin:16px 0 6px" id="add">Check in someone else</h3>
         <form method="post" action="/rides/checkin" class="toolbar rd-find" style="margin:0;align-items:center"><input class="inp" name="memberId" id="rdFind" placeholder="Name, email, phone or Member ID" required autocomplete="off" value="${h(req.query.find || "")}" style="max-width:320px" aria-label="Name, email, phone or Member ID">
           <input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn">Find</button></form>
         <ul class="log sc-hits" id="rdHits">${found.map((m) => `<li><span><b>${h(m.full_name)}</b> <span class="muted">${h(m.member_id)}${m.hint ? " · " + h(m.hint) : ""}</span></span>${checkBtn(m.member_id)}</li>`).join("") || (req.query.find ? '<li class="muted">Nobody found. Try part of the name, the email or the phone number.</li>' : "")}</ul>
         <template id="rdBtn">${checkBtn("__ID__")}</template><script src="/ridefind.js" defer></script>
-        <details class="rd-new" ${req.query.find && !found.length ? "open" : ""}><summary class="btn">+ New member (not in the records yet)</summary>
+        <details class="rd-new" ${(req.query.find && !found.length) || req.query.add === "new" ? "open" : ""}><summary class="btn primary">+ New member (not in the records yet)</summary>
+          <p class="hint" style="margin:8px 0 0">Only the name is needed. You can add the email or phone later on their member page.</p>
           <form class="form" method="post" action="/rides/newmember">
             <input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="${h(back)}">
             <div class="row2"><label>Full name<input name="full_name" required minlength="3" maxlength="120" value="${h(req.query.find && !found.length && !/[@\d]/.test(req.query.find) ? req.query.find : "")}"></label>
-              <label>Mobile <span class="hint">(to send the QR on WhatsApp)</span><input name="mobile" inputmode="tel" maxlength="30" placeholder="05x xxx xxxx"></label></div>
+              <label>Mobile <span class="hint">(optional, to send the QR on WhatsApp)</span><input name="mobile" inputmode="tel" maxlength="30" placeholder="05x xxx xxxx"></label></div>
             <div class="row2"><label>Email <span class="hint">(optional)</span><input type="email" name="email" maxlength="120"></label>
               <label>City<select name="city"><option>Abu Dhabi</option><option ${/dubai|dxb/i.test(rideName) ? "selected" : ""}>Dubai</option></select></label></div>
             <label class="check"><input type="checkbox" name="waiver_consent" value="1"> They signed the ride waiver</label>
@@ -193,7 +194,9 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
         if (same) return { status: "same" };
       }
       if (!member) {
-        member = await R.createMember(c, { full_name: name, email: b.email, mobile: b.mobile, community: b.city === "Dubai" ? "Dubai" : "", waiver_consent: !!b.waiver_consent }, actor(req), "Added at a ride");
+        // added to a past ride: they became a member on that ride's date, so the reports count them in the right month
+        const rideDay = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") && b.date < R.todayLocal() ? b.date + " 08:00:00" : null;
+        member = await R.createMember(c, { full_name: name, email: b.email, mobile: b.mobile, community: b.city === "Dubai" ? "Dubai" : "", waiver_consent: !!b.waiver_consent, first_seen: rideDay }, actor(req), "Added at a ride");
         created = true;
       }
       const r = await checkIn(c, { member, activityId: b.activityId, date: b.date, source: "Manual Attendance Correction", by: actor(req), maxDays: CORRECT_DAYS });

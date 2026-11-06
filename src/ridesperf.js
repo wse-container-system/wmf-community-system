@@ -146,7 +146,7 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
           <p class="hint" style="margin:0">If someone is already checked in on that ride and day, their extra check-in here is removed instead, so nobody counts twice.</p></form>
         <form method="post" action="/wmf/rides/ride" class="toolbar" style="margin-top:14px"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(recs.join(","))}"><input type="hidden" name="back" value="${h(back)}">
           <button class="btn danger" name="action" value="delete" data-confirm="Delete the whole ride (all ${rows.length} check-ins)?">Delete the whole ride</button><a class="btn ghost" href="${h(back)}">Back</a></form>
-        <p class="hint">To add someone, use <a href="/rides">Attendance per ride</a>.</p>`;
+        <div class="toolbar" style="margin-top:14px"><a class="btn primary" href="/rides/${h(q.d)}/${h(encodeURIComponent(rows[0].activity_id))}?add=new#add">+ Check someone in / add a new member</a></div>`;
     } else return res.redirect(back);
     const vCity = q.city === "Dubai" ? "Dubai" : "Abu Dhabi", series = R.clean(q.series).slice(0, 80);
     const vd = q.d || (q.src === "h" ? (await pool.query("SELECT ride_date::text AS d FROM history_rides WHERE id = $1", [+q.id || 0])).rows[0]?.d : q.src === "l" ? (await pool.query("SELECT ride_date::text AS d FROM lead_rides WHERE id = $1", [+q.id || 0])).rows[0]?.d : null);
