@@ -510,3 +510,31 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .sv-dl { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; margin: 4px 0 8px; font-size: 14.5px; }
 .sv-dl dt { font-weight: 600; } .sv-dl dd { margin: 0; }
 @media (max-width: 640px) { .sv-dl { grid-template-columns: 1fr; gap: 2px; } .sv-dl dd { margin-bottom: 6px; } }
+.md-date { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+.md-mk { font-size: 13px !important; color: #7a5cc8 !important; font-weight: 600; }
+/* end-of-season survey on the management report */
+.sv-grid { display: grid; grid-template-columns: minmax(300px, 1.1fr) 1fr 1fr; gap: 22px; align-items: start; }
+.sv-scores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.sv-ring { position: relative; display: grid; justify-items: center; gap: 2px; }
+.sv-ring svg { width: 92px; height: 92px; }
+.sv-ring b { position: absolute; top: 28px; left: 0; right: 0; font: 700 24px/1 var(--f-display); }
+.sv-ring span { font-size: 13px; font-weight: 600; } .sv-ring small { font-size: 12px; color: var(--muted); }
+.sv-n { grid-column: 1 / -1; margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.sv-h { margin: 0 0 8px; font-size: 14px; }
+.sv-bars { display: grid; gap: 8px; }
+.sv-bar { display: grid; grid-template-columns: 1fr 44px; gap: 2px 8px; font-size: 13.5px; }
+.sv-bl { grid-column: 1 / -1; } .sv-bt { height: 9px; border-radius: 5px; background: var(--line); overflow: hidden; align-self: center; }
+.sv-bt i { display: block; height: 100%; border-radius: 5px; } .sv-bar b { text-align: right; font-size: 13px; }
+.sv-foot { display: grid; grid-template-columns: minmax(220px, auto) 1fr; gap: 16px; margin-top: 16px; align-items: center; }
+.sv-hold { display: grid; grid-template-columns: auto 1fr; gap: 0 12px; align-items: center; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, #e8833a 10%, transparent); }
+.sv-hl { grid-column: 1 / -1; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #b8611f; font-weight: 700; }
+.sv-hold b { font: 700 28px/1 var(--f-display); color: #b8611f; } .sv-hold > span:last-child { font-size: 14px; }
+.sv-q { margin: 0; padding: 8px 14px; border-left: 3px solid #9b7be0; font-style: italic; color: var(--ink-2); font-size: 14px; }
+.sv-focus { grid-column: 1 / -1; margin: 0; font-size: 14px; } .sv-focus b { margin-right: 6px; }
+@media (max-width: 900px) { .sv-grid, .sv-foot { grid-template-columns: 1fr; } }
+.mk-ev-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.mk-edit { flex: 1 1 100%; } .mk-edit > summary { list-style: none; display: inline-block; cursor: pointer; } .mk-edit > summary::-webkit-details-marker { display: none; }
+.mk-edit[open] > summary { margin-bottom: 8px; }
+.mk-edit .form { gap: 8px; } .mk-edit-n { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mk-impact { white-space: pre-line; }
+.mk-edit textarea, .mk-strat-f textarea { font: inherit; }

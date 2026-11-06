@@ -12,6 +12,13 @@ const { fmtPct } = require("./social");
 const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
 
 const cut = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+/** Shorten at a sentence end when possible, so nothing reads as cut off. */
+const brief = (t, n) => {
+  t = String(t || "").replace(/\s+/g, " ").trim(); if (t.length <= n) return t;
+  const parts = t.match(/[^.!?]+[.!?]+(\s|$)/g) || [];
+  let out = ""; for (const x of parts) { if ((out + x).trim().length > n) break; out += x; }
+  return out.trim() || cut(t, n);
+};
 const pct = (a, b) => (b ? Math.round(((a - b) / b) * 100) : null);
 const FIELDS = [["developments", "Key developments"], ["wins", "Key execution wins"], ["misses", "Key execution misses"], ["forward", "Forward view"],
   ["social", "Social media campaigns"], ["marketing", "Marketing highlights"], ["sponsor", "Sponsor activations"], ["closing", "Closing note"], ["priorities", "Priorities"]];
@@ -79,13 +86,15 @@ async function mgmtData(per) {
     ...(D.corpAll || D.corp).map((c) => ({ type: `Corporate: ${c.name}`, city: "corp", n: c.sessions, avg: c.avg, fresh: c.fresh,
       comment: c.sessions || c.cancelled ? cut(c.kinds.map((x) => `${x.kind} ${x.n}`).join(" · ") + (c.cancelled ? ` · ${c.cancelled} cancelled` : ""), 60) : "No sessions this period" })),
   ];
-  const acts = [...D.done].filter((a) => !D.isBig(a)).sort((a, b) => (b.participants || 0) - (a.participants || 0)).slice(0, 4)
-    .map((a) => ({ name: a.title, people: a.participants != null ? `${nf(a.participants)} participants${a.registrants ? ` · ${nf(a.registrants)} registered` : ""}` : "—", note: cut(a.impact || a.aim || "", 120) }));
-  const collab = D.partners.slice(0, 4).map((p) => ({ name: p.name, event: cut(p.items.join(", "), 50), note: cut(p.impact, 80) || (p.people ? `${nf(p.people)} people reached` : "") }));
+  const acts = [...D.done].filter((a) => !D.isBig(a)).sort((a, b) => (b.participants || 0) - (a.participants || 0))
+    .map((a) => ({ id: a.id, name: a.title, date: a.event_date ? fmtDate(a.event_date) : monLabel(String(a.month).slice(0, 7), true),
+      people: a.participants != null ? `${nf(a.participants)} participants${a.registrants ? ` · ${nf(a.registrants)} registered` : ""}` : "—",
+      note: String(a.impact || a.aim || "").replace(/\s+/g, " ").trim(), mk: D.mk.byEvent.find((g) => g.act_id === a.id) || null }));
+  const collab = D.partners.map((p) => ({ name: p.name, event: p.items.join(", "), note: String(p.impact || "").replace(/\s+/g, " ").trim() || (p.people ? `${nf(p.people)} people reached` : "") }));
   const s = D.soc, sc = (ch, c) => (s && s[ch][c].now != null ? `${nf(s[ch][c].now)}${s[ch][c].pct != null ? ` (${fmtPct(s[ch][c].pct)})` : ""}` : "—");
   const ch = D.prev.rideAttendance ? Math.round(((D.k.rideAttendance - D.prev.rideAttendance) / D.prev.rideAttendance) * 100) : null;
   const kpi = { participation: D.k.rideAttendance, change: ch, rides: D.k.rideSessions, fresh: (A.fresh || 0) + (X.fresh || 0), acts: D.done.length, actPeople: D.evPeople,
-    members: D.db.total, newMembers: D.k.newMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
+    members: D.db.total, newMembers: D.k.newMembers, active: D.k.activeMembers, prevActive: D.prev.activeMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
@@ -102,25 +111,25 @@ function sheet(M) {
     <div class="mg-body">
       <div class="mg-col">
         <table class="mg-keys">${[["developments", "Key Developments"], ["wins", "Key Execution Wins"], ["misses", "Key Execution Misses"], ["forward", `Forward View (Next ${M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year"})`]]
-          .map(([f, l]) => `<tr><th>${h(l)}</th><td>${bullets(M.T[f])}</td></tr>`).join("")}</table>
+          .map(([f, l]) => `<tr><th>${h(l)}</th><td>${bullets(M.T[f], 200)}</td></tr>`).join("")}</table>
         <table class="mg-t"><thead><tr><th>Ride Type</th><th>No. of rides</th><th>Avg. no. of riders</th><th>New riders</th><th>Comment</th></tr></thead><tbody>
           ${M.rides.map((r) => `<tr><td>${h(r.type)}</td><td class="n">${r.n ? nf(r.n) : "—"}</td><td class="n">${avg(r.avg)}</td><td class="n">${r.fresh != null ? nf(r.fresh) : "—"}</td><td>${h(r.comment)}</td></tr>`).join("")}</tbody></table>
         <div class="mg-bar">CLOSING &amp; NEXT ${M.W.unit.toUpperCase()} PRIORITIES</div>
-        <div class="mg-close"><p><b>Closing note:</b> ${h(cut(M.T.closing, 260))}</p><div><b>${h(M.W.next)} priorities:</b> ${bullets(M.T.priorities, 110)}</div></div>
+        <div class="mg-close"><p><b>Closing note:</b> ${h(brief(M.T.closing, 420))}</p><div><b>${h(M.W.next)} priorities:</b> ${bullets(M.T.priorities, 160)}</div></div>
       </div>
       <div class="mg-col">
         <div class="mg-bar">COMMUNITY ACTIVATIONS</div>
         <table class="mg-t"><thead><tr><th>Event / Activation</th><th>Participants</th><th>Feedback / Notes</th></tr></thead><tbody>
-          ${M.acts.map((a) => `<tr><td>${h(a.name)}</td><td>${h(a.people)}</td><td>${h(a.note)}</td></tr>`).join("") || '<tr><td colspan="3" class="mg-empty">No activations recorded.</td></tr>'}</tbody></table>
+          ${M.acts.slice(0, 4).map((a) => `<tr><td>${h(a.name)}</td><td>${h(a.people)}</td><td>${h(brief(a.note, 230))}</td></tr>`).join("") || '<tr><td colspan="3" class="mg-empty">No activations recorded.</td></tr>'}</tbody></table>
         <div class="mg-bar">CORPORATE RIDES &amp; MARKETING</div>
         <table class="mg-kv">
-          <tr><th>Social Media Campaigns</th><td>${bullets(M.T.social, 90)}</td></tr><tr><th>Marketing Highlights</th><td>${bullets(M.T.marketing, 90)}</td></tr>
-          <tr><th>Sponsor Activations</th><td>${bullets(M.T.sponsor, 90)}</td></tr><tr><th>Community Activations</th><td>${h(M.community)}</td></tr>
+          <tr><th>Social Media Campaigns</th><td>${bullets(M.T.social, 200)}</td></tr><tr><th>Marketing Highlights</th><td>${bullets(M.T.marketing, 200)}</td></tr>
+          <tr><th>Sponsor Activations</th><td>${bullets(M.T.sponsor, 200)}</td></tr><tr><th>Community Activations</th><td>${h(M.community)}</td></tr>
           <tr><th>Strava Followers</th><td><b>AUH Strava:</b> ${h(M.social.strava[0])} <span class="mg-sep">|</span> <b>DXB Strava:</b> ${h(M.social.strava[1])}</td></tr>
           <tr><th>WhatsApp Members</th><td><b>AUH WhatsApp:</b> ${h(M.social.whatsapp[0])} <span class="mg-sep">|</span> <b>DXB WhatsApp:</b> ${h(M.social.whatsapp[1])}</td></tr>
-          <tr><th>Community Survey</th><td>${h(cut(M.surveyLine, 160))}</td></tr></table>
+          <tr><th>Community Survey</th><td>${h(M.surveyLine)}</td></tr></table>
         <table class="mg-t mg-collab"><thead><tr><th>Cross collaborations</th><th>Event</th><th>Comment</th></tr></thead><tbody>
-          ${M.collab.map((c) => `<tr><td>${h(c.name)}</td><td>${h(c.event)}</td><td>${h(c.note)}</td></tr>`).join("") || '<tr><td colspan="3" class="mg-empty">No collaborations this period.</td></tr>'}</tbody></table>
+          ${M.collab.slice(0, 4).map((c) => `<tr><td>${h(c.name)}</td><td>${h(c.event)}</td><td>${h(brief(c.note, 170))}</td></tr>`).join("") || '<tr><td colspan="3" class="mg-empty">No collaborations this period.</td></tr>'}</tbody></table>
       </div>
     </div>
     <footer class="mg-foot"><span>AURORA | Confidential | ${h(M.W.kind)} Report</span><span>WMF Community System · ${h(fmtDate(new Date().toISOString().slice(0, 10)))}</span></footer></section>`;
@@ -137,26 +146,26 @@ async function pptx(M) {
     { x: 0.3, y: 0.05, w: 12.7, h: 0.45, fontFace: F, color: "FFFFFF", valign: "middle" });
   const cell = (t, o = {}) => ({ text: String(t == null ? "" : t), options: { fontFace: F, fontSize: 7.5, color: INK, valign: "middle", border: { type: "solid", pt: 0.5, color: "C9D6E3" }, margin: 0.04, ...o } });
   const head = (t) => cell(t, { bold: true, color: "FFFFFF", fill: { color: BLUE } });
-  const txt = (t, n) => lines(t).map((x) => "• " + cut(x, n)).join("\n") || "—";
+  const txt = (t, n) => lines(t).map((x) => "• " + brief(x, n)).join("\n") || "—";
   const unit = M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year";
   // left column
   s.addTable([["developments", "Key Developments"], ["wins", "Key Execution Wins"], ["misses", "Key Execution Misses"], ["forward", `Forward View (Next ${unit})`]]
-    .map(([f, l]) => [cell(l, { bold: true, fill: { color: LIGHT } }), cell(txt(M.T[f], 150))]), { x: 0.1, y: 0.62, w: 6.5, colW: [1.2, 5.3] });
+    .map(([f, l]) => [cell(l, { bold: true, fill: { color: LIGHT } }), cell(txt(M.T[f], 200))]), { x: 0.1, y: 0.62, w: 6.5, colW: [1.2, 5.3] });
   s.addTable([["Ride Type", "No. of rides", "Avg. no. of riders", "New riders", "Comment"].map(head),
     ...M.rides.map((r) => [cell(r.type), cell(r.n || "—", { align: "center" }), cell(r.avg == null ? "—" : Math.round(r.avg), { align: "center" }), cell(r.fresh == null ? "—" : r.fresh, { align: "center" }), cell(r.comment)])],
   { x: 0.1, y: 3.35, w: 6.5, colW: [1.55, 0.75, 0.85, 0.75, 2.6] });
   s.addText(`CLOSING & NEXT ${M.W.unit.toUpperCase()} PRIORITIES`, { x: 0.1, y: 5.55, w: 6.5, h: 0.3, fill: { color: BLUE }, color: "FFFFFF", bold: true, fontFace: F, fontSize: 9 });
-  s.addText([{ text: "Closing note: ", options: { bold: true } }, { text: cut(M.T.closing, 260) + "\n" }, { text: `${M.W.next} priorities: `, options: { bold: true } }, { text: lines(M.T.priorities).map((x) => cut(x, 110)).join(" · ") || "—" }],
+  s.addText([{ text: "Closing note: ", options: { bold: true } }, { text: brief(M.T.closing, 420) + "\n" }, { text: `${M.W.next} priorities: `, options: { bold: true } }, { text: lines(M.T.priorities).map((x) => brief(x, 160)).join(" · ") || "—" }],
     { x: 0.1, y: 5.9, w: 6.5, h: 1.15, fontFace: F, fontSize: 8, color: INK, valign: "top" });
   // right column
   s.addText("COMMUNITY ACTIVATIONS", { x: 6.75, y: 0.62, w: 6.5, h: 0.3, fill: { color: BLUE }, color: "FFFFFF", bold: true, fontFace: F, fontSize: 9 });
-  s.addTable([["Event / Activation", "Participants", "Feedback / Notes"].map(head), ...(M.acts.length ? M.acts.map((a) => [cell(a.name), cell(a.people), cell(a.note)]) : [[cell("No activations recorded."), cell(""), cell("")]])],
+  s.addTable([["Event / Activation", "Participants", "Feedback / Notes"].map(head), ...(M.acts.length ? M.acts.slice(0, 4).map((a) => [cell(a.name), cell(a.people), cell(brief(a.note, 230), { fontSize: 7 })]) : [[cell("No activations recorded."), cell(""), cell("")]])],
     { x: 6.75, y: 0.95, w: 6.5, colW: [1.9, 1.5, 3.1] });
   s.addText("CORPORATE RIDES & MARKETING", { x: 6.75, y: 3.05, w: 6.5, h: 0.3, fill: { color: BLUE }, color: "FFFFFF", bold: true, fontFace: F, fontSize: 9 });
-  s.addTable([["Social Media Campaigns", txt(M.T.social, 90)], ["Marketing Highlights", txt(M.T.marketing, 90)], ["Sponsor Activations", txt(M.T.sponsor, 90)], ["Community Activations", M.community],
-    ["Strava Followers", `AUH Strava: ${M.social.strava[0]}   |   DXB Strava: ${M.social.strava[1]}`], ["WhatsApp Members", `AUH WhatsApp: ${M.social.whatsapp[0]}   |   DXB WhatsApp: ${M.social.whatsapp[1]}`], ["Community Survey", cut(M.surveyLine, 150)]]
+  s.addTable([["Social Media Campaigns", txt(M.T.social, 200)], ["Marketing Highlights", txt(M.T.marketing, 200)], ["Sponsor Activations", txt(M.T.sponsor, 200)], ["Community Activations", M.community],
+    ["Strava Followers", `AUH Strava: ${M.social.strava[0]}   |   DXB Strava: ${M.social.strava[1]}`], ["WhatsApp Members", `AUH WhatsApp: ${M.social.whatsapp[0]}   |   DXB WhatsApp: ${M.social.whatsapp[1]}`], ["Community Survey", M.surveyLine]]
     .map(([a, b]) => [cell(a, { bold: true, fill: { color: LIGHT } }), cell(b)]), { x: 6.75, y: 3.38, w: 6.5, colW: [1.7, 4.8] });
-  s.addTable([["Cross collaborations", "Event", "Comment"].map(head), ...(M.collab.length ? M.collab.map((c) => [cell(c.name), cell(c.event), cell(c.note)]) : [[cell("None this period."), cell(""), cell("")]])],
+  s.addTable([["Cross collaborations", "Event", "Comment"].map(head), ...(M.collab.length ? M.collab.slice(0, 4).map((c) => [cell(c.name), cell(c.event), cell(brief(c.note, 170), { fontSize: 7 })]) : [[cell("None this period."), cell(""), cell("")]])],
     { x: 6.75, y: 5.45, w: 6.5, colW: [1.9, 1.9, 2.7] });
   s.addShape(p.ShapeType.rect, { x: 0, y: 7.2, w: 13.33, h: 0.3, fill: { color: NAVY }, line: { color: NAVY } });
   s.addText(`AURORA  |  Confidential  |  ${M.W.kind} Report`, { x: 0.3, y: 7.2, w: 8, h: 0.3, fontFace: F, fontSize: 7, color: "FFFFFF", valign: "middle" });
@@ -189,6 +198,9 @@ function tilesOf(M) {
     { label: "New riders", value: nf(k.fresh), note: `${nf(k.newMembers)} new members joined`,
       detail: { title: "New riders and new members", html: `${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
         <p class="hint">A new rider is someone whose first WMF ride was in this period. Dubai rides counted by headcount don't record names, so their new riders aren't counted.</p>` } },
+    { label: "Active members", value: nf(k.active), note: `${k.prevActive != null ? `${ch(k.active, k.prevActive)} vs before · ` : ""}${k.members ? Math.round((k.active / k.members) * 100) + "% of the community" : ""}`,
+      detail: { title: "Active members", html: `${mini(["", "Active members"], [[h(M.per.label), `<b>${nf(k.active)}</b>`], ["Period before", nf(k.prevActive)], ["Whole community", nf(k.members)]], { num: [1] })}
+        <p class="hint">Active means the member took part at least twice in the 90 days up to the end of the period (or had their first ride in that time).</p>` } },
     { label: "Community activations", value: nf(k.acts), note: `${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}`, detail: { title: `Community activations · ${M.per.label}`, html: actList } },
     { label: "Community", value: nf(k.members), note: "members in Abu Dhabi and Dubai", detail: { title: "The community", html: community } },
   ];
@@ -221,9 +233,10 @@ function dashboard(M, { nav, pdf, pptxHref }) {
         <dl class="md-dl"><dt>Social media campaigns</dt><dd>${li(M.T.social, 120)}</dd><dt>Marketing highlights</dt><dd>${li(M.T.marketing, 120)}</dd>
           <dt>Sponsor activations</dt><dd>${li(M.T.sponsor, 120)}</dd><dt>Community activations</dt><dd>${h(M.community)}</dd></dl></section>
       <section class="card c7"><h2>Community activations</h2>
-        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div>${a.note ? `<p>${h(a.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
+        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div><span class="md-date">${h(a.date)}</span>${a.note ? `<p>${h(a.note)}</p>` : ""}
+          ${a.mk ? `<p class="md-mk">Marketing: ${a.mk.actions.length} post${a.mk.actions.length === 1 ? "" : "s"} · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
-        ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><p><span class="md-ev">${h(c.event)}</span>${c.note ? ` · ${h(c.note)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+        ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><span class="md-date">${h(c.event)}</span>${c.note ? `<p>${h(c.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
       <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
       <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
@@ -251,6 +264,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const per = periodOf(req.query), M = await mgmtData(per);
     const canEdit = ["admin", "coordinator"].includes(user(req).role);
     const links = canEdit ? (await pool.query("SELECT * FROM report_links WHERE kind = 'management' ORDER BY active DESC, created_at DESC")).rows : [];
+    const mkLinks = canEdit ? (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY active DESC, created_at DESC")).rows : [];
     const base = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const share = links.map((l) => {
       const url = `${base}/g/${l.token}`;
@@ -269,7 +283,15 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
             <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
-          ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details></section>` : ""}
+          ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details>
+        <details id="mklinks" style="margin-top:10px" ${req.query.mk ? "open" : ""}><summary><b>Marketing</b> <span class="muted">(their link to add feedback, strategy and posts per activation, and download the Excel)</span></summary>
+          <p class="hint" style="margin:8px 0">What marketing adds shows in this report: Community activations, Marketing &amp; impact, and the one-page version. <a href="/report/marketing?${qs(per)}">Open the marketing inputs</a></p>
+          ${mkLinks.map((l) => { const url = `${base}/m/${l.token}`; return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
+            ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
+              <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing link")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's your WMF marketing link. For each community activation you can update the numbers, feedback and impact, write the marketing strategy, and add each post with its reach and engagement. It all shows in the management report. Download Excel gives rides, participation, events and their impact.\n\n${url}`)}">Email</a>
+              <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Your WMF marketing link: add feedback, strategy and posts for each activation. It shows in the management report: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a></div>` : ""}</div>
+            <form method="post" action="/report/marketing/links/${l.id}"><input type="hidden" name="back" value="/report/management"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div>`; }).join("")}
+          <form class="inline-form" method="post" action="/report/marketing/links" style="margin-top:10px"><input type="hidden" name="back" value="/report/management"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Marketing" style="flex:1 1 200px"><button class="btn ${mkLinks.length ? "" : "primary"}">Make a link</button></form></details></section>` : ""}
       ${onePage(M)}`, { active: "/report/management" }));
   }));
   app.post("/report/management/links", STAFF, wrap(async (req, res) => {
