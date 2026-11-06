@@ -81,7 +81,11 @@ function need(...roles) {
 const STAFF = ["admin", "coordinator"];
 const takeFlash = (req) => { const f = req.session.flash; delete req.session.flash; return f; };
 const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
-const page = (req, title, body, opts = {}) => layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
+// shared links (management, marketing, Dubai lead, surveys) always look the way their audience sees them: no hub menus, even for someone signed in
+const SHARED = /^\/(g|m|l|f|fs)\//;
+const page = (req, title, body, opts = {}) => SHARED.test(req.path)
+  ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
+  : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
 
 // ======================= sign in =======================
 app.get("/login", (req, res) => {

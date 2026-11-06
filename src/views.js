@@ -26,7 +26,7 @@ function sectionOf(path) {
   return s ? s.key : path && path.startsWith("/admin") ? "admin" : "hub";
 }
 
-function layout(title, body, { user, active, flash, scripts = "", wide = true } = {}) {
+function layout(title, body, { user, active, flash, scripts = "", wide = true, brandTitle = false } = {}) {
   const sec = sectionOf(active);
   const secs = user ? sectionsFor(user) : [];
   const top = user ? [`<a href="/" ${sec === "hub" ? 'aria-current="page"' : ""}>Hub</a>`,
@@ -39,7 +39,7 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true } 
   const isWmf = sec === "wmf";
   const brand = isWmf
     ? `<picture class="brand-logo"><source srcset="/brand/wmf-logo-dark.png" media="(prefers-color-scheme: dark)"><img src="/brand/wmf-logo.png" alt="WMN Moving FWD, powered by Aurora" width="640" height="142"></picture>
-       ${user ? `<div class="brand-name"><h1>Community System</h1></div>` : ""}`
+       ${user || brandTitle ? `<div class="brand-name"><h1>Community System</h1></div>` : ""}`
     : `<span class="cd-mark" aria-hidden="true"><svg viewBox="0 0 40 40" width="40" height="40"><circle cx="11" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="29" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M11 26 L18 13 L26 13 M18 13 L23 26 L29 26 M24 9 h5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
        <div class="brand-name"><h1>Cycling Development</h1><p class="sub">${h(cur ? cur.label === "WMF" ? "WMN Moving FWD" : cur.label === "Corporate" ? "Corporate Cycling Programme" : "Department admin" : sec === "admin" ? "Administration" : "Department hub")}</p></div>`;
   const fl = flash ? `<div class="flash ${h(flash.type || "info")}" role="status">${h(flash.text)}</div>` : "";
@@ -54,7 +54,7 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true } 
 <a class="skip" href="#main">Skip to content</a>
 <div class="app">
   <header class="top">
-    <a class="brand" href="/" style="text-decoration:none;color:inherit">${brand}</a>
+    ${brandTitle ? `<span class="brand">${brand}</span>` : `<a class="brand" href="/" style="text-decoration:none;color:inherit">${brand}</a>`}
     ${user ? `<nav class="shell-nav" aria-label="Main">${top}
       <a href="/account/password" title="${h(user.email)}">${h(ROLE_TEXT[user.role])}${user.company ? " · " + h(user.company) : ""}</a>
       <form method="post" action="/logout"><button class="btn ghost">Sign out</button></form></nav>` : ""}

@@ -557,6 +557,9 @@ test("cycling development hub", async (t) => {
     const pub = client();
     const g = ok200(await pub(`/g/${l.token}?period=quarter`), "management link").text;
     assert.match(g, /Key execution misses/); assert.doesNotMatch(g, /For the team|@test\.local/);
+    const asAdmin = ok200(await admin(`/g/${l.token}`), "link opened while signed in").text;
+    assert.doesNotMatch(asAdmin, /Department<\/a>|Corporate<\/a>|>Admin<|Sign out|For the team/, "no hub menus on a shared link");
+    assert.match(asAdmin, /Community System/);
     assert.equal((await pub(`/g/${l.token}/pptx?period=year`, { raw: true })).status, 200);
     assert.equal((await pub(`/m/${l.token}`)).status, 404, "a management link isn't a marketing link");
     await admin(`/report/management/links/${l.id}`, { method: "POST", form: { active: "0" } });
