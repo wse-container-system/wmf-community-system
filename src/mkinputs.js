@@ -133,9 +133,10 @@ function formHtml({ base, tg, editing, pre, cancelHref, strategies }) {
 }
 
 /** Everything logged, with Edit / Remove. */
-function logHtml(mk, { base, qs, label }) {
+function logHtml(mk, { base, qs, label, view }) {
+  view = view || base;
   return `<section class="card c12"><h2>Marketing logged · ${h(label)}</h2>${mini(["Posted", "Event", "Channel", "Type", "Reach", "Engagements", ""], (mk.allRows || mk.rows).map((r) => [fmtDate(r.posted), h(r.ev_title || "General / brand") + (r.other_event && !r.act_id && !r.activity_id ? ' <span class="muted">· other event</span>' : ""), h(r.channel), h(r.kind + (r.title ? " · " + r.title : "")) + (r.url && /^https:\/\//.test(r.url) ? ` <a href="${h(r.url)}" target="_blank" rel="noopener noreferrer">↗</a>` : ""),
-    nf(r.reach), nf(r.engagements), `<a class="btn tblbtn" href="${base}?${qs({ edit: r.id })}#log">Edit</a> <form method="post" action="${base}?${qs({ remove: r.id })}" style="display:inline;margin:0"><button class="btn tblbtn" data-confirm="Remove this entry?">Remove</button></form>`]), { num: [4, 5], empty: "Nothing logged yet." })}</section>`;
+    nf(r.reach), nf(r.engagements), `<a class="btn tblbtn" href="${view}?${qs({ edit: r.id })}#log">Edit</a> <form method="post" action="${base}?${qs({ remove: r.id })}" style="display:inline;margin:0"><button class="btn tblbtn" data-confirm="Remove this entry?">Remove</button></form>`]), { num: [4, 5], empty: "Nothing logged yet." })}</section>`;
 }
 
 async function save(req, by, linkId) {

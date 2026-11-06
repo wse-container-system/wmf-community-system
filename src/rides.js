@@ -10,7 +10,7 @@ const { h, fmtDate } = require("./views");
 
 const H = E.helpers;
 const REGULAR_WEEKS = 8;     // "regular" = 2+ check-ins at the same ride in the 8 weeks before
-const CORRECT_DAYS = 60;     // check-ins can be added up to 60 days after a ride from this page
+const CORRECT_DAYS = 3650;   // staff can correct any past ride from this page (adding missed riders to older rides too)
 
 /** The ride a row belongs to: one of the six scanner rides when it is one, otherwise the weekday series used in reporting. */
 function sessionRide(r, coreById) {
@@ -60,7 +60,7 @@ async function findPeople(q) {
   return r.rows.map((m) => ({ ...m, hint: [m.primary_email ? R.maskEmail(m.primary_email) : "", m.mobile ? R.maskPhone(m.mobile) : ""].filter(Boolean).join(" · ") }));
 }
 
-module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkIn }) {
+module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkIn, qrSend, qrDataUrl }) {
   const STAFF = need("admin", "coordinator");
 
   app.get("/rides", STAFF, wrap(async (req, res) => {
@@ -131,7 +131,22 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
     const back = `/rides/${date}/${encodeURIComponent(key)}`;
     const checkBtn = (id) => `<form method="post" action="/rides/checkin" style="margin:0"><input type="hidden" name="memberId" value="${h(id)}"><input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn primary">Check in</button></form>`;
     const found = canAdd && R.clean(req.query.find).length >= 2 ? await findPeople(req.query.find) : [];
-    res.send(page(req, `${rideName} ${date}`, `
+    // a member just added from this page: their personal QR code, ready to send
+    let fresh = "";
+    if (/^WMF-\d{6}$/.test(req.query.new || "") && qrDataUrl) {
+      const m = (await pool.query("SELECT member_id, full_name, mobile, primary_email, qr_value FROM members WHERE member_id = $1", [req.query.new])).rows[0];
+      if (m) {
+        const img = await qrDataUrl(m.qr_value || m.member_id), x = qrSend(req, m);
+        const msg = `Hi ${x.first}, welcome to WMN Moving FWD! Here is your personal QR code for our rides: ${x.qrUrl}\nPlease save it and show it to the ride leader at every ride.`;
+        fresh = `<section class="card rd-fresh"><div class="qrbox"><img src="${img}" alt="QR code for ${h(m.member_id)}"><span class="id">${h(m.member_id)}</span></div>
+          <div><h2>${h(m.full_name)} is now a member</h2><p class="lead">Checked in to this ride. This is their personal QR code: send it to them so they can show it at the next ride.</p>
+          <div class="toolbar" style="margin:0">${x.phone ? `<a class="btn primary" href="https://wa.me/${encodeURIComponent(x.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a>` : `<a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a>`}
+            ${x.email ? `<a class="btn" href="mailto:${encodeURIComponent(x.email)}?subject=${encodeURIComponent("Your WMF QR code")}&body=${encodeURIComponent(msg)}">Send by email</a>` : ""}
+            <button class="btn" type="button" data-copy="${h(x.qrUrl)}">Copy QR link</button><a class="btn" href="${img}" download="${h(m.member_id)}-WMF-QR.png">Download QR</a>
+            <a class="btn ghost" href="/members/${encodeURIComponent(m.member_id)}">Member page</a></div></div></section>`;
+      }
+    }
+    res.send(page(req, `${rideName} ${date}`, `${fresh}
       <section class="card"><div class="card-head"><div><h2>${h(rideName)} · ${fmtDate(date)}</h2><p class="lead">${R.weekdayOf(date)} · ${here.length} checked in</p></div>
         <div class="toolbar" style="margin:0">${here.length ? `<a class="btn" href="/wmf/rides/ride?${h(new URLSearchParams({ src: "q", d: date, recs: here.map((r) => r.record_id).join(","), series: R.seriesFor(coreRide || { name: rideName, activity_id: actId }, date), city: "Abu Dhabi", back }).toString())}">Edit / delete this ride</a>` : ""}<a class="btn" href="/rides">All rides</a></div></div>
         <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Time</th><th>How</th><th></th></tr></thead><tbody>
@@ -139,11 +154,22 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
           <td>${r.late ? `<span class="muted">sent ${fmtDate(String(r.record_date).slice(0, 10))}</span>` : String(r.record_date).slice(11, 16) === "00:00" ? "—" : String(r.record_date).slice(11, 16)}</td><td>${h(r.source)}</td>
           <td><form method="post" action="/wmf/rides/ride" style="margin:0"><input type="hidden" name="src" value="q"><input type="hidden" name="recs" value="${h(r.record_id)}"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn" name="action" value="delete" data-confirm="Remove ${h(r.full_name || r.member_name || "this check-in")} from this ride?">Remove</button></form></td></tr>`).join("") || `<tr><td colspan="5" class="muted">Nobody was checked in.</td></tr>`}
         </tbody></table></div>
-        ${canAdd ? `<h3 style="margin:16px 0 6px">Check in someone else</h3>
+        ${canAdd ? `<h3 style="margin:16px 0 6px" id="add">Check in someone else</h3>
         <form method="post" action="/rides/checkin" class="toolbar rd-find" style="margin:0;align-items:center"><input class="inp" name="memberId" id="rdFind" placeholder="Name, email, phone or Member ID" required autocomplete="off" value="${h(req.query.find || "")}" style="max-width:320px" aria-label="Name, email, phone or Member ID">
           <input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn">Find</button></form>
         <ul class="log sc-hits" id="rdHits">${found.map((m) => `<li><span><b>${h(m.full_name)}</b> <span class="muted">${h(m.member_id)}${m.hint ? " · " + h(m.hint) : ""}</span></span>${checkBtn(m.member_id)}</li>`).join("") || (req.query.find ? '<li class="muted">Nobody found. Try part of the name, the email or the phone number.</li>' : "")}</ul>
-        <template id="rdBtn">${checkBtn("__ID__")}</template><script src="/ridefind.js" defer></script>` : ""}</section>
+        <template id="rdBtn">${checkBtn("__ID__")}</template><script src="/ridefind.js" defer></script>
+        <details class="rd-new" ${(req.query.find && !found.length) || req.query.add === "new" ? "open" : ""}><summary class="btn primary">+ New member (not in the records yet)</summary>
+          <p class="hint" style="margin:8px 0 0">Only the name is needed. You can add the email or phone later on their member page.</p>
+          <form class="form" method="post" action="/rides/newmember">
+            <input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="${h(back)}">
+            <div class="row2"><label>Full name<input name="full_name" required minlength="3" maxlength="120" value="${h(req.query.find && !found.length && !/[@\d]/.test(req.query.find) ? req.query.find : "")}"></label>
+              <label>Mobile <span class="hint">(optional, to send the QR on WhatsApp)</span><input name="mobile" inputmode="tel" maxlength="30" placeholder="05x xxx xxxx"></label></div>
+            <div class="row2"><label>Email <span class="hint">(optional)</span><input type="email" name="email" maxlength="120"></label>
+              <label>City<select name="city"><option>Abu Dhabi</option><option ${/dubai|dxb/i.test(rideName) ? "selected" : ""}>Dubai</option></select></label></div>
+            <label class="check"><input type="checkbox" name="waiver_consent" value="1"> They signed the ride waiver</label>
+            ${req.query.same ? `<label class="check"><input type="checkbox" name="force" value="1"> It's a different person with the same name: add anyway</label>` : ""}
+            <div class="toolbar" style="margin:0"><button class="btn primary">Add, check in and make their QR code</button></div></form></details>` : ""}</section>
       <section class="card"><h2>Usual riders not checked in <span class="badge ${missing.length ? "warn" : "good"}">${missing.length}</span></h2>
         <p class="lead">They came to this ride at least twice in the ${REGULAR_WEEKS} weeks before. If they were there, check them in now${canAdd ? "" : ` (only possible up to ${CORRECT_DAYS} days after the ride)`}.</p>
         <div class="tw"><table><thead><tr><th>Member</th><th class="n">Rides in the ${REGULAR_WEEKS} weeks before</th><th>Last ride</th><th></th></tr></thead><tbody>
@@ -152,6 +178,35 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
         </tbody></table></div>
 
       </section>`, { active: "/wmf/rides" }));
+  }));
+
+  // ----- someone who isn't in the records yet: add them, check them in, then show their personal QR code
+  app.post("/rides/newmember", STAFF, wrap(async (req, res) => {
+    const b = req.body || {};
+    const back = String(b.back || "/rides").startsWith("/rides/") ? String(b.back) : "/rides";
+    const name = R.clean(b.full_name);
+    if (name.length < 3) { setFlash(req, "err", "Enter their full name."); return res.redirect(back); }
+    if (b.email && !R.EMAIL_RE.test(R.normEmail(b.email))) { setFlash(req, "err", "That email doesn't look right."); return res.redirect(back); }
+    const out = await tx(async (c) => {
+      let member = b.email || b.mobile ? await R.findMember(c, { email: b.email, phone: b.mobile }) : null, created = false;
+      if (!member && !b.force) {
+        const same = (await c.query("SELECT member_id FROM members WHERE merged_into IS NULL AND lower(full_name) = lower($1) LIMIT 1", [name])).rows[0];
+        if (same) return { status: "same" };
+      }
+      if (!member) {
+        // added to a past ride: they became a member on that ride's date, so the reports count them in the right month
+        const rideDay = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") && b.date < R.todayLocal() ? b.date + " 08:00:00" : null;
+        member = await R.createMember(c, { full_name: name, email: b.email, mobile: b.mobile, community: b.city === "Dubai" ? "Dubai" : "", waiver_consent: !!b.waiver_consent, first_seen: rideDay }, actor(req), "Added at a ride");
+        created = true;
+      }
+      const r = await checkIn(c, { member, activityId: b.activityId, date: b.date, source: "Manual Attendance Correction", by: actor(req), maxDays: CORRECT_DAYS });
+      return { status: r.status === "error" ? "error" : "ok", message: r.message, member, created };
+    });
+    const sep = back.includes("?") ? "&" : "?";
+    if (out.status === "same") { setFlash(req, "err", `${name} is already in the records. Check them in from the list below, or tick “different person” to add a new member.`); return res.redirect(`${back}${sep}find=${encodeURIComponent(name)}&same=1`); }
+    if (out.status === "error") { setFlash(req, "err", out.message || "Couldn't check them in."); return res.redirect(back); }
+    setFlash(req, "ok", out.created ? `${out.member.full_name} added as a new member and checked in.` : `${out.member.full_name} was already a member (same phone or email) and is now checked in.`);
+    res.redirect(`${back}${sep}new=${encodeURIComponent(out.member.member_id)}`);
   }));
 
   app.post("/rides/checkin", STAFF, wrap(async (req, res) => {

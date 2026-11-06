@@ -125,7 +125,7 @@ async function createMember(c, f, actor, source) {
   const id = formatMemberId(n);
   const row = {
     member_id: id, member_key: memberKeyFor(email, normPhone(phone), f.full_name), full_name: clean(f.full_name), primary_email: email,
-    mobile: phone, gender: clean(f.gender) || null, community: clean(f.community) || null, first_seen: nowLocal(),
+    mobile: phone, gender: clean(f.gender) || null, community: clean(f.community) || null, first_seen: f.first_seen || nowLocal(),
     qr_issued: "Yes", qr_status: "Issued in App", qr_value: id, qr_created: nowLocal(), sources: source,
     emergency_name: clean(f.emergency_name) || null, emergency_number: clean(f.emergency_number) || null,
     updates_consent: f.updates_consent ? "Yes" : "No", waiver_consent: f.waiver_consent ? "Yes" : "No", media_consent: f.media_consent ? "Yes" : "No",
