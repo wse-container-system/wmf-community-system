@@ -63,6 +63,9 @@ async function reportData(per) {
       rides: rides.map((a) => ({ name: a.name, sessions: a.sessions, attendance: a.attendance, avg: a.perSession })).sort((a, b) => b.attendance - a.attendance),
       trend: x.trend.map((t) => ({ m: t.month, v: t.rideAttendance })) };
   }
+  // every ride in the period, both cities (for the details behind the numbers)
+  const RS = require("./ridesperf").sessions;
+  const sessionsList = ["Abu Dhabi", "Dubai"].flatMap((c) => RS(P, c, start, end).map((s) => ({ d: s.d, series: s.series, n: s.n, city: c }))).sort((a, b) => b.d.localeCompare(a.d));
   // the same weekday in both cities is two rides: count sessions per city
   k.rideSessions = Object.values(city).reduce((a, c) => a + (c.sess || 0), 0);
   const attSum = Object.values(city).reduce((a, c) => a + (c.att || 0), 0);
@@ -128,7 +131,7 @@ async function reportData(per) {
   if (wins.length < 3 && k.newMembers) wins.push({ big: `+${nf(k.newMembers)} members`, text: `Joined the community in ${per.label}` });
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
-  return { prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  return { sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages

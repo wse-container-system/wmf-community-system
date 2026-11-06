@@ -9,7 +9,7 @@ const E = require("./engine");
 const { buildData } = require("./snapshot");
 const { loadActivations } = require("./activations");
 const { databaseMix } = require("./demographics");
-const { h, fmtDate } = require("./views");
+const { h, fmtDate, detailTiles, mini } = require("./views");
 
 const H = E.helpers;
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -138,13 +138,21 @@ module.exports = function overview(app, { need, page, wrap }) {
         <p class="lead" style="margin:4px 0 0">How the Women Moving Forward community is doing: who joins, who rides, what we organise and who we work with. Figures as of ${fmtDate(today)}${isCurrent ? `, compared with the same dates in ${year - 1}` : `, compared with ${year - 1}`}.</p></div>
         <nav class="seg" aria-label="Year">${years.map((y) => `<a href="${q(y)}" class="${y === year ? "on" : ""}" ${y === year ? 'aria-current="page"' : ""}>${y}</a>`).join("")}</nav></section>
 
-      <div class="tiles ov-tiles">
-        ${tile("Community members", nf(totalMembers), `<span class="delta">+${nf(k.newMembers)} joined in ${h(periodName)}</span>`, "Everyone in the member database")}
-        ${tile("Active riders now", nf(k.activeMembers), "", "2+ rides in the last 90 days, or a first ride in that time")}
-        ${tile("Ride attendances", nf(k.rideAttendance), delta(k.rideAttendance, prev.rideAttendance, `in ${year - 1}`), `${nf(sessions)} rides held${avgPerRide ? ` · about ${avgPerRide} per ride` : ""}`)}
-        ${tile("Events & activations", nf(done.length), delta(done.length, donePrev.length, `in ${year - 1}`), `${nf(people(done))} participants${big.length ? ` (+${nf(big.reduce((s, a) => s + (a.participants || 0), 0))} at ${h(big.map((b) => b.title).join(", "))})` : ""}`)}
-        ${tile("Partners", nf(partnerStats.size), `<span class="delta">${newPartners.length} new in ${year}</span>`, `${done.length ? Math.round((withPartner.length / done.length) * 100) : 0}% of activations had a partner`)}
-      </div>
+      ${detailTiles([
+        { label: "Community members", value: nf(totalMembers), note: `<span class="delta">+${nf(k.newMembers)} joined in ${h(periodName)}</span><br>Everyone in the member database`,
+          detail: { title: "The community", html: `<div class="grid"><div class="c6">${mini(["City", "Members"], [["Abu Dhabi", nf(mix.city.auh)], ["Dubai", nf(mix.city.dxb)]], { num: [1] })}</div>
+            <div class="c6">${mini(["", "Members"], [["Women", nf(mix.gender.women)], ["Men", nf(mix.gender.men)], ["Not recorded", nf(mix.gender.unknown)]], { num: [1] })}</div></div>
+            <h3>New members by month</h3>${mini(["Month", "Joined"], newByMonth.map((x, i) => [monLabel(months[i], true), nf(x.value)]), { num: [1] })}` } },
+        { label: "Active riders now", value: nf(k.activeMembers), note: "2+ rides in the last 90 days, or a first ride in that time",
+          detail: { title: "Riders this period", html: mini(["", "People"], [["Rode at least once", nf(k.participants)], ["Came back (rode before this period)", nf(k.returning)], ["First ride with WMF", nf(k.firstTimers)], ["Active now (last 90 days)", nf(k.activeMembers)]], { num: [1] }) } },
+        { label: "Ride attendances", value: nf(k.rideAttendance), note: `${delta(k.rideAttendance, prev.rideAttendance, `in ${year - 1}`)}<br>${nf(sessions)} rides held${avgPerRide ? ` · about ${avgPerRide} per ride` : ""}`,
+          detail: { title: "Ride attendances by month", html: mini(["Month", "Attendances"], trend.map((t) => [monLabel(t.month, true), nf(t.rideAttendance)]), { num: [1] }) + `<p class="hint">For each ride, see <a href="/wmf/rides">Rides</a>.</p>` } },
+        { label: "Events & activations", value: nf(done.length), note: `${delta(done.length, donePrev.length, `in ${year - 1}`)}<br>${nf(people(done))} participants`,
+          detail: { title: `Events & activations · ${h(periodName)}`, html: mini(["Month", "Activation", "Type", "Participants", "Partners"], [...done].sort((a, b) => String(b.event_date || b.month).localeCompare(String(a.event_date || a.month))).map((a) => [a.event_date ? fmtDate(a.event_date) : monLabel(String(a.month).slice(0, 7), true),
+            `${h(a.title)}${isBig(a) ? ' <span class="muted">(counted separately)</span>' : ""}`, h(a.category), a.participants != null ? nf(a.participants) : "—", h(a.partners.join(", ") || "—")]), { num: [3], scroll: true }) } },
+        { label: "Partners", value: nf(partnerStats.size), note: `<span class="delta">${newPartners.length} new in ${year}</span><br>${done.length ? Math.round((withPartner.length / done.length) * 100) : 0}% of activations had a partner`,
+          detail: { title: "Partners", html: mini(["Partner", "Activations", "People reached", ""], [...partnerStats.entries()].sort((a, b) => b[1].n - a[1].n || b[1].people - a[1].people).map(([p, x]) => [h(p), nf(x.n), nf(x.people), newPartners.includes(p) ? '<span class="badge good">New</span>' : ""]), { num: [1, 2], scroll: true }) } },
+      ], { cls: "tiles ov-tiles" })}
 
       <section class="card"><h2>Who is in the database</h2><p class="lead">${nf(mix.total)} members. City is the home city given at registration, otherwise where they ride most.</p>
         <div class="mix">

@@ -11,7 +11,7 @@ const STAFF = ["admin", "coordinator"], ALL = ["admin", "coordinator", "viewer",
 const SECTIONS = [
   { key: "reports", label: "Reports", home: "/report/management", roles: ["admin", "coordinator", "viewer"], scoped: false, match: /^\/report(\/|\.|$)/, links: [
     ["/report/management", "Management", ["admin", "coordinator", "viewer"]], ["/report", "Performance report", ["admin", "coordinator", "viewer"]],
-    ["/report/marketing", "Marketing", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Corporate report", ["admin", "coordinator", "viewer"]]] },
+    ["/report/marketing", "Marketing", ["admin", "coordinator", "viewer"]], ["/report/marketing/log", "Marketing log", STAFF], ["/corporate/report", "Corporate report", ["admin", "coordinator", "viewer"]]] },
   { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
@@ -86,5 +86,22 @@ const tile = (label, val, note, href) => `<${href ? `a href="${href}"` : "div"} 
 const table = (heads, rows, { num = [], empty = "Nothing to show yet." } = {}) => `<div class="tw"><table><thead><tr>${heads.map((x, i) => `<th${num.includes(i) ? ' class="n"' : ""}>${h(x)}</th>`).join("")}</tr></thead><tbody>
   ${rows.length ? rows.map((r) => `<tr>${r.map((c, i) => `<td${num.includes(i) ? ' class="n"' : ""}>${c && c.html != null ? c.html : h(c)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${heads.length}" class="muted">${h(empty)}</td></tr>`}</tbody></table></div>`;
 const raw = (html) => ({ html });
+/**
+ * Number boxes that open their details: items are { label, value, note, detail: { title, html } } (value, note and html are HTML).
+ * A box without detail is a plain box. Tapping a box opens its panel under the row; tapping again closes it.
+ */
+let dtSeq = 0;
+function detailTiles(items, { cls = "tiles ov-tiles mk-tiles" } = {}) {
+  const id = "dt" + (++dtSeq);
+  const box = (t, i) => t.detail
+    ? `<button type="button" class="tile big dt" aria-expanded="false" aria-controls="${id}-${i}"><span class="lbl">${h(t.label)}<span class="dt-ic" aria-hidden="true"></span></span><span class="val">${t.value}</span>${t.note ? `<span class="note">${t.note}</span>` : ""}</button>`
+    : `<div class="tile big"><span class="lbl">${h(t.label)}</span><span class="val">${t.value}</span>${t.note ? `<span class="note">${t.note}</span>` : ""}</div>`;
+  return `<div class="${cls} dt-row">${items.map(box).join("")}</div>
+    ${items.map((t, i) => (t.detail ? `<section class="card dt-panel" id="${id}-${i}" hidden><div class="card-head"><h2>${h(t.detail.title || t.label)}</h2><button type="button" class="btn ghost dt-close" aria-label="Close">Close</button></div>${t.detail.html}</section>` : "")).join("")}
+    <script src="/details.js" defer></script>`;
+}
+/** A small table for a details panel; rows are arrays of HTML strings. */
+const mini = (heads, rows, { num = [], empty = "Nothing in this period.", scroll = false } = {}) => `<div class="tw${scroll ? " dt-scroll" : ""}"><table class="dt-t"><thead><tr>${heads.map((x, i) => `<th${num.includes(i) ? ' class="n"' : ""}>${h(x)}</th>`).join("")}</tr></thead><tbody>
+  ${rows.length ? rows.map((r) => `<tr>${r.map((c, i) => `<td${num.includes(i) ? ' class="n"' : ""}>${c == null ? "—" : c}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${heads.length}" class="muted">${h(empty)}</td></tr>`}</tbody></table></div>`;
 
-module.exports = { h, layout, ROLE_TEXT, fmtDate, fmtTs, monLabel, nf, tile, table, raw, SECTIONS, sectionsFor, STAFF, ALL };
+module.exports = { detailTiles, mini, h, layout, ROLE_TEXT, fmtDate, fmtTs, monLabel, nf, tile, table, raw, SECTIONS, sectionsFor, STAFF, ALL };

@@ -141,6 +141,9 @@ async function exportWorkbook() {
   const lr = (await pool.query("SELECT r.*, l.label, (SELECT count(*)::int FROM lead_photos p WHERE p.ride_id = r.id) AS photos FROM lead_rides r LEFT JOIN lead_links l ON l.id = r.link_id ORDER BY r.ride_date, r.id")).rows;
   addTable(wb, "Dubai Rides", "WMFLeadRides", [["Date", (r) => toDate(r.ride_date), "day"], ["City", (r) => r.city], ["Ride", (r) => r.ride_type], ["Special ride name", (r) => r.title],
     ["Participants", (r) => r.participants], ["Photos", (r) => r.photos], ["Sent by", (r) => r.label || r.entered_by]], lr);
+  const mka = (await pool.query("SELECT m.*, a.title AS act FROM marketing_actions m LEFT JOIN activations a ON a.id = m.activation_id ORDER BY m.posted_on, m.id")).rows;
+  addTable(wb, "Marketing Log", "WMFMarketingLog", [["Posted", (r) => toDate(r.posted_on), "day"], ["Event", (r) => r.act || r.activity_id || "General"], ["Channel", (r) => r.channel], ["Type", (r) => r.kind],
+    ["What", (r) => r.title], ["Link", (r) => r.url], ["Reach", (r) => r.reach], ["Engagements", (r) => r.engagements], ["Clicks", (r) => r.clicks], ["Sign-ups", (r) => r.signups], ["Notes", (r) => r.notes]], mka);
   addTable(wb, "Report Notes", "WMFReportNotes", [["Period", (r) => r.period], ["Strategy", (r) => r.strategy], ["What's next", (r) => r.next_steps], ["Corporate note", (r) => r.corporate]], rn);
   // scanner links: names only, never the secret part of the address
   addTable(wb, "Scanner Links", "ScannerLinks", [["For", (r) => r.label], ["Programmes", (r) => r.scope], ["On", (r) => (r.active ? "Yes" : "No")], ["Check-ins", (r) => r.scans], ["Last Used (UTC)", (r) => r.last_used]], sl);

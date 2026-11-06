@@ -443,6 +443,14 @@ CREATE TABLE IF NOT EXISTS ride_venues (
 CREATE TABLE IF NOT EXISTS ride_venue_defaults (
   city TEXT NOT NULL, series TEXT NOT NULL, venue TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (city, series)
 );
+-- marketing's posts and campaigns, linked to an event, with their reach and engagement
+CREATE TABLE IF NOT EXISTS marketing_actions (
+  id SERIAL PRIMARY KEY, link_id INTEGER REFERENCES report_links(id) ON DELETE SET NULL,
+  activation_id INTEGER REFERENCES activations(id) ON DELETE SET NULL, activity_id TEXT,
+  channel TEXT NOT NULL, kind TEXT NOT NULL, posted_on DATE NOT NULL, title TEXT, url TEXT,
+  reach INTEGER, engagements INTEGER, clicks INTEGER, signups INTEGER, notes TEXT,
+  entered_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

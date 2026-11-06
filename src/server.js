@@ -82,7 +82,7 @@ const STAFF = ["admin", "coordinator"];
 const takeFlash = (req) => { const f = req.session.flash; delete req.session.flash; return f; };
 const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
 // shared links (management, marketing, Dubai lead, surveys) always look the way their audience sees them: no hub menus, even for someone signed in
-const SHARED = /^\/(g|m|l|f|fs)\//;
+const SHARED = /^\/(g|m|mk|l|f|fs)\//;
 const page = (req, title, body, opts = {}) => SHARED.test(req.path)
   ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
   : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
@@ -694,6 +694,7 @@ require("./seasonsurvey")(app, { need, page, setFlash, actor, user, wrap, limit 
 require("./surveys")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./social")(app, { need, page, setFlash, actor, user, wrap });
 require("./management")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./mkinputs")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./marketing")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./ridesperf")(app, { need, page, wrap, user, setFlash, actor });
 require("./leadrides")(app, { need, page, setFlash, actor, user, wrap, limit });

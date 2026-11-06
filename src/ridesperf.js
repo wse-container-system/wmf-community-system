@@ -7,7 +7,7 @@ const R = require("./rules");
 const E = require("./engine");
 const { buildData } = require("./snapshot");
 const CD = require("./corpdata");
-const { h, fmtDate, monLabel, nf } = require("./views");
+const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
 const { columns } = require("./charts");
 
 const H = E.helpers;
@@ -230,6 +230,14 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
     const series = new Map();
     for (const s of list) { const x = series.get(s.series) || { name: s.series, rides: 0, people: 0, best: null }; x.rides++; x.people += s.n; if (!x.best || s.n > x.best.n) x.best = s; series.set(s.series, x); }
     const bySeries = [...series.values()].sort((a, b) => b.people - a.people);
+    // people whose first WMF ride was in this period, in this city
+    const newRiders = [];
+    for (const p of P.persons.values()) {
+      if (!(p.first >= per.start && p.first <= end)) continue;
+      const r = P.rows.find((x) => x.person === p.person && x.kind === "ride" && x.location === city.name && x.d >= per.start && x.d <= end);
+      if (r) newRiders.push({ name: (p.member && (p.member.fullName || p.member.label)) || p.label || "—", d: r.d, series: r.series });
+    }
+    newRiders.sort((a, b) => b.d.localeCompare(a.d));
     const maxS = Math.max(1, ...bySeries.map((x) => x.people / x.rides));
     // chart: each ride in a month; each month in a quarter or year
     const chart = type === "month"
@@ -249,12 +257,17 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
         <div class="mk-actions"><span class="seg rd-city">${Object.entries(CITIES).map(([key, c]) => `<a href="/wmf/rides?${q({ city: key })}" class="${key === cityKey ? "on" : ""}">${h(c.name)}</a>`).join("")}</span>
           <span class="seg">${Object.keys(KIND).map((t) => `<a href="/wmf/rides?city=${cityKey}&period=${t}" class="${type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
           <form method="get" style="margin:0"><input type="hidden" name="city" value="${cityKey}"><input type="hidden" name="period" value="${type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form></div></section>
-      <div class="tiles ov-tiles mk-tiles">
-        <div class="tile big"><span class="lbl">Participation</span><span class="val">${nf(people)}</span><span class="note">${delta}</span></div>
-        <div class="tile big"><span class="lbl">Rides held</span><span class="val">${nf(rides)}</span><span class="note">${prevList.length ? `${prevList.length} the period before` : ""}</span></div>
-        <div class="tile big"><span class="lbl">Avg. riders per ride</span><span class="val">${avg ? nf(Math.round(avg)) : "—"}</span></div>
-        <div class="tile big"><span class="lbl">New riders</span><span class="val">${lead && !k.firstTimers ? "—" : nf(k.firstTimers)}</span><span class="note">${lead && !k.firstTimers ? "Headcounts only: names aren't recorded" : "First ride with WMF"}</span></div>
-      </div>
+      ${detailTiles([
+        { label: "Participation", value: nf(people), note: delta, detail: { title: `Participation · ${city.name} · ${per.label}`, html: `<h3>By ride</h3>${mini(["Ride", "Rides", "Participation", "Avg. per ride"], bySeries.map((x) => [h(x.name), nf(x.rides), nf(x.people), nf(Math.round(x.people / x.rides))]), { num: [1, 2, 3] })}
+          <h3>Compared with the period before</h3>${mini(["", "This period", "Period before"], [["Participation", nf(people), nf(prevPeople)], ["Rides held", nf(rides), nf(prevList.length)], ["Avg. per ride", avg ? nf(Math.round(avg)) : "—", prevList.length ? nf(Math.round(prevPeople / prevList.length)) : "—"]], { num: [1, 2] })}` } },
+        { label: "Rides held", value: nf(rides), note: prevList.length ? `${prevList.length} the period before` : "", detail: { title: "Rides held by weekday", html: mini(["Day", "Rides", "Participation", "Avg. per ride"],
+          ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((w) => { const l = list.filter((s) => R.weekdayOf(s.d) === w); return l.length ? [w, nf(l.length), nf(l.reduce((a, s) => a + s.n, 0)), nf(Math.round(l.reduce((a, s) => a + s.n, 0) / l.length))] : null; }).filter(Boolean), { num: [1, 2, 3] }) + '<p class="hint">Every ride is listed under “Every ride” below.</p>' } },
+        { label: "Avg. riders per ride", value: avg ? nf(Math.round(avg)) : "—", detail: { title: "Best and lowest turnout", html: mini(["Date", "Ride", "Riders"], [...list].sort((a, b) => b.n - a.n).slice(0, 5).map((s) => [fmtDate(s.d), h(s.series), `<b>${nf(s.n)}</b>`]), { num: [2] })
+          + `<h3>Lowest</h3>${mini(["Date", "Ride", "Riders"], [...list].sort((a, b) => a.n - b.n).slice(0, 5).map((s) => [fmtDate(s.d), h(s.series), nf(s.n)]), { num: [2] })}` } },
+        { label: "New riders", value: lead && !k.firstTimers ? "—" : nf(k.firstTimers), note: lead && !k.firstTimers ? "Headcounts only: names aren't recorded" : "First ride with WMF",
+          detail: { title: "First ride with WMF", html: newRiders.length ? mini(canEdit ? ["Name", "First ride", "Ride"] : ["First ride", "Ride"], newRiders.map((n) => (canEdit ? [h(n.name), fmtDate(n.d), h(n.series)] : [fmtDate(n.d), h(n.series)])), { scroll: true })
+            : '<p class="muted">No first-time riders recorded in this period' + (lead ? ": rides sent as a headcount don't record names." : ".") + "</p>" } },
+      ])}
       <div class="grid">
         <section class="card c7"><h2>${type === "month" ? "Riders per ride" : "Participation by month"}</h2>${chart || '<p class="muted">No rides in this period.</p>'}</section>
         <section class="card c5"><h2>By ride</h2>

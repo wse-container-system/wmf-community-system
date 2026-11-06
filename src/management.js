@@ -9,7 +9,7 @@ const { pool } = require("./db");
 const E = require("./engine");
 const { reportData, periodOf } = require("./report");
 const { fmtPct } = require("./social");
-const { h, fmtDate, monLabel, nf } = require("./views");
+const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
 
 const cut = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 const pct = (a, b) => (b ? Math.round(((a - b) / b) * 100) : null);
@@ -59,14 +59,18 @@ function drafts(D) {
   }
   const sponsor = D.partners.slice(0, 3).map((p) => `${p.name} (${cut(p.items[0], 40)})`);
   return { developments: dev.join("\n"), wins: wins.slice(0, 4).join("\n"), misses: misses.slice(0, 3).join("\n"), forward: fwd.join("\n") || (D.notes.next_steps || ""),
-    social: "", marketing: "", sponsor: sponsor.join("\n"), closing, priorities: prio.slice(0, 3).join("\n") };
+    social: require("./mkinputs").campaignLines(D.mk).join("\n"),
+    marketing: D.mk.totals.actions ? `${nf(D.mk.totals.actions)} posts and campaigns reached ${nf(D.mk.totals.reach)} people with ${nf(D.mk.totals.eng)} engagements${D.mk.totals.reach ? ` (${((D.mk.totals.eng / D.mk.totals.reach) * 100).toFixed(1)}% engagement rate)` : ""}.` : "",
+    sponsor: sponsor.join("\n"), closing, priorities: prio.slice(0, 3).join("\n") };
 }
 
 /** Everything on the page: figures plus the words (saved, or the draft). */
 async function mgmtData(per) {
   const D = await reportData(per);
+  D.mk = await require("./mkinputs").loadInputs({ start: D.start, end: D.end });
   const W = words(per), draft = drafts(D), saved = D.notes.mgmt || {};
-  const T = Object.fromEntries(FIELDS.map(([f]) => [f, saved[f] != null ? saved[f] : draft[f]]));
+  // a box left empty uses the suggestion, so marketing's logged posts still show up after the words were saved once
+  const T = Object.fromEntries(FIELDS.map(([f]) => [f, saved[f] != null && String(saved[f]).trim() !== "" ? saved[f] : draft[f]]));
   const A = D.city["Abu Dhabi"], X = D.city.Dubai;
   const comment = (c) => (c.top ? `Most attended: ${c.top.name} (${Math.round(c.top.perSession)} avg)` : c.sess ? "" : "No rides recorded");
   const rides = [
@@ -83,7 +87,7 @@ async function mgmtData(per) {
   const kpi = { participation: D.k.rideAttendance, change: ch, rides: D.k.rideSessions, fresh: (A.fresh || 0) + (X.fresh || 0), acts: D.done.length, actPeople: D.evPeople,
     members: D.db.total, newMembers: D.k.newMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
-  return { per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
+  return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—" };
 }
 
@@ -158,6 +162,36 @@ async function pptx(M) {
 }
 
 
+// ---------------------------------------------------------------- the details behind each number (no names: management sees these too)
+function tilesOf(M) {
+  const k = M.kpi, D = M.D, A = D.city["Abu Dhabi"], X = D.city.Dubai;
+  const ch = (a, b) => (!b ? "—" : a === b ? '<span class="muted">no change</span>' : `<span class="${a > b ? "rp-up" : "rp-down"}">${a > b ? "▲" : "▼"} ${Math.abs(Math.round(((a - b) / b) * 100))}%</span>`);
+  const byCity = mini(["City", "Participation", "Rides", "Avg. per ride", "Period before", "Change"], [["Abu Dhabi", A], ["Dubai", X]].map(([n, c]) =>
+    [h(n), nf(c.att), nf(c.sess), c.avg ? nf(Math.round(c.avg)) : "—", nf(c.prevAtt), ch(c.att, c.prevAtt)]), { num: [1, 2, 3, 4] });
+  const series = [...A.rides.map((r) => ({ ...r, city: "AUH" })), ...X.rides.map((r) => ({ ...r, city: "DXB" }))].sort((a, b) => b.attendance - a.attendance);
+  const bySeries = mini(["Ride", "City", "Rides", "Participation", "Avg. per ride"], series.map((r) => [h(r.name), r.city, nf(r.sessions), nf(r.attendance), nf(Math.round(r.avg))]), { num: [2, 3, 4] });
+  const months = D.months.map((m) => { const a = (A.trend.find((t) => t.m === m) || {}).v || 0, x = (X.trend.find((t) => t.m === m) || {}).v || 0; return [monLabel(m, true), nf(a), nf(x), `<b>${nf(a + x)}</b>`]; });
+  const byMonth = mini(["Month", "Abu Dhabi", "Dubai", "Total"], months, { num: [1, 2, 3] });
+  const rideList = mini(["Date", "City", "Ride", "Riders"], D.sessionsList.map((s) => [fmtDate(s.d), s.city === "Dubai" ? "DXB" : "AUH", h(s.series), nf(s.n)]), { num: [3], scroll: true });
+  const acts = [...D.done].sort((a, b) => String(b.event_date || b.month).localeCompare(String(a.event_date || a.month)));
+  const actList = mini(["Date", "Activation", "City", "Participants", "Registered", "Partners"], acts.map((a) => [a.event_date ? fmtDate(a.event_date) : monLabel(String(a.month).slice(0, 7), true),
+    `${h(a.title)}${D.isBig(a) ? ' <span class="muted">(big event, counted separately)</span>' : ""}`, D.isDxb(a) ? "DXB" : "AUH", a.participants != null ? nf(a.participants) : "—", a.registrants ? nf(a.registrants) : "—", h(a.partners.join(", ") || "—")]), { num: [3, 4], scroll: true });
+  const db = D.db, j = D.joined;
+  const community = `<div class="grid"><div class="c6">${mini(["City", "Members", "Joined this period"], [["Abu Dhabi", nf(db.city.auh), nf(j.city.auh)], ["Dubai", nf(db.city.dxb), nf(j.city.dxb)], ["<b>Total</b>", `<b>${nf(db.total)}</b>`, `<b>${nf(j.total)}</b>`]], { num: [1, 2] })}</div>
+    <div class="c6">${mini(["", "Members"], [["Women", nf(db.gender.women)], ["Men", nf(db.gender.men)], ["Not recorded", nf(db.gender.unknown)]], { num: [1] })}</div></div>
+    <p class="hint">City is the home city given at registration, otherwise where the person rides most.</p>`;
+  return [
+    { label: "Ride participation", value: nf(k.participation), note: `${k.change != null ? `<span class="${k.change >= 0 ? "rp-up" : "rp-down"}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change)}%</span> vs before · ` : ""}AUH ${nf(k.auh)} · DXB ${nf(k.dxb)}`,
+      detail: { title: `Ride participation · ${M.per.label}`, html: `<h3>By city</h3>${byCity}<h3>By ride</h3>${bySeries}<h3>${M.per.type === "month" ? "Last six months" : "By month"}</h3>${byMonth}` } },
+    { label: "Rides held", value: nf(k.rides), note: k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : "", detail: { title: `Every ride · ${M.per.label}`, html: rideList } },
+    { label: "New riders", value: nf(k.fresh), note: `${nf(k.newMembers)} new members joined`,
+      detail: { title: "New riders and new members", html: `${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
+        <p class="hint">A new rider is someone whose first WMF ride was in this period. Dubai rides counted by headcount don't record names, so their new riders aren't counted.</p>` } },
+    { label: "Community activations", value: nf(k.acts), note: `${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}`, detail: { title: `Community activations · ${M.per.label}`, html: actList } },
+    { label: "Community", value: nf(k.members), note: "members in Abu Dhabi and Dubai", detail: { title: "The community", html: community } },
+  ];
+}
+
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
 function dashboard(M, { nav, pdf, pptxHref }) {
   const k = M.kpi, unit = M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year";
@@ -168,13 +202,7 @@ function dashboard(M, { nav, pdf, pptxHref }) {
   return `<section class="mk-head md-head"><div><div class="wc-eyebrow">WMN Moving FWD · ${h(M.W.kind.toLowerCase())} performance</div><h2 class="ov-title">${h(M.per.label)}</h2>
       <p class="lead" style="margin:4px 0 0">Women's community cycling in Abu Dhabi and Dubai, and the corporate cycling programme.</p></div>
       <div class="mk-actions">${nav}${pdf}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
-    <div class="tiles ov-tiles mk-tiles md-tiles">
-      <div class="tile big"><span class="lbl">Ride participation</span><span class="val">${nf(k.participation)}</span><span class="note">${k.change != null ? `<span class="${k.change >= 0 ? "rp-up" : "rp-down"}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change)}%</span> vs before · ` : ""}AUH ${nf(k.auh)} · DXB ${nf(k.dxb)}</span></div>
-      <div class="tile big"><span class="lbl">Rides held</span><span class="val">${nf(k.rides)}</span><span class="note">${k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : ""}</span></div>
-      <div class="tile big"><span class="lbl">New riders</span><span class="val">${nf(k.fresh)}</span><span class="note">${nf(k.newMembers)} new members joined</span></div>
-      <div class="tile big"><span class="lbl">Community activations</span><span class="val">${nf(k.acts)}</span><span class="note">${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}</span></div>
-      <div class="tile big"><span class="lbl">Community</span><span class="val">${nf(k.members)}</span><span class="note">members in Abu Dhabi and Dubai</span></div>
-    </div>
+    ${detailTiles(tilesOf(M), { cls: "tiles ov-tiles mk-tiles md-tiles" })}
     <div class="md-keys">
       <section class="card md-k"><h2>Key developments</h2>${li(M.T.developments)}</section>
       <section class="card md-k win"><h2>Key execution wins</h2>${li(M.T.wins)}</section>
@@ -194,6 +222,7 @@ function dashboard(M, { nav, pdf, pptxHref }) {
         ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div>${a.note ? `<p>${h(a.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
         ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><p><span class="md-ev">${h(c.event)}</span>${c.note ? ` · ${h(c.note)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+      <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
     </div>`;
 }
@@ -233,7 +262,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
         <details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
           <form class="form" method="post" action="/report/management/notes"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="/report/management?${qs(per)}">
-            <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
+            <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
             <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
