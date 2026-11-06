@@ -59,7 +59,8 @@ async function buildData() {
       return { date: d, initiative: h.initiative, series: w ? w[0].toUpperCase() + w.slice(1) + " Ride" : weekday(d) + " Ride",
         location: /dxb|dubai/i.test(h.state || "") ? "Dubai" : "Abu Dhabi", attendees: h.attendees, hid: h.id };
     }).concat(lead.map((l) => ({ date: dayOnly(l.ride_date), initiative: l.title || l.ride_type, lead: true, location: l.city,
-      series: l.ride_type === "Special ride" ? (l.title ? "Special: " + l.title : "Special ride") : l.ride_type + " Ride", attendees: l.participants, lid: l.id }))),
+      series: l.ride_type === "Manual" ? l.title || "Ride" : l.ride_type === "Special ride" ? (l.title ? "Special: " + l.title : "Special ride") : l.ride_type + " Ride",
+      manual: l.ride_type === "Manual", attendees: l.participants, lid: l.id }))),
     historyEvents: he.rows.map((h) => ({ month: dayOnly(h.report_month), name: h.name, attendance: h.attendance })),
   };
 }

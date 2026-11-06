@@ -100,7 +100,7 @@ module.exports = function leadRides(app, { need, page, setFlash, actor, wrap, li
     const links = (await pool.query("SELECT * FROM lead_links ORDER BY active DESC, created_at DESC")).rows;
     const rides = (await pool.query(`SELECT r.*, l.label, coalesce(array_agg(p.id ORDER BY p.id) FILTER (WHERE p.id IS NOT NULL), '{}') AS photo_ids
       FROM lead_rides r LEFT JOIN lead_links l ON l.id = r.link_id LEFT JOIN lead_photos p ON p.ride_id = r.id
-      GROUP BY r.id, l.label ORDER BY r.ride_date DESC, r.id DESC LIMIT 300`)).rows;
+      WHERE r.city = 'Dubai' GROUP BY r.id, l.label ORDER BY r.ride_date DESC, r.id DESC LIMIT 300`)).rows;
     const months = new Map();
     for (const r of rides) { const m = String(r.ride_date).slice(0, 7); const x = months.get(m) || { rides: 0, people: 0, byType: {} }; x.rides++; x.people += r.participants; x.byType[r.ride_type] = (x.byType[r.ride_type] || 0) + r.participants; months.set(m, x); }
     const cards = await Promise.all(links.map(async (l) => {
