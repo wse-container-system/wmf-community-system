@@ -89,7 +89,8 @@ async function mgmtData(per) {
   const acts = [...D.done].filter((a) => !D.isBig(a)).sort((a, b) => (b.participants || 0) - (a.participants || 0))
     .map((a) => ({ id: a.id, name: a.title, date: a.event_date ? fmtDate(a.event_date) : monLabel(String(a.month).slice(0, 7), true),
       people: a.participants != null ? `${nf(a.participants)} participants${a.registrants ? ` · ${nf(a.registrants)} registered` : ""}` : "—",
-      note: String(a.impact || a.aim || "").replace(/\s+/g, " ").trim(), mk: D.mk.byEvent.find((g) => g.act_id === a.id) || null }));
+      note: String(a.impact || a.aim || "").replace(/\s+/g, " ").trim(), mk: D.mk.byEvent.find((g) => g.act_id === a.id) || null,
+      raw: { participants: a.participants, registrants: a.registrants, new_contacts: a.new_contacts, impact: a.impact || "" }, strategy: D.mk.strategies.get("a:" + a.id) || "" }));
   const collab = D.partners.map((p) => ({ name: p.name, event: p.items.join(", "), note: String(p.impact || "").replace(/\s+/g, " ").trim() || (p.people ? `${nf(p.people)} people reached` : "") }));
   const s = D.soc, sc = (ch, c) => (s && s[ch][c].now != null ? `${nf(s[ch][c].now)}${s[ch][c].pct != null ? ` (${fmtPct(s[ch][c].pct)})` : ""}` : "—");
   const ch = D.prev.rideAttendance ? Math.round(((D.k.rideAttendance - D.prev.rideAttendance) / D.prev.rideAttendance) * 100) : null;
@@ -207,7 +208,19 @@ function tilesOf(M) {
 }
 
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
-function dashboard(M, { nav, pdf, pptxHref }) {
+/** The bits marketing (and the team) can edit, inside the same report. */
+function editForm(a, ed) {
+  return `<details class="mk-edit noprint"><summary class="btn tblbtn">Edit feedback, strategy &amp; numbers</summary>
+    <form class="form" method="post" action="${ed.post}/act/${a.id}?${ed.qs({})}">
+      <label>Feedback &amp; impact <span class="hint">(what happened, what people said, results)</span><textarea name="impact" rows="3" maxlength="1500">${h(a.raw.impact)}</textarea></label>
+      <label>Marketing strategy <span class="hint">(aim, audience, key messages, timing)</span><textarea name="strategy" rows="3" maxlength="1200">${h(a.strategy)}</textarea></label>
+      <div class="mk-edit-n"><label>Came<input name="participants" inputmode="numeric" value="${a.raw.participants ?? ""}"></label><label>Registered<input name="registrants" inputmode="numeric" value="${a.raw.registrants ?? ""}"></label>
+        <label>New contacts<input name="new_contacts" inputmode="numeric" value="${a.raw.new_contacts ?? ""}"></label></div>
+      <button class="btn primary">Save</button></form></details>
+    <a class="btn tblbtn noprint" href="${ed.view}?${ed.qs({ target: "a:" + a.id })}#log">+ Add a post</a>`;
+}
+
+function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
   const k = M.kpi, unit = M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year";
   const li = (t, n = 200) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => `<li>${h(cut(x, n))}</li>`).join("")}</ul>` : '<p class="muted">—</p>'; };
   const maxAvg = Math.max(1, ...M.rides.map((r) => r.avg || 0));
@@ -215,7 +228,8 @@ function dashboard(M, { nav, pdf, pptxHref }) {
   const socTile = (name, list) => `<div class="md-soc"><b>${name}</b>${["Abu Dhabi", "Dubai"].map((c, i) => { const r = list && list[i]; return `<div><span>${c === "Abu Dhabi" ? "AUH" : "DXB"}</span><strong>${r && r.now != null ? nf(r.now) : "—"}</strong>${r && r.pct != null ? `<em class="${r.pct >= 0 ? "rp-up" : "rp-down"}">${fmtPct(r.pct)}</em>` : ""}</div>`; }).join("")}</div>`;
   return `<section class="mk-head md-head"><div><div class="wc-eyebrow">WMN Moving FWD · ${h(M.W.kind.toLowerCase())} performance</div><h2 class="ov-title">${h(M.per.label)}</h2>
       <p class="lead" style="margin:4px 0 0">Women's community cycling in Abu Dhabi and Dubai, and the corporate cycling programme.</p></div>
-      <div class="mk-actions">${nav}${pdf}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
+      <div class="mk-actions">${nav}${pdf}${ed && ed.excelHref ? `<a class="btn" href="${h(ed.excelHref)}">Excel</a>` : ""}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
+    ${ed && ed.banner ? `<div class="md-editnote noprint"><b>You can edit this report:</b> feedback, marketing strategy and numbers under <a href="#acts">Community activations</a>, and posts under <a href="#log">Marketing &amp; impact</a>. Management sees your changes straight away.</div>` : ""}
     ${detailTiles(tilesOf(M), { cls: "tiles ov-tiles mk-tiles md-tiles" })}
     <div class="md-keys">
       <section class="card md-k"><h2>Key developments</h2>${li(M.T.developments)}</section>
@@ -232,13 +246,20 @@ function dashboard(M, { nav, pdf, pptxHref }) {
         <div class="md-socs">${socTile("Strava", M.soc && M.soc.strava)}${socTile("WhatsApp", M.soc && M.soc.whatsapp)}</div>
         <dl class="md-dl"><dt>Social media campaigns</dt><dd>${li(M.T.social, 120)}</dd><dt>Marketing highlights</dt><dd>${li(M.T.marketing, 120)}</dd>
           <dt>Sponsor activations</dt><dd>${li(M.T.sponsor, 120)}</dd><dt>Community activations</dt><dd>${h(M.community)}</dd></dl></section>
-      <section class="card c7"><h2>Community activations</h2>
-        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div><span class="md-date">${h(a.date)}</span>${a.note ? `<p>${h(a.note)}</p>` : ""}
-          ${a.mk ? `<p class="md-mk">Marketing: ${a.mk.actions.length} post${a.mk.actions.length === 1 ? "" : "s"} · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
+      <section class="card c7" id="acts"><h2>Community activations</h2>
+        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article id="act-${a.id}"><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div><span class="md-date">${h(a.date)}</span>${a.note ? `<p>${h(a.note)}</p>` : ""}
+          ${a.strategy ? `<p class="md-strat"><b>Strategy</b> ${h(a.strategy)}</p>` : ""}
+          ${a.mk ? `<p class="md-mk">Marketing: ${a.mk.actions.length} post${a.mk.actions.length === 1 ? "" : "s"} · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements</p>` : ""}${ed ? `<div class="mk-ev-actions">${editForm(a, ed)}</div>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
         ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><span class="md-date">${h(c.event)}</span>${c.note ? `<p>${h(c.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
       <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
       <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
+      ${ed ? (() => { const MK = require("./mkinputs");
+        const others = M.D.mk.others.length ? `<section class="card c12 noprint"><h2>Other events &amp; activities</h2><p class="lead">Marketing for events WMF didn't run. Not counted in the report.</p>
+          ${mini(["Event", "Date", "Posts", "Reach", "Engagements", "People there"], M.D.mk.others.map((g) => [h(g.title), g.date ? fmtDate(g.date) : "—", nf(g.actions.length), nf(g.reach), nf(g.eng), g.participants != null ? nf(g.participants) : "—"]), { num: [2, 3, 4, 5] })}</section>` : "";
+        const n = (M.D.mk.allRows || M.D.mk.rows).length;
+        return `<div class="c12 noprint md-mkin"><details class="md-fold" ${ed.pre || ed.editing ? "open" : ""}><summary class="btn primary">${ed.editing ? "Edit a post" : "+ Add a post or campaign"}</summary>${MK.formHtml({ base: ed.post, tg: ed.tg, editing: ed.editing, pre: ed.pre, cancelHref: ed.cancelHref, strategies: ed.strategies })}</details>
+          ${n ? `<details class="md-fold" ${ed.editing ? "open" : ""}><summary class="btn">All posts logged (${n})</summary>${MK.logHtml(M.D.mk, { base: ed.post, view: ed.view, qs: ed.qs, label: M.per.label })}${others}</details>` : ""}</div>`; })() : ""}
       <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
     </div>`;
 }
@@ -257,6 +278,14 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     return `<span class="seg">${Object.keys(KIND).map((t) => `<a href="${base}?period=${t}" class="${per.type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
       <form method="get" action="${base}" style="margin:0"><input type="hidden" name="period" value="${per.type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form>`;
   }
+  /** What the editable parts need: where forms post, which page they come back to. */
+  const editOf = async (req, per, { view, post, excelHref, banner }) => {
+    const MK = require("./mkinputs");
+    const q = (o) => new URLSearchParams({ period: per.type, p: per.p, ...o }).toString();
+    const pre = String(req.query.target || "").slice(0, 90);
+    return { view, post, excelHref, banner, qs: q, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
+      pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${view}?${q({})}#log` };
+  };
   const onePage = (M) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><p class="lead">The same report in management's template. <b>Download PDF</b> saves this page; PowerPoint gives an editable copy.</p></section>
     <div class="mg-wrap">${sheet(M)}</div>`;
 
@@ -275,7 +304,8 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
         <form method="post" action="/report/management/links/${l.id}"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div>`;
     }).join("");
     res.send(page(req, "Management report", `
-      ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}` })}
+      ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}`,
+        edit: canEdit ? await editOf(req, per, { view: "/report/management", post: "/report/marketing", excelHref: `/report/marketing.xlsx?${qs(per)}` }) : null })}
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
         <details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
           <form class="form" method="post" action="/report/management/notes"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="/report/management?${qs(per)}">
@@ -285,7 +315,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
           ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details>
         <details id="mklinks" style="margin-top:10px" ${req.query.mk ? "open" : ""}><summary><b>Marketing</b> <span class="muted">(their link to add feedback, strategy and posts per activation, and download the Excel)</span></summary>
-          <p class="hint" style="margin:8px 0">What marketing adds shows in this report: Community activations, Marketing &amp; impact, and the one-page version. <a href="/report/marketing?${qs(per)}">Open the marketing inputs</a></p>
+          <p class="hint" style="margin:8px 0">Marketing gets this same report, with Community activations (feedback, strategy, numbers) and Marketing &amp; impact (posts) editable, and the Excel download. No sign-in, no member names.</p>
           ${mkLinks.map((l) => { const url = `${base}/m/${l.token}`; return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
             ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
               <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing link")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's your WMF marketing link. For each community activation you can update the numbers, feedback and impact, write the marketing strategy, and add each post with its reach and engagement. It all shows in the management report. Download Excel gives rides, participation, events and their impact.\n\n${url}`)}">Email</a>
@@ -314,6 +344,21 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const per = periodOf(req.query), M = await mgmtData(per), b = `/g/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
     res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${onePage(M)}`, { active: "/wmf" }));
+  }));
+  // ----- the marketing link: this same report, with feedback, strategy, numbers and posts editable
+  const mkLinkOf = async (t) => (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active AND kind = 'marketing'", [String(t || "").slice(0, 60)])).rows[0];
+  app.get("/m/:token", limit("reportlink", 150, 60 * 60e3), wrap(async (req, res) => {
+    const l = await mkLinkOf(req.params.token); if (!l) return closed(req, res);
+    const per = periodOf(req.query), M = await mgmtData(per), b = `/m/${encodeURIComponent(l.token)}`;
+    await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`,
+      edit: await editOf(req, per, { view: b, post: b, excelHref: `${b}/excel?${qs(per)}`, banner: true }) })}${onePage(M)}`, { active: "/wmf" }));
+  }));
+  app.get("/m/:token/pptx", limit("reportlink", 150, 60 * 60e3), wrap(async (req, res) => {
+    const l = await mkLinkOf(req.params.token); if (!l) return closed(req, res);
+    const per = periodOf(req.query), M = await mgmtData(per);
+    res.type("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+      .set("Content-Disposition", `attachment; filename="WMF-${M.W.kind}-Report-${per.p}.pptx"`).send(await pptx(M));
   }));
   app.get("/g/:token/pptx", limit("mgmtlink", 150, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
