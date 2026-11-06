@@ -11,6 +11,7 @@ const E = require("./engine");
 const { reportData, periodOf } = require("./report");
 const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
 const { columns } = require("./charts");
+const MK = require("./mkinputs");
 
 const AUH = "#5b7cf0", DXB = "#e8833a";
 const cut = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
@@ -25,14 +26,14 @@ async function marketingData(per) {
     return { m, auh: a, dxb: d, total: a + d, inPeriod: m >= D.start.slice(0, 7) };
   });
   const rides = [...A.rides.map((r) => ({ ...r, city: "Abu Dhabi" })), ...X.rides.map((r) => ({ ...r, city: "Dubai" }))].sort((a, b) => b.attendance - a.attendance);
-  const events = D.done.map((a) => ({ date: a.event_date || String(a.month).slice(0, 10), dated: !!a.event_date, title: a.title, city: D.isDxb(a) ? "Dubai" : "Abu Dhabi", category: a.category,
+  const events = D.done.map((a) => ({ act_id: a.id, date: a.event_date || String(a.month).slice(0, 10), dated: !!a.event_date, title: a.title, city: D.isDxb(a) ? "Dubai" : "Abu Dhabi", category: a.category,
     participants: a.participants, registrants: a.registrants, partners: a.partners, impact: a.impact || "", big: D.isBig(a) })).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   return {
     per, label: per.label, kind: per.kind, sessions: D.sessionsList,
     ride: { total: D.k.rideAttendance, sessions: D.k.rideSessions, avg: D.k.rideSessions ? D.k.rideAttendance / D.k.rideSessions : null, auh: A.att, dxb: X.att, auhShare: A.share, dxbShare: X.share },
     rideMonths, rides,
     ev: { count: events.length, people: D.evPeople, partners: D.partners.length, withImpact: events.filter((e) => e.impact).length },
-    events,
+    events, mk: await MK.loadInputs({ start: D.start, end: D.end }),
   };
 }
 
@@ -47,18 +48,41 @@ function details(M) {
     { title: `Every ride · ${M.label}`, html: mini(["Date", "City", "Ride", "Riders"], M.sessions.map((s) => [fmtDate(s.d), s.city === "Dubai" ? "DXB" : "AUH", h(s.series), nf(s.n)]), { num: [3], scroll: true }) },
     { title: `Events · ${M.label}`, html: mini(["Date", "Event", "City", "Participants", "Partners"], M.events.map(evRow), { num: [3], scroll: true }) },
     { title: "Event participation, biggest first", html: mini(["Date", "Event", "City", "Participants", "Partners"], [...M.events].sort((a, b) => (b.participants || 0) - (a.participants || 0)).map(evRow), { num: [3], scroll: true }) },
+    { title: `Marketing · ${M.label}`, html: mini(["Event", "Posts", "Reach", "Engagements", "Rate", "Came"], M.mk.byEvent.map((g) => [h(g.title) + (g.other ? ' <span class="muted">· other event</span>' : ""), nf(g.actions.length), nf(g.reach), nf(g.eng), MK.rateOf(g) || "—", g.key === "general" ? "—" : g.participants != null ? nf(g.participants) : "—"]), { num: [1, 2, 3, 4, 5], empty: "No marketing logged yet." }) },
   ];
 }
 
+// ---------------------------------------------------------------- events with their marketing
+function eventCards(M, input) {
+  const groups = M.mk.byEvent.filter((g) => g.key !== "general"), mx = MK.maxes(groups);
+  const used = new Set();
+  const add = (v) => (input ? `<a class="btn tblbtn mk-ev-add noprint" href="${input.base}?${input.qs({ target: v })}#log">+ Add marketing</a>` : "");
+  const cards = M.events.map((e) => {
+    const g = groups.find((x) => x.act_id === e.act_id); if (g) used.add(g.key);
+    return { d: String(e.date), html: `<article class="mk-ev ${e.city === "Dubai" ? "dxb" : "auh"}">
+      <div class="mk-ev-top"><span class="badge">${h(e.city)} · ${h(e.category)}</span><span class="muted">${e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true)}</span></div>
+      <h3>${h(e.title)}</h3>
+      <p class="mk-n"><b>${e.participants != null ? nf(e.participants) : "—"}</b> participants${e.registrants ? ` · ${nf(e.registrants)} registered` : ""}${e.partners.length ? ` · with ${h(e.partners.join(", "))}` : ""}</p>
+      ${e.impact ? `<p class="mk-impact">${h(cut(e.impact, 320))}</p>` : ""}${g ? MK.funnel(g, mx) : ""}${add("a:" + e.act_id)}</article>` };
+  });
+  // marketing for events that aren't held WMF activations: upcoming WMF events and other events or activities
+  for (const g of groups.filter((x) => !used.has(x.key))) cards.push({ d: String(g.date), html: `<article class="mk-ev ${g.other ? "other" : g.city === "Dubai" ? "dxb" : "auh"}">
+      <div class="mk-ev-top"><span class="badge">${g.other ? "Other event / activity" : h(g.city || "WMF") + " · WMF event"}</span><span class="muted">${g.date ? fmtDate(g.date) : ""}</span></div>
+      <h3>${h(g.title)}</h3>${MK.funnel(g, mx)}${add(g.other ? "o" : g.act_id ? "a:" + g.act_id : "e:" + g.actions[0].activity_id)}</article>` });
+  cards.sort((a, b) => b.d.localeCompare(a.d));
+  return cards.length ? `<div class="mk-events">${cards.map((c) => c.html).join("")}</div>` : "";
+}
+
 // ---------------------------------------------------------------- page
-function pageHtml(M, { periodNav, excelHref, staff }) {
+function pageHtml(M, { periodNav, excelHref, staff, input }) {
   const tiles = [["Ride participation", nf(M.ride.total), `AUH ${nf(M.ride.auh)} · DXB ${nf(M.ride.dxb)}`], ["Rides held", nf(M.ride.sessions), M.ride.avg ? `${Math.round(M.ride.avg)} riders per ride on average` : ""],
-    ["Events", nf(M.ev.count), M.ev.partners ? `${M.ev.partners} partner${M.ev.partners === 1 ? "" : "s"}` : ""], ["Event participation", nf(M.ev.people), M.ev.count ? `${Math.round(M.ev.people / M.ev.count)} per event on average` : ""]];
+    ["Events", nf(M.ev.count), M.ev.partners ? `${M.ev.partners} partner${M.ev.partners === 1 ? "" : "s"}` : ""], ["Event participation", nf(M.ev.people), M.ev.count ? `${Math.round(M.ev.people / M.ev.count)} per event on average` : ""],
+    ["Marketing reach", nf(M.mk.totals.reach), M.mk.totals.actions ? `${nf(M.mk.totals.actions)} posts · ${nf(M.mk.totals.eng)} engagements` : "Nothing logged yet"]];
   const chart = columns({ categories: M.rideMonths.map((x) => x.m), series: [{ name: "Abu Dhabi", color: AUH, values: M.rideMonths.map((x) => x.auh) }, { name: "Dubai", color: DXB, values: M.rideMonths.map((x) => x.dxb) }],
     height: 210, label: "Ride participation by month", short: (m) => monLabel(m) });
   const maxR = Math.max(1, ...M.rides.map((r) => r.attendance));
-  return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing report</div><h2 class="ov-title">${h(M.label)}</h2>
-      <p class="lead" style="margin:4px 0 0">Ride participation, events and their impact, Abu Dhabi and Dubai.</p></div>
+  return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing</div><h2 class="ov-title">${h(M.label)}</h2>
+      <p class="lead" style="margin:4px 0 0">Rides, events and marketing in one place: what was posted, how far it reached, and who came.</p></div>
       <div class="mk-actions">${periodNav}<a class="btn primary" href="${h(excelHref)}">Download Excel</a></div></section>
     ${detailTiles(tiles.map(([l, v, n], i) => ({ label: l, value: v, note: h(n), detail: details(M)[i] })))}
     <div class="grid">
@@ -66,12 +90,10 @@ function pageHtml(M, { periodNav, excelHref, staff }) {
       <section class="card c5"><h2>Rides</h2><p class="lead">Participation per ride series this period.</p>
         ${M.rides.length ? `<div class="hbars">${M.rides.slice(0, 8).map((r) => `<div class="hbar"><span class="hbar-l">${h(r.name)} <span class="muted">${r.city === "Dubai" ? "DXB" : "AUH"}</span></span>
           <span class="hbar-t"><span style="width:${(r.attendance / maxR) * 100}%;background:${r.city === "Dubai" ? DXB : AUH}"></span></span><span class="hbar-v">${nf(r.attendance)} <span class="muted">· ${r.sessions} ride${r.sessions === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : '<p class="muted">No rides in this period.</p>'}</section>
-      <section class="card c12"><h2>Events &amp; impact</h2><p class="lead">${M.ev.count ? `${nf(M.ev.count)} event${M.ev.count === 1 ? "" : "s"}, ${nf(M.ev.people)} participants.` : "No events recorded for this period."}</p>
-        <div class="mk-events">${M.events.map((e) => `<article class="mk-ev ${e.city === "Dubai" ? "dxb" : "auh"}">
-          <div class="mk-ev-top"><span class="badge">${h(e.city)} · ${h(e.category)}</span><span class="muted">${e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true)}</span></div>
-          <h3>${h(e.title)}</h3>
-          <p class="mk-n"><b>${e.participants != null ? nf(e.participants) : "—"}</b> participants${e.registrants ? ` · ${nf(e.registrants)} registered` : ""}${e.partners.length ? ` · with ${h(e.partners.join(", "))}` : ""}</p>
-          ${e.impact ? `<p class="mk-impact">${h(cut(e.impact, 320))}</p>` : ""}</article>`).join("")}</div></section>
+      <section class="card c12"><h2>Events &amp; impact</h2><p class="lead">${M.ev.count ? `${nf(M.ev.count)} event${M.ev.count === 1 ? "" : "s"}, ${nf(M.ev.people)} participants.` : "No WMF events recorded for this period."}${input ? " Use “+ Add marketing” on an event to log a post for it." : ""}</p>
+        ${MK.totalsHtml(M.mk)}
+        ${eventCards(M, input)}${MK.generalLine(M.mk)}</section>
+      ${input ? MK.formHtml(input) + MK.logHtml(M.mk, { base: input.base, qs: input.qs, label: M.label }) : ""}
     </div>
     <p class="muted" style="font-size:13px">Figures from the WMF Community System${staff ? "" : " · shared view, no personal data"}.</p>`;
 }
@@ -157,6 +179,18 @@ async function workbook(M) {
   es.getRow(1).height = 22;
   es.eachRow((r, i) => { if (i === 1) return; r.eachCell((c) => { c.font = { name: F, size: 10 }; c.alignment = { vertical: "top", wrapText: true }; c.border = border; }); if (i % 2 === 0) r.eachCell((c) => { c.fill = fill(CARD); }); });
 
+  // ----- Marketing: per event, then every post
+  const ms = wb.addWorksheet("Marketing", { views: [{ state: "frozen", ySplit: 1, showGridLines: false }] });
+  ms.columns = [{ header: "Event", key: "title", width: 34 }, { header: "Date", key: "date", width: 13 }, { header: "Posts", key: "posts", width: 9 }, { header: "Channels", key: "ch", width: 26 },
+    { header: "Reach", key: "reach", width: 11 }, { header: "Engagements", key: "eng", width: 13 }, { header: "Engagement rate", key: "rate", width: 15 }, { header: "Registered", key: "reg", width: 11 }, { header: "Came", key: "came", width: 9 }];
+  for (const g of M.mk.byEvent) ms.addRow({ title: g.title + (g.other ? " (other event)" : ""), date: g.date ? fmtDate(g.date) : "", posts: g.actions.length, ch: [...g.channels].join(", "), reach: g.reach, eng: g.eng,
+    rate: MK.rateOf(g) || "", reg: g.key === "general" ? null : g.registrants, came: g.key === "general" ? null : g.participants });
+  ms.addRow({});
+  ms.addRow({ title: "Every post" }).font = { name: F, size: 11, bold: true };
+  ms.addRow({ title: "Event", date: "Posted", posts: "Channel", ch: "Type", reach: "Reach", eng: "Engagements", rate: "Clicks", reg: "Sign-ups" }).font = { name: F, size: 10, bold: true, color: { argb: MUT } };
+  for (const r of M.mk.rows) ms.addRow({ title: r.ev_title || "General / brand", date: fmtDate(r.posted), posts: r.channel, ch: r.kind + (r.title ? " · " + r.title : ""), reach: r.reach, eng: r.engagements, rate: r.clicks, reg: r.signups });
+  ms.getRow(1).eachCell((c) => { c.font = { name: F, size: 10, bold: true, color: { argb: "FFFFFFFF" } }; c.fill = fill(BLUE); });
+
   // ----- Ride participation (plain table, easy to reuse)
   const rs = wb.addWorksheet("Rides by month", { views: [{ state: "frozen", ySplit: 1 }] });
   rs.columns = [{ header: "Month", key: "m", width: 16 }, { header: "Abu Dhabi", key: "auh", width: 12 }, { header: "Dubai", key: "dxb", width: 12 }, { header: "Total", key: "total", width: 12 }];
@@ -178,6 +212,13 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     return `<span class="seg">${Object.keys(KIND).map((t) => `<a href="${base}?period=${t}" class="${per.type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
       <form method="get" action="${base}" style="margin:0"><input type="hidden" name="period" value="${per.type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form>`;
   }
+  const backQs = (req) => new URLSearchParams({ period: req.query.period || "month", ...(req.query.p ? { p: req.query.p } : {}) }).toString();
+  /** What the add-marketing form needs on this page. */
+  const inputOf = async (req, per, base) => {
+    const q = (o) => new URLSearchParams({ period: per.type, p: per.p, ...o }).toString();
+    const pre = String(req.query.target || "").slice(0, 90);
+    return { base, qs: q, tg: await MK.targets(), editing: await MK.editRow(req.query.edit), pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${base}?${q({})}#log` };
+  };
   const sendXlsx = async (res, per) => {
     const M = await marketingData(per);
     res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -188,19 +229,26 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
   app.get("/report/marketing", READ, wrap(async (req, res) => {
     const per = periodOf(req.query);
     const M = await marketingData(per);
+    const canEdit = req.session.user.role !== "viewer";
+    const input = canEdit ? await inputOf(req, per, "/report/marketing") : null;
     const links = (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY active DESC, created_at DESC")).rows;
     const share = links.map((l) => {
       const url = `${baseOf(req)}/m/${l.token}`;
       return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
         ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
-          <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Hi ${l.label}, here's the WMF report for marketing: rides, events and impact, with an Excel download. Choose the month at the top: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a>
-          <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing report")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's the WMF report: rides, events and their impact. You can choose the month at the top and download it as Excel.\n\n${url}`)}">Email</a></div>` : ""}</div>
+          <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Hi ${l.label}, here's the WMF marketing page: rides, events and their impact. Add each post or campaign with its reach and engagement there, and it shows next to the event's attendance: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a>
+          <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF marketing")}&body=${encodeURIComponent(`Hi ${l.label},\n\nHere's the WMF marketing page: rides, events and their impact.\n\nFor each post or campaign, press “+ Add marketing” on the event (or choose “Other event or activity”) and add the reach and engagement. It shows next to the event's attendance, and management sees it in their report.\n\nYou can choose the month at the top and download it as Excel.\n\n${url}`)}">Email</a></div>` : ""}</div>
         ${req.session.user.role !== "viewer" ? `<form method="post" action="/report/marketing/links/${l.id}"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form>` : ""}</div>`;
     }).join("");
-    res.send(page(req, "Marketing report", `${pageHtml(M, { periodNav: periodNav(per, "/report/marketing"), excelHref: `/report/marketing.xlsx?${qs(per)}`, staff: true })}
-      ${req.session.user.role !== "viewer" ? `<section class="card noprint"><h2>Share with marketing</h2><p class="lead">A view-only link to this page: ride participation, events and impact only. No names or contact details. They can pick the month and download the Excel.</p>
+    res.send(page(req, "Marketing", `${pageHtml(M, { periodNav: periodNav(per, "/report/marketing"), excelHref: `/report/marketing.xlsx?${qs(per)}`, staff: true, input })}
+      ${canEdit ? `<section class="card noprint"><h2>Link for marketing</h2><p class="lead">One link for marketing: they see this page (rides, events and impact, no names) and add their posts and results. Management sees it in their report.</p>
         ${share}<form class="inline-form" method="post" action="/report/marketing/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Marketing" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></section>` : ""}`,
     { active: "/report/marketing" }));
+  }));
+  app.post("/report/marketing", STAFF, wrap(async (req, res) => {
+    if (req.query.remove) await MK.remove(req, actor(req)); else await MK.save(req, actor(req), null);
+    setFlash(req, "ok", req.query.remove ? "Removed." : "Saved.");
+    res.redirect(303, "/report/marketing?" + backQs(req) + "#log");
   }));
   app.get("/report/marketing.xlsx", READ, wrap(async (req, res) => sendXlsx(res, periodOf(req.query))));
   app.post("/report/marketing/links", STAFF, wrap(async (req, res) => {
@@ -224,7 +272,14 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), base = `/m/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF report", pageHtml(await marketingData(per), { periodNav: periodNav(per, base), excelHref: `${base}/excel?${qs(per)}` }), { active: "/wmf" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF marketing", pageHtml(await marketingData(per), { periodNav: periodNav(per, base), excelHref: `${base}/excel?${qs(per)}`, input: await inputOf(req, per, base) }), { active: "/wmf" }));
+  }));
+  app.post("/m/:token", limit("reportlinkpost", 200, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkOf(req.params.token); if (!l) return closed(req, res);
+    const by = "Marketing link: " + l.label;
+    if (req.query.remove) await MK.remove(req, by); else await MK.save(req, by, l.id);
+    setFlash(req, "ok", req.query.remove ? "Removed." : "Saved. Thank you!");
+    res.redirect(303, `/m/${encodeURIComponent(l.token)}?` + backQs(req) + "#log");
   }));
   app.get("/m/:token/excel", limit("reportlink", 120, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);

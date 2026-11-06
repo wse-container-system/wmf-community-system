@@ -487,3 +487,11 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .mi-t { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; } .mi-t i { display: block; height: 100%; border-radius: 5px; }
 .mi-bar b { text-align: right; font-variant-numeric: tabular-nums; }
 .mi-k { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }
+/* marketing on the Marketing page */
+.mk-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; }
+.mk-form .mk-wide { grid-column: 1 / -1; }
+.mk-other { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.mk-other[hidden] { display: none; }
+.mk-ev .mi-bar { grid-template-columns: 86px 1fr 56px; }
+.mk-ev.other { border-left-color: #9b7be0; }
+.mk-ev-add { justify-self: start; font-size: 13px; }
