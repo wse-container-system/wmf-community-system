@@ -9,12 +9,15 @@ const STAFF = ["admin", "coordinator"], ALL = ["admin", "coordinator", "viewer",
  * A user limited to one corporate partner (users.company) only sees the Corporate reports.
  */
 const SECTIONS = [
-  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|report|dubai)(\/|$)/, links: [
+  { key: "reports", label: "Reports", home: "/report/management", roles: ["admin", "coordinator", "viewer"], scoped: false, match: /^\/report(\/|\.|$)/, links: [
+    ["/report/management", "Management", ["admin", "coordinator", "viewer"]], ["/report", "Performance report", ["admin", "coordinator", "viewer"]],
+    ["/report/marketing", "Marketing", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Corporate report", ["admin", "coordinator", "viewer"]]] },
+  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
-    ["/corporate", "Dashboard", ALL], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
+    ["/corporate", "Dashboard", ALL], ["/corporate/rides", "Rides", STAFF], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
     ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department/schedule", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
     ["/department/schedule", "Schedule", STAFF], ["/department/leave", "Leave", STAFF], ["/department/staff", "Team", ["admin"]], ["/department/share", "Share", ["admin"]]] },
@@ -41,7 +44,7 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true, b
     ? `<picture class="brand-logo"><source srcset="/brand/wmf-logo-dark.png" media="(prefers-color-scheme: dark)"><img src="/brand/wmf-logo.png" alt="WMN Moving FWD, powered by Aurora" width="640" height="142"></picture>
        ${user || brandTitle ? `<div class="brand-name"><h1>Community System</h1></div>` : ""}`
     : `<span class="cd-mark" aria-hidden="true"><svg viewBox="0 0 40 40" width="40" height="40"><circle cx="11" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="29" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M11 26 L18 13 L26 13 M18 13 L23 26 L29 26 M24 9 h5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-       <div class="brand-name"><h1>Cycling Development</h1><p class="sub">${h(cur ? cur.label === "WMF" ? "WMN Moving FWD" : cur.label === "Corporate" ? "Corporate Cycling Programme" : "Department admin" : sec === "admin" ? "Administration" : "Department hub")}</p></div>`;
+       <div class="brand-name"><h1>Cycling Development</h1><p class="sub">${h(cur ? cur.label === "WMF" ? "WMN Moving FWD" : cur.label === "Corporate" ? "Corporate Cycling Programme" : cur.label === "Reports" ? "WMF & Corporate performance" : "Department admin" : sec === "admin" ? "Administration" : "Department hub")}</p></div>`;
   const fl = flash ? `<div class="flash ${h(flash.type || "info")}" role="status">${h(flash.text)}</div>` : "";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">

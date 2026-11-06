@@ -165,6 +165,9 @@ app.get("/", need(), wrap(async (req, res) => {
       <a class="hub-card band-corp" href="/corporate"><span class="eyebrow">Corporate programme</span><h3>Corporate Cycling</h3>
         <div class="stats">${stat(K.rideSessions, "rides held")}${stat(K.attendance, "total attendance")}${stat(K.active, "active riders")}</div>
         <p class="muted" style="margin:0;font-size:14px">L'IMAD, NMDC and Aurora: QR check-in, attendance, events, reports for sponsors.</p></a>
+      ${!u.company && ["admin", "coordinator", "viewer"].includes(u.role) ? `<a class="hub-card band-rep" href="/report/management"><span class="eyebrow">WMF &amp; Corporate performance</span><h3>Reports</h3>
+        <div class="stats">${stat(Number(W.rides || 0) + Number(K.attendance || 0), "participations this year")}</div>
+        <p class="muted" style="margin:0;font-size:14px">Management one-pager and dashboard, full performance report, marketing report, corporate report. Monthly, quarterly, annual.</p></a>` : ""}
       ${isStaff ? `<a class="hub-card band-dept" href="/department/schedule"><span class="eyebrow">Department admin</span><h3>Cycling Development team</h3>
         ${D ? `<div class="stats">${stat(D.staff, "team members")}${stat(D.inn, "in today")}${stat(D.pending, "leave requests waiting")}</div>` : ""}
         <p class="muted" style="margin:0;font-size:14px">${u.role === "admin" ? "Team schedule, leave plans and availability, monthly export for HR." : me && me.rows[0] ? "Enter your schedule and leave plans." : "Your attendance and leave (ask an administrator to add you to the team list)."}</p></a>` : ""}

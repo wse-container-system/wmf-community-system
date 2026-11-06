@@ -238,7 +238,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
           ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details></section>` : ""}
-      ${onePage(M)}`, { active: "/report" }));
+      ${onePage(M)}`, { active: "/report/management" }));
   }));
   app.post("/report/management/links", STAFF, wrap(async (req, res) => {
     const label = require("./rules").clean(req.body.label).slice(0, 60);
@@ -259,7 +259,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), M = await mgmtData(per), b = `/g/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${onePage(M)}`, { active: "/report" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${onePage(M)}`, { active: "/wmf" }));
   }));
   app.get("/g/:token/pptx", limit("mgmtlink", 150, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
