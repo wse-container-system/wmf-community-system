@@ -533,4 +533,33 @@ test("cycling development hub", async (t) => {
     r = await admin("/rides/checkin", { method: "POST", form: { memberId: "Uniquename", date, activityId: "RIDE-WEDNESDAY-SOCIAL", back } });
     assert.match(r.location, /find=Uniquename/, "several matches: shows the list");
   });
+
+  await t.test("WMF: usual-rider check-in shows on the same ride; Rides page; management link", async () => {
+    const R2 = require("../src/rules");
+    // an imported "Wednesday Ride" record and a check-in from the ride page land on one ride and one count
+    const wed = (() => { let d = today; while (R2.weekdayOf(d) !== "Wednesday") d = E.helpers.addDays(d, -1); return d; })();
+    const m1 = await tx((c) => R2.createMember(c, { full_name: "Imported Rider", email: "imp@test.local", waiver_consent: true }, "t", "t"));
+    const m2 = await tx((c) => R2.createMember(c, { full_name: "Late Rider", email: "late@test.local", waiver_consent: true }, "t", "t"));
+    await pool.query(`INSERT INTO participation (record_id, record_date, record_type, activity_id, activity_name, activity_type, status, member_id, source, dedupe_key)
+      VALUES ('IMP-W1', $1, 'Attendance', 'FORM-WED', 'Wednesday Ride', 'Community Ride', 'Attended', $2, 'Imported form', 'imp-w1')`, [wed + " 18:00:00", m1.member_id]);
+    const listPage = ok200(await admin("/rides?days=30"), "rides list").text;
+    const link = new RegExp(`/rides/${wed}/([^"]+)"`).exec(listPage);
+    assert.ok(link, "the Wednesday ride is listed"); assert.equal(decodeURIComponent(link[1]), "RIDE-WEDNESDAY-SOCIAL");
+    await admin("/rides/checkin", { method: "POST", form: { memberId: m2.member_id, date: wed, activityId: "RIDE-WEDNESDAY-SOCIAL", back: `/rides/${wed}/RIDE-WEDNESDAY-SOCIAL` } });
+    const pg = ok200(await admin(`/rides/${wed}/RIDE-WEDNESDAY-SOCIAL`), "ride page").text;
+    assert.match(pg, /Imported Rider/); assert.match(pg, /Late Rider/);
+    // Rides page, both cities
+    for (const c of ["auh", "dxb"]) assert.match(ok200(await admin(`/wmf/rides?city=${c}&period=quarter`), "rides " + c).text, /Every ride/);
+    // management dashboard + share link
+    assert.match(ok200(await admin("/report/management?period=year"), "mgmt").text, /Key execution wins/);
+    await admin("/report/management/links", { method: "POST", form: { label: "Management" } });
+    const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'management'")).rows[0];
+    const pub = client();
+    const g = ok200(await pub(`/g/${l.token}?period=quarter`), "management link").text;
+    assert.match(g, /Key execution misses/); assert.doesNotMatch(g, /For the team|@test\.local/);
+    assert.equal((await pub(`/g/${l.token}/pptx?period=year`, { raw: true })).status, 200);
+    assert.equal((await pub(`/m/${l.token}`)).status, 404, "a management link isn't a marketing link");
+    await admin(`/report/management/links/${l.id}`, { method: "POST", form: { active: "0" } });
+    assert.equal((await pub(`/g/${l.token}`)).status, 404);
+  });
 });

@@ -36,6 +36,8 @@ async function loadRides(from, to) {
     if (named && R.weekdayOf(date) !== named[1]) {
       for (let i = 1; i <= 6; i++) { const d = H.addDays(date, -i); if (R.weekdayOf(d) === named[1]) { date = d; late = true; break; } }
     }
+    // an imported "Wednesday Ride" and the app's "Wednesday Social" on the same day are the same ride: one list, one count
+    if (s.key.startsWith("S:") && named) { const k = activityForKey(s.key, date, core); if (coreById.has(k)) { s.key = k; s.name = coreById.get(k).name; } }
     out.push({ ...r, date, late, key: s.key, ride: s.name, person: r.merged_into || r.member_id || "e:" + R.normEmail(r.member_email) });
   }
   return { rows: out, core, coreById };
@@ -96,7 +98,7 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
       <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th class="n">Checked in</th><th class="n">Usual riders not checked in</th><th></th></tr></thead><tbody>
       ${list.map((s) => `<tr><td>${fmtDate(s.date)} <span class="muted">${R.weekdayOf(s.date).slice(0, 3)}</span></td><td>${h(s.ride)}</td><td class="n"><b>${s.people.size}</b></td>
         <td class="n">${s.missing ? `<span class="badge warn">${s.missing}</span>` : `<span class="muted">0</span>`}</td><td><a class="btn tblbtn" href="/rides/${s.date}/${encodeURIComponent(s.key)}">Open</a></td></tr>`).join("") || `<tr><td colspan="5" class="muted">No ride check-ins in this period.</td></tr>`}
-      </tbody></table></div></section>`, { active: "/activities" }));
+      </tbody></table></div></section>`, { active: "/wmf/rides" }));
   }));
 
   function regularsMissing(rows, date, present) {
@@ -144,7 +146,7 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
           <td>${canAdd && m.memberId ? `<form method="post" action="/rides/checkin"><input type="hidden" name="memberId" value="${h(m.memberId)}"><input type="hidden" name="date" value="${h(date)}"><input type="hidden" name="activityId" value="${h(actId)}"><input type="hidden" name="back" value="/rides/${h(date)}/${h(encodeURIComponent(key))}"><button class="btn tblbtn">They were there: check in</button></form>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Everyone who usually comes was checked in.</td></tr>`}
         </tbody></table></div>
 
-      </section>`, { active: "/activities" }));
+      </section>`, { active: "/wmf/rides" }));
   }));
 
   app.post("/rides/checkin", STAFF, wrap(async (req, res) => {

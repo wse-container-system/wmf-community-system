@@ -124,7 +124,7 @@ module.exports = function leadRides(app, { need, page, setFlash, actor, wrap, li
           <td><div class="lr-thumbs">${r.photo_ids.map((p) => `<a href="/dubai/photo/${p}" target="_blank" rel="noopener"><img src="/dubai/photo/${p}" alt="Ride photo" loading="lazy"></a>`).join("")}</div></td>
           <td class="muted">${h(r.label || r.entered_by || "")}</td>
           <td><form method="post" action="/dubai/rides/${r.id}/delete" style="margin:0"><button class="btn tblbtn danger" data-confirm="Delete this ride and its photos?">Delete</button></form></td></tr>`).join("") || `<tr><td colspan="6" class="muted">Nothing yet.</td></tr>`}
-        </tbody></table></div></section></div>`, { active: "/dubai" }));
+        </tbody></table></div></section></div>`, { active: "/wmf/rides" }));
   }));
   app.post("/dubai/links", STAFF, wrap(async (req, res) => {
     const label = R.clean(req.body.label).slice(0, 60);

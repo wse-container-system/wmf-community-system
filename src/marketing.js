@@ -174,7 +174,7 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
   app.get("/report/marketing", READ, wrap(async (req, res) => {
     const per = periodOf(req.query);
     const M = await marketingData(per);
-    const links = (await pool.query("SELECT * FROM report_links ORDER BY active DESC, created_at DESC")).rows;
+    const links = (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY active DESC, created_at DESC")).rows;
     const share = links.map((l) => {
       const url = `${baseOf(req)}/m/${l.token}`;
       return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
@@ -199,12 +199,12 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
     res.redirect("/report/marketing");
   }));
   app.post("/report/marketing/links/:id", STAFF, wrap(async (req, res) => {
-    await pool.query("UPDATE report_links SET active = $2 WHERE id = $1", [+req.params.id || 0, req.body.active === "1"]);
+    await pool.query("UPDATE report_links SET active = $2 WHERE id = $1 AND kind = 'marketing'", [+req.params.id || 0, req.body.active === "1"]);
     res.redirect("/report/marketing");
   }));
 
   // ----- the shared link (no sign-in)
-  const linkOf = async (t) => (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active", [String(t || "").slice(0, 60)])).rows[0];
+  const linkOf = async (t) => (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active AND kind = 'marketing'", [String(t || "").slice(0, 60)])).rows[0];
   const closed = (req, res) => res.status(404).send(page(req, "Report", `<section class="card"><h2>This link is switched off</h2><p class="lead">Ask the WMF team for a new one.</p></section>`, { wide: false }));
   app.get("/m/:token", limit("reportlink", 120, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
