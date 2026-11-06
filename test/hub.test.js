@@ -743,7 +743,7 @@ test("cycling development hub", async (t) => {
     const m = E.helpers.addMonths(today.slice(0, 7), -1);
     await admin("/report/management/newmembers", { method: "POST", form: { month: m, n: "10", back: `/report/management?period=month&p=${m}` } });
     const pg = ok200(await admin(`/report/management?period=month&p=${m}`), "management").text;
-    assert.match(pg, /10 new members joined/); assert.match(pg, /with 10 new in this month/, "the words use it too");
+    assert.match(pg, /New joiners<\/span><span class="val">10<|New joiners[\s\S]{0,200}>10</, "New joiners box shows the number set"); assert.match(pg, /with 10 new in this month/, "the words use it too");
     assert.match(ok200(await admin(`/report?period=month&p=${m}`), "performance").text, /New members/);
     await admin("/report/management/newmembers", { method: "POST", form: { month: m, n: "" } });
     assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'newMembersManual'")).rows[0].value[m], undefined, "back to the app's count");
