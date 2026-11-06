@@ -131,7 +131,8 @@ async function reportData(per) {
   if (wins.length < 3 && k.newMembers) wins.push({ big: `+${nf(k.newMembers)} members`, text: `Joined the community in ${per.label}` });
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
-  return { sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  const season = await require("./seasonsurvey").reportSurvey().catch(() => null);
+  return { season, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages
@@ -212,6 +213,16 @@ function slides(D) {
       ${tileH("Would join again", pctOf(sv.again.Yes || 0, sv.n) + "%", sv.again.Maybe ? `${sv.again.Maybe} maybe` : "")}${tileH("First WMF event", nf(sv.first), "of those who answered")}</div>
       <div class="rp-two"><div class="rp-box"><span class="rp-cap">They enjoyed</span><ul class="rp-q">${sv.liked.slice(0, 3).map((t) => `<li>“${h(cut(t, 130))}”</li>`).join("") || "<li>—</li>"}</ul></div>
         <div class="rp-box"><span class="rp-cap">To improve</span><ul class="rp-q">${sv.improve.slice(0, 3).map((t) => `<li>“${h(cut(t, 130))}”</li>`).join("") || "<li>—</li>"}</ul></div></div>`));
+  }
+
+  if (D.season) {
+    const S = D.season, f1 = (x) => (x == null ? "—" : x.toFixed(1));
+    out.push(slide("What the community said", S.title, `<div class="rp-tiles4">${tileH("Answers", nf(S.responses), "end-of-season survey")}${tileH("Organisation", f1(S.org) + " / 5", S.prev && S.prev.org != null ? `${S.prev.label}: ${f1(S.prev.org)}` : "")}
+      ${tileH("Coaches", f1(S.coach) + " / 5", "")}${tileH("Ride every week", S.weekly != null ? Math.round(S.weekly * 100) + "%" : "—", "")}</div>
+      <div class="rp-two"><div class="rp-box"><span class="rp-cap">Most wanted again</span><ul class="rp-q">${S.again.map(([k, n]) => `<li>${h(k)} (${n})</li>`).join("") || "<li>—</li>"}</ul>
+          <span class="rp-cap">They ask for</span><ul class="rp-q">${S.asks.map((a) => `<li>${h(a.name)} (${a.n})</li>`).join("") || "<li>—</li>"}</ul></div>
+        <div class="rp-box"><span class="rp-cap">What holds them back</span><p>${S.barrier ? `${h(S.barrier[0])} (${S.barrier[1]} of ${S.responses})` : "—"}</p>
+          ${S.focus ? `<span class="rp-cap">Our focus</span><p>${h(cut(S.focus, 260))}</p>` : ""}${S.quote ? `<ul class="rp-q"><li>“${h(cut(S.quote, 160))}”</li></ul>` : ""}</div></div>`));
   }
 
   out.push(slide("Corporate program", "Corporate programs", D.corp.length ? `<div class="rp-cards three">${D.corp.map((c) => `<article class="rp-card corp"><h3>${h(c.name)}</h3>
@@ -371,6 +382,18 @@ async function pptx(D) {
       .forEach(([l, v, sub], i) => tile(s, 0.7 + i * 3.02, 1.6, 2.85, l, v, sub));
     s.addText(sv.liked.slice(0, 3).map((t) => ({ text: `“${cut(t, 140)}”\n`, options: { fontSize: 12, italic: true } })), { x: 0.7, y: 3.6, w: 5.9, h: 2.8, fontFace: BF, color: INK, valign: "top" });
     s.addText(sv.improve.slice(0, 3).map((t) => ({ text: `“${cut(t, 140)}”\n`, options: { fontSize: 12, italic: true } })), { x: 6.85, y: 3.6, w: 5.9, h: 2.8, fontFace: BF, color: INK, valign: "top" });
+  }
+
+  // end-of-season survey
+  if (D.season) {
+    const S = D.season, f1 = (x) => (x == null ? "—" : x.toFixed(1));
+    s = base("What the community said", S.title);
+    [["Answers", nf(S.responses), "end-of-season survey"], ["Organisation", f1(S.org) + " / 5", S.prev && S.prev.org != null ? `${S.prev.label}: ${f1(S.prev.org)}` : ""], ["Coaches", f1(S.coach) + " / 5", ""], ["Ride every week", S.weekly != null ? Math.round(S.weekly * 100) + "%" : "—", ""]]
+      .forEach(([l, v, sub], i) => tile(s, 0.7 + i * 3.02, 1.6, 2.85, l, v, sub));
+    const para = (cap, items) => [{ text: cap + "\n", options: { bold: true, fontSize: 11, color: MUT } }, ...items.map((t) => ({ text: t + "\n", options: { fontSize: 13 } }))];
+    s.addText([...para("Most wanted again", S.again.map(([k, n]) => `${k} (${n})`)), ...para("They ask for", S.asks.map((a) => `${a.name} (${a.n})`))], { x: 0.7, y: 3.6, w: 5.9, h: 2.8, fontFace: BF, color: INK, valign: "top" });
+    s.addText([...para("What holds them back", [S.barrier ? `${S.barrier[0]} (${S.barrier[1]} of ${S.responses})` : "—"]), ...(S.focus ? para("Our focus", [cut(S.focus, 220)]) : []), ...(S.quote ? [{ text: `“${cut(S.quote, 160)}”`, options: { fontSize: 12, italic: true } }] : [])],
+      { x: 6.85, y: 3.6, w: 5.9, h: 2.8, fontFace: BF, color: INK, valign: "top" });
   }
 
   // corporate

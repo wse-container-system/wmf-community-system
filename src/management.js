@@ -88,7 +88,8 @@ async function mgmtData(per) {
     members: D.db.total, newMembers: D.k.newMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
-    community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—" };
+    community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
+    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season) };
 }
 
 // ---------------------------------------------------------------- the page (16:9, prints as one page)
@@ -116,7 +117,8 @@ function sheet(M) {
           <tr><th>Social Media Campaigns</th><td>${bullets(M.T.social, 90)}</td></tr><tr><th>Marketing Highlights</th><td>${bullets(M.T.marketing, 90)}</td></tr>
           <tr><th>Sponsor Activations</th><td>${bullets(M.T.sponsor, 90)}</td></tr><tr><th>Community Activations</th><td>${h(M.community)}</td></tr>
           <tr><th>Strava Followers</th><td><b>AUH Strava:</b> ${h(M.social.strava[0])} <span class="mg-sep">|</span> <b>DXB Strava:</b> ${h(M.social.strava[1])}</td></tr>
-          <tr><th>WhatsApp Members</th><td><b>AUH WhatsApp:</b> ${h(M.social.whatsapp[0])} <span class="mg-sep">|</span> <b>DXB WhatsApp:</b> ${h(M.social.whatsapp[1])}</td></tr></table>
+          <tr><th>WhatsApp Members</th><td><b>AUH WhatsApp:</b> ${h(M.social.whatsapp[0])} <span class="mg-sep">|</span> <b>DXB WhatsApp:</b> ${h(M.social.whatsapp[1])}</td></tr>
+          <tr><th>Community Survey</th><td>${h(cut(M.surveyLine, 160))}</td></tr></table>
         <table class="mg-t mg-collab"><thead><tr><th>Cross collaborations</th><th>Event</th><th>Comment</th></tr></thead><tbody>
           ${M.collab.map((c) => `<tr><td>${h(c.name)}</td><td>${h(c.event)}</td><td>${h(c.note)}</td></tr>`).join("") || '<tr><td colspan="3" class="mg-empty">No collaborations this period.</td></tr>'}</tbody></table>
       </div>
@@ -152,7 +154,7 @@ async function pptx(M) {
     { x: 6.75, y: 0.95, w: 6.5, colW: [1.9, 1.5, 3.1] });
   s.addText("CORPORATE RIDES & MARKETING", { x: 6.75, y: 3.05, w: 6.5, h: 0.3, fill: { color: BLUE }, color: "FFFFFF", bold: true, fontFace: F, fontSize: 9 });
   s.addTable([["Social Media Campaigns", txt(M.T.social, 90)], ["Marketing Highlights", txt(M.T.marketing, 90)], ["Sponsor Activations", txt(M.T.sponsor, 90)], ["Community Activations", M.community],
-    ["Strava Followers", `AUH Strava: ${M.social.strava[0]}   |   DXB Strava: ${M.social.strava[1]}`], ["WhatsApp Members", `AUH WhatsApp: ${M.social.whatsapp[0]}   |   DXB WhatsApp: ${M.social.whatsapp[1]}`]]
+    ["Strava Followers", `AUH Strava: ${M.social.strava[0]}   |   DXB Strava: ${M.social.strava[1]}`], ["WhatsApp Members", `AUH WhatsApp: ${M.social.whatsapp[0]}   |   DXB WhatsApp: ${M.social.whatsapp[1]}`], ["Community Survey", cut(M.surveyLine, 150)]]
     .map(([a, b]) => [cell(a, { bold: true, fill: { color: LIGHT } }), cell(b)]), { x: 6.75, y: 3.38, w: 6.5, colW: [1.7, 4.8] });
   s.addTable([["Cross collaborations", "Event", "Comment"].map(head), ...(M.collab.length ? M.collab.map((c) => [cell(c.name), cell(c.event), cell(c.note)]) : [[cell("None this period."), cell(""), cell("")]])],
     { x: 6.75, y: 5.45, w: 6.5, colW: [1.9, 1.9, 2.7] });
@@ -222,6 +224,7 @@ function dashboard(M, { nav, pdf, pptxHref }) {
         ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div>${a.note ? `<p>${h(a.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
         ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><p><span class="md-ev">${h(c.event)}</span>${c.note ? ` · ${h(c.note)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+      <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
       <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
     </div>`;

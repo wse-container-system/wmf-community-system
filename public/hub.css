@@ -495,3 +495,18 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .mk-ev .mi-bar { grid-template-columns: 86px 1fr 56px; }
 .mk-ev.other { border-left-color: #9b7be0; }
 .mk-ev-add { justify-self: start; font-size: 13px; }
+.mk-strat { margin: 0; font-size: 13.5px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, #9b7be0 9%, transparent); }
+.mk-strat b { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #7a5cc8; margin-bottom: 2px; }
+.mk-strat-f[hidden] { display: none; }
+.mk-strat-f textarea { width: 100%; }
+.ev-bars { display: grid; gap: 10px; }
+.ev-bar { display: grid; grid-template-columns: minmax(160px, 320px) 1fr minmax(150px, auto); gap: 12px; align-items: center; font-size: 14px; }
+.ev-bar-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-bar-t { position: relative; height: 16px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.ev-bar-t i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.ev-bar-v { font-variant-numeric: tabular-nums; font-size: 13px; }
+@media (max-width: 640px) { .ev-bar { grid-template-columns: 1fr; gap: 4px; } }
+.mi-tot b small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 1px; }
+.sv-dl { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; margin: 4px 0 8px; font-size: 14.5px; }
+.sv-dl dt { font-weight: 600; } .sv-dl dd { margin: 0; }
+@media (max-width: 640px) { .sv-dl { grid-template-columns: 1fr; gap: 2px; } .sv-dl dd { margin-bottom: 6px; } }

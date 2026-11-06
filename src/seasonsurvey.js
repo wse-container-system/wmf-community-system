@@ -244,6 +244,45 @@ async function load(id) {
 const pct = (x) => (x == null ? "—" : Math.round(x * 100) + "%");
 const f1 = (x) => (x == null ? "—" : x.toFixed(1));
 
+// ---------------------------------------------------------------- the survey shown in the reports
+/** The survey picked for the reports, or else the latest end-of-season survey with enough answers. */
+async function reportSurveyId() {
+  const set = (await pool.query("SELECT value FROM settings WHERE key = 'reportSurvey'")).rows[0];
+  if (set && +set.value) { const ok = (await pool.query("SELECT 1 FROM season_surveys WHERE id = $1", [+set.value])).rows[0]; if (ok) return +set.value; }
+  const r = (await pool.query(`SELECT s.id FROM season_surveys s WHERE s.season IN ('Summer','Winter') AND (SELECT count(*) FROM season_answers a WHERE a.survey_id = s.id) >= 5
+    ORDER BY s.year DESC, (s.season = 'Summer') DESC, s.id DESC LIMIT 1`)).rows[0];
+  return r ? r.id : null;
+}
+/** A short, management-ready summary: answers, ratings, what they want, what holds them back, against the same season last year. */
+async function reportSurvey() {
+  const id = await reportSurveyId(); if (!id) return null;
+  const { s, rows } = await load(id);
+  const k = kpis(s.questions, rows);
+  const themes = themesOf(s.questions, rows).filter((t) => t.n).sort((a, b) => b.n - a.n);
+  const best = k.acts.filter((a) => a.avg != null && a.joined >= 3).sort((a, b) => b.avg - a.avg || b.joined - a.joined)[0] || null;
+  const prevS = (await pool.query("SELECT id FROM season_surveys WHERE season = $1 AND year = $2 ORDER BY id DESC LIMIT 1", [s.season, s.year - 1])).rows[0];
+  let prev = null;
+  if (prevS) { const p = await load(prevS.id); const pk = kpis(p.s.questions, p.rows); prev = { label: label(p.s), responses: pk.responses, org: pk.org }; }
+  const quote = themes.flatMap((t) => t.quotes).find((q) => q.length > 30 && q.length < 220) || null;
+  return { id, title: s.title, label: label(s), season: s.season, year: s.year, focus: s.focus || "", responses: k.responses, org: k.org, coach: k.coachRel, weekly: k.weekly,
+    asks: themes.slice(0, 3).map((t) => ({ name: t.name, n: t.n })), barrier: k.barriers[0] || null, again: k.again.slice(0, 3), best, prev, quote };
+}
+/** One line for the one-page report. */
+const surveyLine = (S) => (S ? `${S.title}: ${S.responses} answers · organisation ${f1(S.org)}/5 · coaches ${f1(S.coach)}/5${S.asks[0] ? ` · top ask: ${S.asks[0].name.toLowerCase()}` : ""}` : "—");
+/** The card for the dashboards. */
+function surveyHtml(S) {
+  if (!S) return '<p class="muted">No end-of-season survey yet.</p>';
+  const d = S.prev && S.prev.org != null && S.org != null ? S.org - S.prev.org : null;
+  return `<div class="mi-tot"><div><b>${nf(S.responses)}</b><span>answers</span></div><div><b>${f1(S.org)}<small>/5</small></b><span>organisation${d != null ? ` · ${Math.abs(d) < 0.05 ? "same as" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)} vs`} ${h(S.prev.label)}` : ""}</span></div>
+      <div><b>${f1(S.coach)}<small>/5</small></b><span>coaches</span></div>${S.weekly != null ? `<div><b>${pct(S.weekly)}</b><span>ride every week</span></div>` : ""}</div>
+    <dl class="sv-dl">${S.best ? `<dt>Best rated</dt><dd>${h(S.best.name)} (${f1(S.best.avg)}/5 from ${S.best.joined})</dd>` : ""}
+      ${S.again.length ? `<dt>Most wanted again</dt><dd>${S.again.map(([k, n]) => `${h(k)} (${n})`).join(" · ")}</dd>` : ""}
+      ${S.asks.length ? `<dt>What they ask for</dt><dd>${S.asks.map((a) => `${h(a.name)} (${a.n})`).join(" · ")}</dd>` : ""}
+      ${S.barrier ? `<dt>What holds them back</dt><dd>${h(S.barrier[0])} (${S.barrier[1]} of ${S.responses})</dd>` : ""}
+      ${S.focus ? `<dt>Our focus</dt><dd>${h(S.focus)}</dd>` : ""}</dl>
+    ${S.quote ? `<p class="mk-impact">“${h(S.quote)}”</p>` : ""}`;
+}
+
 // ---------------------------------------------------------------- pages
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
@@ -395,7 +434,8 @@ module.exports = function seasonSurveys(app, { need, page, setFlash, actor, wrap
         <form method="post" action="/surveys/seasons/${s.id}/toggle" style="margin-top:8px"><button class="btn">${s.open ? "Close the survey" : "Open it again"}</button></form></section>`;
     }
     res.send(page(req, s.title, `<div class="grid">
-      <section class="card ${send ? "c7" : "c12"}"><div class="card-head"><div><h2>${h(s.title)}</h2><p class="lead">${s.source === "import" ? "Imported" : s.open ? "Open for answers" : "Closed"}${s.opened ? " · " + fmtDate(s.opened) : ""} · <a href="/surveys/seasons">All seasons</a></p></div></div>
+      <section class="card ${send ? "c7" : "c12"}"><div class="card-head"><div><h2>${h(s.title)}</h2><p class="lead">${s.source === "import" ? "Imported" : s.open ? "Open for answers" : "Closed"}${s.opened ? " · " + fmtDate(s.opened) : ""} · <a href="/surveys/seasons">All seasons</a></p></div>
+          ${(await reportSurveyId()) === s.id ? '<span class="badge good">Shown in the reports</span>' : `<form method="post" action="/surveys/seasons/${s.id}/report" style="margin:0"><button class="btn tblbtn">Show in the reports</button></form>`}</div>
         <div class="tiles"><div class="tile"><span class="lbl">Answers</span><span class="val">${nf(k.responses)}</span></div>
           <div class="tile"><span class="lbl">Organisation</span><span class="val">${f1(k.org)}</span><span class="note">out of 5</span></div>
           <div class="tile"><span class="lbl">Coaches</span><span class="val">${f1(k.coachRel)}</span><span class="note">relationship${k.coachTeach != null ? ` · teaching ${f1(k.coachTeach)}` : ""}</span></div>
@@ -405,6 +445,11 @@ module.exports = function seasonSurveys(app, { need, page, setFlash, actor, wrap
       ${send}
       <section class="card c12"><h2>Results</h2>${rows.length ? resultsHtml(s.questions, rows) : '<p class="muted">No answers yet.</p>'}
         ${s.source === "import" ? `<form method="post" action="/surveys/seasons/${s.id}/delete" style="margin-top:14px"><button class="btn danger" data-confirm="Delete this imported survey?">Delete this import</button></form>` : ""}</section></div>`, { active: "/surveys" }));
+  }));
+  app.post("/surveys/seasons/:id/report", STAFF, wrap(async (req, res) => {
+    const id = +req.params.id || 0;
+    await pool.query("INSERT INTO settings (key, value) VALUES ('reportSurvey', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(id)]);
+    setFlash(req, "ok", "This survey now shows in the management and performance reports."); res.redirect("/surveys/seasons/" + id);
   }));
   app.post("/surveys/seasons/:id/toggle", STAFF, wrap(async (req, res) => { await pool.query("UPDATE season_surveys SET open = NOT open WHERE id = $1 AND source = 'app'", [+req.params.id || 0]); res.redirect("/surveys/seasons/" + (+req.params.id || "")); }));
   app.post("/surveys/seasons/:id/focus", STAFF, wrap(async (req, res) => {
@@ -473,5 +518,8 @@ module.exports.summarise = summarise;
 module.exports.kpis = kpis;
 module.exports.themesOf = themesOf;
 module.exports.seed = seed;
+module.exports.reportSurvey = reportSurvey;
+module.exports.surveyHtml = surveyHtml;
+module.exports.surveyLine = surveyLine;
 module.exports.standardQuestions = standardQuestions;
 module.exports.DEFAULTS = DEFAULTS;
