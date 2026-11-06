@@ -38,16 +38,20 @@ async function marketingData(per) {
 }
 
 // ---------------------------------------------------------------- what each number is made of
-function details(M) {
+function details(M, input) {
+  const addHref = (v) => `${input.base}?${input.qs({ target: v })}#log`;
+  const mkOf = (e) => M.mk.byEvent.find((g) => g.act_id && g.act_id === e.act_id);
+  const title = (e) => (input ? `<a href="${h(addHref("a:" + e.act_id))}" title="Add marketing for this event">${h(e.title)}</a>` : h(e.title));
+  const mkCell = (e) => { const g = mkOf(e); const v = g ? `${nf(g.reach)} reach · ${nf(g.eng)} eng.` : "—"; return input ? `${v} <a class="btn tblbtn" href="${h(addHref("a:" + e.act_id))}">+ Add</a>` : v; };
   const pm = M.rideMonths.filter((x) => x.inPeriod);
-  const evRow = (e) => [e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true), h(e.title), e.city === "Dubai" ? "DXB" : "AUH", e.participants != null ? nf(e.participants) : "—", h(e.partners.join(", ") || "—")];
+  const evRow = (e) => [e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true), title(e), e.city === "Dubai" ? "DXB" : "AUH", e.participants != null ? nf(e.participants) : "—", h(e.partners.join(", ") || "—"), mkCell(e)];
   return [
     { title: `Ride participation · ${M.label}`, html: `<h3>By city</h3>${mini(["City", "Participation", "Share"], [["Abu Dhabi", nf(M.ride.auh), M.ride.auhShare + "%"], ["Dubai", nf(M.ride.dxb), M.ride.dxbShare + "%"]], { num: [1, 2] })}
       <h3>By ride</h3>${mini(["Ride", "City", "Rides", "Participation"], M.rides.map((r) => [h(r.name), r.city === "Dubai" ? "DXB" : "AUH", nf(r.sessions), nf(r.attendance)]), { num: [2, 3] })}
       ${pm.length > 1 ? `<h3>By month</h3>${mini(["Month", "Abu Dhabi", "Dubai", "Total"], pm.map((x) => [monLabel(x.m, true), nf(x.auh), nf(x.dxb), `<b>${nf(x.total)}</b>`]), { num: [1, 2, 3] })}` : ""}` },
     { title: `Every ride · ${M.label}`, html: mini(["Date", "City", "Ride", "Riders"], M.sessions.map((s) => [fmtDate(s.d), s.city === "Dubai" ? "DXB" : "AUH", h(s.series), nf(s.n)]), { num: [3], scroll: true }) },
-    { title: `Events · ${M.label}`, html: mini(["Date", "Event", "City", "Participants", "Partners"], M.events.map(evRow), { num: [3], scroll: true }) },
-    { title: "Event participation, biggest first", html: mini(["Date", "Event", "City", "Participants", "Partners"], [...M.events].sort((a, b) => (b.participants || 0) - (a.participants || 0)).map(evRow), { num: [3], scroll: true }) },
+    { title: `Events · ${M.label}`, html: (input ? '<p class="hint" style="margin:0 0 6px">Click an event to add its marketing: posts, reach and engagement.</p>' : "") + mini(["Date", "Event", "City", "Participants", "Partners", "Marketing"], M.events.map(evRow), { num: [3], scroll: true }) },
+    { title: "Event participation, biggest first", html: mini(["Date", "Event", "City", "Participants", "Partners", "Marketing"], [...M.events].sort((a, b) => (b.participants || 0) - (a.participants || 0)).map(evRow), { num: [3], scroll: true }) },
     { title: `Marketing · ${M.label}`, html: mini(["Event", "Posts", "Reach", "Engagements", "Rate", "Came"], M.mk.byEvent.map((g) => [h(g.title) + (g.other ? ' <span class="muted">· other event</span>' : ""), nf(g.actions.length), nf(g.reach), nf(g.eng), MK.rateOf(g) || "—", g.key === "general" ? "—" : g.participants != null ? nf(g.participants) : "—"]), { num: [1, 2, 3, 4, 5], empty: "No marketing logged yet." }) },
   ];
 }
@@ -61,7 +65,7 @@ function eventCards(M, input) {
     const g = groups.find((x) => x.act_id === e.act_id); if (g) used.add(g.key);
     return { d: String(e.date), html: `<article class="mk-ev ${e.city === "Dubai" ? "dxb" : "auh"}">
       <div class="mk-ev-top"><span class="badge">${h(e.city)} · ${h(e.category)}</span><span class="muted">${e.dated ? fmtDate(e.date) : monLabel(String(e.date).slice(0, 7), true)}</span></div>
-      <h3>${h(e.title)}</h3>
+      <h3>${input ? `<a href="${input.base}?${input.qs({ target: "a:" + e.act_id })}#log">${h(e.title)}</a>` : h(e.title)}</h3>
       <p class="mk-n"><b>${e.participants != null ? nf(e.participants) : "—"}</b> participants${e.registrants ? ` · ${nf(e.registrants)} registered` : ""}${e.partners.length ? ` · with ${h(e.partners.join(", "))}` : ""}</p>
       ${e.impact ? `<p class="mk-impact">${h(cut(e.impact, 320))}</p>` : ""}${g ? MK.funnel(g, mx) : ""}${add("a:" + e.act_id)}</article>` };
   });
@@ -84,7 +88,7 @@ function pageHtml(M, { periodNav, excelHref, staff, input }) {
   return `<section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · marketing</div><h2 class="ov-title">${h(M.label)}</h2>
       <p class="lead" style="margin:4px 0 0">Rides, events and marketing in one place: what was posted, how far it reached, and who came.</p></div>
       <div class="mk-actions">${periodNav}<a class="btn primary" href="${h(excelHref)}">Download Excel</a></div></section>
-    ${detailTiles(tiles.map(([l, v, n], i) => ({ label: l, value: v, note: h(n), detail: details(M)[i] })))}
+    ${(() => { const dd = details(M, input); return detailTiles(tiles.map(([l, v, n], i) => ({ label: l, value: v, note: h(n), detail: dd[i] }))); })()}
     <div class="grid">
       <section class="card c7"><h2>Ride participation by month</h2><p class="lead">One person at one ride is one participation. Abu Dhabi ${M.ride.auhShare}% · Dubai ${M.ride.dxbShare}% this period.</p>${chart}</section>
       <section class="card c5"><h2>Rides</h2><p class="lead">Participation per ride series this period.</p>
