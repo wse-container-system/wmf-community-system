@@ -89,6 +89,8 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
       if (o.cancel || d >= today) continue;
       if (![...sessions.values()].some((s) => s.date === d && (s.key === o.a.slot || s.ride === R.weekdayOf(d) + " Ride"))) empty.push({ date: d, title: o.a.t, slot: o.a.slot });
     }
+    const coreAll = (await pool.query("SELECT * FROM activities WHERE core")).rows;
+    const seriesOf = (x) => { const a = coreAll.find((c) => c.activity_id === x.key); return a ? R.seriesFor(a, x.date) : x.ride; };
     const list = [...sessions.values()].sort((a, b) => b.date.localeCompare(a.date) || a.ride.localeCompare(b.ride));
     res.send(page(req, "Attendance per ride", `
       <section class="card"><div class="card-head"><div><h2>Attendance per ride</h2>
@@ -98,7 +100,7 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
       <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th class="n">Checked in</th><th class="n">Usual riders not checked in</th><th></th></tr></thead><tbody>
       ${list.map((s) => `<tr><td>${fmtDate(s.date)} <span class="muted">${R.weekdayOf(s.date).slice(0, 3)}</span></td><td>${h(s.ride)}</td><td class="n"><b>${s.people.size}</b></td>
         <td class="n">${s.missing ? `<span class="badge warn">${s.missing}</span>` : `<span class="muted">0</span>`}</td><td style="white-space:nowrap"><a class="btn tblbtn" href="/rides/${s.date}/${encodeURIComponent(s.key)}">Open</a>
-          <a class="btn tblbtn" href="/wmf/rides/ride?${h(new URLSearchParams({ src: "q", d: s.date, recs: s.recs.join(","), back: `/rides?days=${days}` }).toString())}">Edit / delete</a></td></tr>`).join("") || `<tr><td colspan="5" class="muted">No ride check-ins in this period.</td></tr>`}
+          <a class="btn tblbtn" href="/wmf/rides/ride?${h(new URLSearchParams({ src: "q", d: s.date, recs: s.recs.join(","), series: seriesOf(s), city: "Abu Dhabi", back: `/rides?days=${days}` }).toString())}">Edit / delete</a></td></tr>`).join("") || `<tr><td colspan="5" class="muted">No ride check-ins in this period.</td></tr>`}
       </tbody></table></div></section>`, { active: "/wmf/rides" }));
   }));
 
@@ -131,7 +133,7 @@ module.exports = function rides(app, { need, page, setFlash, actor, wrap, checkI
     const found = canAdd && R.clean(req.query.find).length >= 2 ? await findPeople(req.query.find) : [];
     res.send(page(req, `${rideName} ${date}`, `
       <section class="card"><div class="card-head"><div><h2>${h(rideName)} · ${fmtDate(date)}</h2><p class="lead">${R.weekdayOf(date)} · ${here.length} checked in</p></div>
-        <div class="toolbar" style="margin:0">${here.length ? `<a class="btn" href="/wmf/rides/ride?${h(new URLSearchParams({ src: "q", d: date, recs: here.map((r) => r.record_id).join(","), back }).toString())}">Edit / delete this ride</a>` : ""}<a class="btn" href="/rides">All rides</a></div></div>
+        <div class="toolbar" style="margin:0">${here.length ? `<a class="btn" href="/wmf/rides/ride?${h(new URLSearchParams({ src: "q", d: date, recs: here.map((r) => r.record_id).join(","), series: R.seriesFor(coreRide || { name: rideName, activity_id: actId }, date), city: "Abu Dhabi", back }).toString())}">Edit / delete this ride</a>` : ""}<a class="btn" href="/rides">All rides</a></div></div>
         <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Time</th><th>How</th><th></th></tr></thead><tbody>
         ${here.map((r, i) => `<tr><td>${i + 1}</td><td>${r.member_id ? `<a href="/members/${encodeURIComponent(r.merged_into || r.member_id)}">${h(r.full_name || r.member_name || r.member_id)}</a> <span class="muted">${h(r.merged_into || r.member_id)}</span>` : h(r.member_name || "—")}</td>
           <td>${r.late ? `<span class="muted">sent ${fmtDate(String(r.record_date).slice(0, 10))}</span>` : String(r.record_date).slice(11, 16) === "00:00" ? "—" : String(r.record_date).slice(11, 16)}</td><td>${h(r.source)}</td>

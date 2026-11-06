@@ -435,6 +435,14 @@ CREATE TABLE IF NOT EXISTS report_links (
   id SERIAL PRIMARY KEY, token TEXT UNIQUE NOT NULL, label TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
   created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used TIMESTAMPTZ
 );
+-- where a ride took place; the default is the usual spot for that ride
+CREATE TABLE IF NOT EXISTS ride_venues (
+  ride_date DATE NOT NULL, city TEXT NOT NULL, series TEXT NOT NULL, venue TEXT NOT NULL, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (ride_date, city, series)
+);
+CREATE TABLE IF NOT EXISTS ride_venue_defaults (
+  city TEXT NOT NULL, series TEXT NOT NULL, venue TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (city, series)
+);
 -- what the team writes into a report: strategy, what's next
 CREATE TABLE IF NOT EXISTS report_notes (
   period TEXT PRIMARY KEY, strategy TEXT, next_steps TEXT, corporate TEXT, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

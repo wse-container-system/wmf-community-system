@@ -623,4 +623,21 @@ test("cycling development hub", async (t) => {
     assert.match(pg, /Thursday Sunset Ride/); assert.match(pg, /added by the team/);
     assert.match(ok200(await admin("/wmf/rides/new?city=dxb"), "form").text, /Thursday Sunset Ride/);
   });
+
+  await t.test("WMF Rides: location per ride, with a usual location", async () => {
+    const d = E.helpers.addDays(today, -1), d2 = E.helpers.addDays(today, -8);
+    await admin("/wmf/rides/new", { method: "POST", form: { city: "Dubai", d, activity: "new", name: "Qudra Loop", mode: "count", n: "9", venue: "Al Qudra Cycle Track", usual: "1", back: "/wmf/rides?city=dxb" } });
+    await admin("/wmf/rides/new", { method: "POST", form: { city: "Dubai", d: d2, activity: "new", name: "Qudra Loop", mode: "count", n: "7", venue: "", back: "/wmf/rides?city=dxb" } });
+    let pg = ok200(await admin("/wmf/rides?city=dxb&period=year"), "dxb").text;
+    assert.match(pg, /Al Qudra Cycle Track/); assert.match(pg, /\(usual\)/, "the other Qudra Loop takes the usual location");
+    assert.match(pg, /By location/);
+    // change one ride's location from its edit page
+    const id = (await pool.query("SELECT id FROM lead_rides WHERE title = 'Qudra Loop' AND ride_date = $1", [d2])).rows[0].id;
+    const ed = ok200(await admin(`/wmf/rides/ride?src=l&id=${id}&series=Qudra%20Loop&city=Dubai&back=/wmf/rides?city=dxb`), "edit").text;
+    assert.match(ed, /Save location/);
+    await admin("/wmf/rides/ride", { method: "POST", form: { src: "venue", d: d2, city: "Dubai", series: "Qudra Loop", venue: "Meydan", back: "/wmf/rides?city=dxb" } });
+    pg = ok200(await admin("/wmf/rides?city=dxb&period=year"), "dxb after").text;
+    assert.match(pg, /Meydan/);
+    assert.equal((await pool.query("SELECT venue FROM ride_venue_defaults WHERE city = 'Dubai' AND series = 'Qudra Loop'")).rows[0].venue, "Al Qudra Cycle Track", "usual stays unless ticked");
+  });
 });

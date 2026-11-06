@@ -458,3 +458,4 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 @media (max-width: 700px) { .md-dl { grid-template-columns: 1fr; } .md-dl dd { margin-bottom: 6px; } }
 .md-rides td:first-child { min-width: 170px; }
 .rd-dupe td { background: color-mix(in srgb, #e8833a 8%, transparent); }
+.rd-venue { padding-bottom: 14px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }

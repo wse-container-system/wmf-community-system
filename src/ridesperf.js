@@ -34,7 +34,26 @@ function sessions(P, city, start, end) {
   for (const s of list) s.dupe = seen.get(s.d + "|" + s.series.toLowerCase()) > 1;
   return list;
 }
-const editHref = (s, back) => `/wmf/rides/ride?${new URLSearchParams(s.src === "q" ? { src: "q", d: s.d, recs: s.recs.join(","), back } : { src: s.src, id: s.id, back })}`;
+const editHref = (s, back, city) => `/wmf/rides/ride?${new URLSearchParams({ ...(s.src === "q" ? { src: "q", d: s.d, recs: s.recs.join(",") } : { src: s.src, id: s.id }), series: s.series, city, back })}`;
+const VENUES = {
+  "Abu Dhabi": ["Al Hudayriyat Island", "Yas Marina Circuit", "Al Wathba Cycle Track", "Corniche", "Saadiyat Island", "Yas Island", "Jebel Hafeet"],
+  Dubai: ["Al Qudra Cycle Track", "Nad Al Sheba Cycle Park", "Meydan", "Dubai Autodrome", "Hatta", "Jumeirah"],
+};
+/** Suggestions: the usual places plus every place used before. */
+async function venueList(pool, city) {
+  const used = (await pool.query("SELECT DISTINCT venue FROM ride_venues WHERE city = $1 UNION SELECT venue FROM ride_venue_defaults WHERE city = $1", [city])).rows.map((r) => r.venue);
+  return [...new Set([...(VENUES[city] || []), ...used])].sort((a, b) => a.localeCompare(b));
+}
+const venueField = (list, value, id = "rdVenues") => `<input name="venue" maxlength="80" value="${h(value || "")}" list="${id}" placeholder="e.g. Al Hudayriyat Island" autocomplete="off"><datalist id="${id}">${list.map((v) => `<option value="${h(v)}">`).join("")}</datalist>`;
+/** Save where a ride was; "usual" makes it the default for that ride in that city. */
+async function saveVenue(c, { d, city, series, venue, usual, by }) {
+  venue = R.clean(venue).slice(0, 80);
+  if (!d || !city || !series) return;
+  if (!venue) { await c.query("DELETE FROM ride_venues WHERE ride_date = $1 AND city = $2 AND series = $3", [d, city, series]); return; }
+  await c.query(`INSERT INTO ride_venues (ride_date, city, series, venue, updated_by) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (ride_date, city, series) DO UPDATE SET venue = EXCLUDED.venue, updated_by = EXCLUDED.updated_by, updated_at = now()`, [d, city, series, venue, by]);
+  if (usual) await c.query(`INSERT INTO ride_venue_defaults (city, series, venue) VALUES ($1,$2,$3) ON CONFLICT (city, series) DO UPDATE SET venue = EXCLUDED.venue, updated_at = now()`, [city, series, venue]);
+}
 
 module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, actor }) {
   const READ = need("admin", "coordinator", "viewer"), STAFF = need("admin", "coordinator");
@@ -51,6 +70,8 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
         <fieldset class="rate"><legend>City</legend><div class="rate-row">${["Abu Dhabi", "Dubai"].map((c) => `<label><input type="radio" name="city" value="${c}" ${c === city ? "checked" : ""}><span>${c}</span></label>`).join("")}</div></fieldset>
         <label>Date<input type="date" name="d" value="${R.todayLocal()}" max="${R.todayLocal()}" required></label>
         <label>Ride<select name="activity" id="rdAct">${rides.map((a) => `<option value="${h(a.activity_id)}">${h(a.name)}</option>`).join("")}<option value="new">+ New ride…</option></select></label>
+        <label>Location <span class="hint">(where the ride starts)</span>${venueField(await venueList(pool, city))}</label>
+        <label class="check"><input type="checkbox" name="usual" value="1" checked> <span>Usual location for this ride</span></label>
         <label id="rdNewName">Name of the new ride <span class="hint">(it's added to the scanner and the ride lists, e.g. “Thursday Social”)</span><input name="name" maxlength="60" placeholder="e.g. Thursday Social"></label>
         <fieldset class="rate"><legend>How to count it</legend><div class="rate-row">
           <label><input type="radio" name="mode" value="names" checked><span>Check people in by name</span></label><label><input type="radio" name="mode" value="count"><span>Number of riders only</span></label></div></fieldset>
@@ -81,9 +102,11 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
       if (n == null) return fail("Enter the number of riders.");
       const id = (await pool.query("INSERT INTO lead_rides (city, ride_type, title, ride_date, participants, entered_by) VALUES ($1, 'Manual', $2, $3, $4, $5) RETURNING id", [city, act.name, d, n, by])).rows[0].id;
       await audit(pool, by, "ride.add_headcount", "lead_ride", String(id), null, { city, ride: act.name, date: d, riders: n });
+      await saveVenue(pool, { d, city, series: act.name, venue: b.venue, usual: b.usual === "1", by });
       setFlash(req, "ok", `Added ${act.name}, ${d}: ${n} riders.`);
       return res.redirect(back);
     }
+    await saveVenue(pool, { d, city, series: R.seriesFor(act, d), venue: b.venue, usual: b.usual === "1", by });
     setFlash(req, "ok", `${act.name} is ready. Find each rider by name below and tap Check in.`);
     res.redirect(`/rides/${d}/${encodeURIComponent(act.activity_id)}`);
   }));
@@ -125,7 +148,14 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
           <button class="btn danger" name="action" value="delete" data-confirm="Delete the whole ride (all ${rows.length} check-ins)?">Delete the whole ride</button><a class="btn ghost" href="${h(back)}">Back</a></form>
         <p class="hint">To add someone, use <a href="/rides">Attendance per ride</a>.</p>`;
     } else return res.redirect(back);
-    res.send(page(req, "Edit ride", `<section class="card narrow"><h2>Edit ride</h2>${body}</section>`, { active: "/wmf/rides", wide: false }));
+    const vCity = q.city === "Dubai" ? "Dubai" : "Abu Dhabi", series = R.clean(q.series).slice(0, 80);
+    const vd = q.d || (q.src === "h" ? (await pool.query("SELECT ride_date::text AS d FROM history_rides WHERE id = $1", [+q.id || 0])).rows[0]?.d : q.src === "l" ? (await pool.query("SELECT ride_date::text AS d FROM lead_rides WHERE id = $1", [+q.id || 0])).rows[0]?.d : null);
+    const cur = series && vd ? (await pool.query("SELECT venue FROM ride_venues WHERE ride_date = $1 AND city = $2 AND series = $3", [vd, vCity, series])).rows[0] : null;
+    const def = series ? (await pool.query("SELECT venue FROM ride_venue_defaults WHERE city = $1 AND series = $2", [vCity, series])).rows[0] : null;
+    const venueForm = series && vd ? `<form method="post" action="/wmf/rides/ride" class="form rd-venue"><input type="hidden" name="src" value="venue"><input type="hidden" name="d" value="${h(vd)}"><input type="hidden" name="city" value="${vCity}"><input type="hidden" name="series" value="${h(series)}"><input type="hidden" name="back" value="${h(req.originalUrl)}">
+        <label>Location${def && !cur ? ` <span class="hint">(usual: ${h(def.venue)})</span>` : ""}${venueField(await venueList(pool, vCity), cur ? cur.venue : def ? def.venue : "")}</label>
+        <div class="toolbar" style="margin:0;align-items:center"><label class="check" style="margin:0"><input type="checkbox" name="usual" value="1" ${def ? "" : "checked"}> <span>Usual location for every ${h(series)}</span></label><button class="btn">Save location</button></div></form>` : "";
+    res.send(page(req, "Edit ride", `<section class="card narrow"><h2>Edit ride${series ? ` · ${h(series)}` : ""}</h2>${venueForm}${body}</section>`, { active: "/wmf/rides", wide: false }));
   }));
   app.post("/wmf/rides/ride", STAFF, wrap(async (req, res) => {
     const b = req.body || {}, back = safeBack(b.back), del = b.action === "delete", by = actor(req);
@@ -147,6 +177,10 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
           const city = type === "Manual" && b.city ? (b.city === "Dubai" ? "Dubai" : "Abu Dhabi") : old.city;
           await c.query("UPDATE lead_rides SET ride_date = $2, ride_type = $3, title = $4, participants = $5, city = $6, updated_at = now() WHERE id = $1", [old.id, b.d, type, title, n, city]); }
         await audit(c, by, del ? "ride.delete" : "ride.update", "lead_ride", String(old.id), old, del ? null : { date: b.d, type: b.type, riders: n });
+      } else if (b.src === "venue") {
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(b.d || "") ? b.d : null;
+        await saveVenue(c, { d, city: b.city === "Dubai" ? "Dubai" : "Abu Dhabi", series: R.clean(b.series).slice(0, 80), venue: b.venue, usual: b.usual === "1", by });
+        msg = R.clean(b.venue) ? "Location saved." : "Location cleared.";
       } else if (b.src === "q" && b.action === "move") {
         const act = (await c.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'ride'", [b.activity])).rows[0];
         if (!act || !okD) { msg = "Check the date and the ride."; return; }
@@ -185,6 +219,12 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
     const cur = E.compute(P, { start: per.start, end, location: city.name }, today), k = cur.kpis;
     const prev = E.compute(P, { start: prevR.start, end: prevR.end, location: city.name }, today, { light: true }).kpis;
     const list = sessions(P, city.name, per.start, end);
+    const vMap = new Map((await pool.query("SELECT ride_date::text AS d, series, venue FROM ride_venues WHERE city = $1 AND ride_date BETWEEN $2 AND $3", [city.name, per.start, end])).rows.map((r) => [r.d + "|" + r.series, r.venue]));
+    const vDef = new Map((await pool.query("SELECT series, venue FROM ride_venue_defaults WHERE city = $1", [city.name])).rows.map((r) => [r.series, r.venue]));
+    for (const s of list) { s.venue = vMap.get(s.d + "|" + s.series) || vDef.get(s.series) || null; s.venueUsual = !vMap.has(s.d + "|" + s.series) && !!s.venue; }
+    const byVenue = new Map();
+    for (const s of list) { const k = s.venue || "Not set"; const x = byVenue.get(k) || { name: k, rides: 0, people: 0 }; x.rides++; x.people += s.n; byVenue.set(k, x); }
+    const venues = [...byVenue.values()].sort((a, b) => (a.name === "Not set") - (b.name === "Not set") || b.people - a.people);
     const rides = list.length, people = list.reduce((a, s) => a + s.n, 0), avg = rides ? people / rides : null;
     const prevList = sessions(P, city.name, prevR.start, prevR.end), prevPeople = prevList.reduce((a, s) => a + s.n, 0);
     const series = new Map();
@@ -220,13 +260,16 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
         <section class="card c5"><h2>By ride</h2>
           ${bySeries.length ? `<div class="hbars">${bySeries.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.name)}</span><span class="hbar-t"><span style="width:${(x.people / x.rides / maxS) * 100}%;background:${city.color}"></span></span>
             <span class="hbar-v"><b>${nf(Math.round(x.people / x.rides))}</b> <span class="muted">avg · ${x.rides} ride${x.rides === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : '<p class="muted">No rides.</p>'}
+          ${venues.length > 1 || (venues[0] && venues[0].name !== "Not set") ? `<h3 style="margin:14px 0 6px">By location</h3><div class="hbars">${venues.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.name)}</span><span class="hbar-t"><span style="width:${(x.people / Math.max(1, ...venues.map((v) => v.people))) * 100}%;background:${x.name === "Not set" ? "var(--line)" : city.color}"></span></span>
+            <span class="hbar-v"><b>${nf(x.people)}</b> <span class="muted">· ${x.rides} ride${x.rides === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : ""}
           <p class="hint" style="margin-top:8px">Average riders per ride. Best turnout: ${bySeries.length ? bySeries.map((x) => `${h(x.name)} ${x.best.n} (${fmtDate(x.best.d)})`).slice(0, 2).join(", ") : "—"}.</p></section>
         <section class="card c12"><div class="card-head"><div><h2>Every ride</h2>${dupes ? `<p class="lead" style="margin:0"><span class="badge warn">${dupes}</span> rides look entered twice (same day, same ride). Open one with Edit / delete to fix or remove it.</p>` : ""}</div>
           <div class="toolbar" style="margin:0">${canEdit ? `<a class="btn primary" href="/wmf/rides/new?${h(new URLSearchParams({ city: cityKey, back }).toString())}">+ Add a ride</a>` : ""}${cityKey === "auh" ? `<a class="btn" href="/rides">Attendance per ride: check people in</a>` : `<a class="btn" href="/dubai">Dubai lead link &amp; photos</a>`}</div></div>
-          <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th class="n">Riders</th><th>How it was counted</th><th></th></tr></thead><tbody>
-          ${list.map((s) => `<tr${s.dupe ? ' class="rd-dupe"' : ""}><td style="white-space:nowrap">${fmtDate(s.d)}</td><td>${h(s.series)}${s.dupe ? ' <span class="badge warn">Possible duplicate</span>' : ""}</td><td class="n"><b>${nf(s.n)}</b></td>
+          <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th>Location</th><th class="n">Riders</th><th>How it was counted</th><th></th></tr></thead><tbody>
+          ${list.map((s) => `<tr${s.dupe ? ' class="rd-dupe"' : ""}><td style="white-space:nowrap">${fmtDate(s.d)}</td><td>${h(s.series)}${s.dupe ? ' <span class="badge warn">Possible duplicate</span>' : ""}</td>
+            <td>${s.venue ? `${h(s.venue)}${s.venueUsual ? ' <span class="muted" title="The usual location for this ride">(usual)</span>' : ""}` : '<span class="muted">—</span>'}</td><td class="n"><b>${nf(s.n)}</b></td>
             <td class="muted">${s.src === "l" ? (s.manual ? "Number of riders, added by the team" : "Sent by the ride lead") : s.src === "q" ? "QR check-ins" : "Attendance records"}</td>
-            <td>${canEdit ? `<a class="btn tblbtn" href="${h(editHref(s, back))}">Edit / delete</a>` : ""}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No rides in ${h(per.label)}.</td></tr>`}
+            <td>${canEdit ? `<a class="btn tblbtn" href="${h(editHref(s, back, city.name))}">Edit / delete</a>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">No rides in ${h(per.label)}.</td></tr>`}
           </tbody></table></div></section>
       </div>`, { active: "/wmf/rides" }));
   }));
