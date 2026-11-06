@@ -34,6 +34,22 @@ function periodOf(q, today = R.todayLocal()) {
   return { ...per, key: `${type}:${per.p}`, kind: KIND[type] };
 }
 
+/** New members per month the team set by hand (settings 'newMembersManual', e.g. {"2026-10": 10}). */
+async function manualNewMembers() {
+  const r = (await pool.query("SELECT value FROM settings WHERE key = 'newMembersManual'")).rows[0];
+  return r && r.value && typeof r.value === "object" ? r.value : {};
+}
+/** New members in a range: the hand-set number for a month where there is one, the app's count for the rest. Null when no month in the range was set. */
+function newMembersIn(members, manual, start, end) {
+  const months = E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7));
+  if (!months.some((m) => manual[m] != null)) return null;
+  return months.reduce((sum, m) => {
+    if (manual[m] != null) return sum + (+manual[m] || 0);
+    const a = m + "-01" < start ? start : m + "-01", b = E.helpers.monthEnd(m) > end ? end : E.helpers.monthEnd(m);
+    return sum + members.filter((x) => { const d = String(x.firstSeen || "").slice(0, 10); return d >= a && d <= b; }).length;
+  }, 0);
+}
+
 async function reportData(per) {
   const today = R.todayLocal();
   const start = per.start, end = per.end < today ? per.end : today;
@@ -51,6 +67,12 @@ async function reportData(per) {
   const cur = E.compute(P, { start, end }, today);
   const prev = E.compute(P, { start: prevR.start, end: prevR.end }, today, { light: true }).kpis;
   const k = cur.kpis;
+  // new members the team set by hand win over the app's count (for months where the records are incomplete)
+  const manual = await manualNewMembers();
+  const fixNew = newMembersIn(data.members, manual, start, end), fixPrev = newMembersIn(data.members, manual, prevR.start, prevR.end);
+  const appNew = k.newMembers;
+  if (fixNew != null) k.newMembers = fixNew;
+  if (fixPrev != null) prev.newMembers = fixPrev;
 
   // ---- rides by city
   const city = {};
@@ -132,7 +154,7 @@ async function reportData(per) {
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
   const season = await require("./seasonsurvey").reportSurvey().catch(() => null);
-  return { season, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  return { season, newManual: fixNew != null ? { app: appNew, months: E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7)).filter((m) => manual[m] != null) } : null, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages
@@ -484,3 +506,4 @@ module.exports = function report(app, { need, page, setFlash, actor, user, wrap 
 };
 module.exports.reportData = reportData;
 module.exports.periodOf = periodOf;
+module.exports.manualNewMembers = manualNewMembers;

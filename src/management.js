@@ -198,6 +198,7 @@ function tilesOf(M) {
     { label: "Rides held", value: nf(k.rides), note: k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : "", detail: { title: `Every ride · ${M.per.label}`, html: rideList } },
     { label: "New riders", value: nf(k.fresh), note: `${nf(k.newMembers)} new members joined`,
       detail: { title: "New riders and new members", html: `${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
+        ${D.newManual ? `<p class="hint"><b>New members: ${nf(k.newMembers)}</b>, set by the team for ${D.newManual.months.map((m) => monLabel(m, true)).join(", ")} (the records show ${nf(D.newManual.app)}). The city split above is from the records.</p>` : ""}
         <p class="hint">A new rider is someone whose first WMF ride was in this period. Dubai rides counted by headcount don't record names, so their new riders aren't counted.</p>` } },
     { label: "Active members", value: nf(k.active), note: `${k.prevActive != null ? `${ch(k.active, k.prevActive)} vs before · ` : ""}${k.members ? Math.round((k.active / k.members) * 100) + "% of the community" : ""}`,
       detail: { title: "Active members", html: `${mini(["", "Active members"], [[h(M.per.label), `<b>${nf(k.active)}</b>`], ["Period before", nf(k.prevActive)], ["Whole community", nf(k.members)]], { num: [1] })}
@@ -314,6 +315,18 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
           <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
           ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details>
+        ${await (async () => { // new members by hand, for months where the records are incomplete
+          const manual = await require("./report").manualNewMembers();
+          const mon = per.type === "month" ? per.p : E.helpers.addMonths(new Date().toISOString().slice(0, 7), -1);
+          const set = Object.entries(manual).filter(([, v]) => v != null).sort((a, b) => b[0].localeCompare(a[0]));
+          return `<details id="newmem" style="margin-top:10px" ${req.query.nm ? "open" : ""}><summary><b>New members</b> <span class="muted">(set the number by hand for a month${M.D.newManual ? `: ${h(M.per.label)} uses ${nf(M.kpi.newMembers)}, the app counts ${nf(M.D.newManual.app)}` : ""})</span></summary>
+            <p class="hint" style="margin:8px 0">Use this when the records for a month are incomplete. The number you set is used everywhere in the reports; quarters and years add up the months.</p>
+            <form class="inline-form" method="post" action="/report/management/newmembers"><input type="hidden" name="back" value="/report/management?${qs(per)}">
+              <label>Month <input class="inp" type="month" name="month" value="${h(mon)}" required style="width:auto"></label>
+              <label>New members <input class="inp" name="n" inputmode="numeric" maxlength="5" value="${manual[mon] ?? ""}" style="width:90px"></label>
+              <button class="btn primary">Save</button><span class="hint">Leave empty to go back to the app's count.</span></form>
+            ${set.length ? `<ul class="log" style="margin-top:8px">${set.map(([m, v]) => `<li><span><b>${h(monLabel(m, true))}</b>: ${nf(v)} new members (set by hand)</span>
+              <form method="post" action="/report/management/newmembers" style="margin:0"><input type="hidden" name="month" value="${h(m)}"><input type="hidden" name="n" value=""><input type="hidden" name="back" value="/report/management?${qs(per)}"><button class="btn tblbtn">Use the app's count</button></form></li>`).join("")}</ul>` : ""}</details>`; })()}
         <details id="mklinks" style="margin-top:10px" ${req.query.mk ? "open" : ""}><summary><b>Marketing</b> <span class="muted">(their link to add feedback, strategy and posts per activation, and download the Excel)</span></summary>
           <p class="hint" style="margin:8px 0">Marketing gets this same report, with Community activations (feedback, strategy, numbers) and Marketing &amp; impact (posts) editable, and the Excel download. No sign-in, no member names.</p>
           ${mkLinks.map((l) => { const url = `${base}/m/${l.token}`; return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
@@ -365,6 +378,18 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const per = periodOf(req.query), M = await mgmtData(per);
     res.type("application/vnd.openxmlformats-officedocument.presentationml.presentation")
       .set("Content-Disposition", `attachment; filename="WMF-${M.W.kind}-Report-${per.p}.pptx"`).send(await pptx(M));
+  }));
+  app.post("/report/management/newmembers", STAFF, wrap(async (req, res) => {
+    const m = String(req.body.month || ""), raw = String(req.body.n ?? "").replace(/[,\s]/g, "");
+    if (/^\d{4}-\d{2}$/.test(m) && (raw === "" || /^\d{1,5}$/.test(raw))) {
+      const cur = await require("./report").manualNewMembers();
+      const before = cur[m] ?? null;
+      if (raw === "") delete cur[m]; else cur[m] = +raw;
+      await pool.query("INSERT INTO settings (key, value) VALUES ('newMembersManual', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(cur)]);
+      await require("./db").audit(pool, actor(req), "report.newmembers", "settings", m, { n: before }, { n: raw === "" ? null : +raw });
+      setFlash(req, "ok", raw === "" ? `${monLabel(m, true)}: back to the app's count.` : `${monLabel(m, true)}: ${raw} new members.`);
+    } else setFlash(req, "err", "Choose a month and enter a number.");
+    const back = String(req.body.back || ""); res.redirect((back.startsWith("/report/management?") ? back : "/report/management") + (back.includes("?") ? "&" : "?") + "nm=1#newmem");
   }));
   app.post("/report/management/notes", STAFF, wrap(async (req, res) => {
     const b = req.body || {}, key = String(b.period || "");
