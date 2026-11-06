@@ -24,8 +24,13 @@ async function targets() {
 }
 
 /** Every logged post in a period (by the event's date, or the posting date), grouped by event, with the event's results. */
+/** Marketing strategy per WMF event, keyed "a:<activation id>" or "e:<activity id>". */
+async function loadStrategies() {
+  return new Map((await pool.query("SELECT target, strategy FROM marketing_strategies")).rows.map((r) => [r.target, r.strategy]));
+}
+
 async function loadInputs({ start, end }) {
-  const rows = (await pool.query(`SELECT m.*, m.posted_on::text AS posted, m.other_date::text AS odate,
+  let rows = (await pool.query(`SELECT m.*, m.posted_on::text AS posted, m.other_date::text AS odate,
       coalesce(a.id, a2.id) AS act_id, coalesce(a.title, a2.title, ev.name, m.other_event) AS ev_title,
       coalesce(a.event_date, a.month, a2.event_date, a2.month, ev.event_date, m.other_date)::text AS ev_date,
       coalesce(a.participants, a2.participants, m.other_people) AS participants, coalesce(a.registrants, a2.registrants) AS registrants, coalesce(a.new_contacts, a2.new_contacts) AS new_contacts,
@@ -49,10 +54,16 @@ async function loadInputs({ start, end }) {
     g.actions.push(r); g.reach += r.reach || 0; g.eng += r.engagements || 0; g.clicks += r.clicks || 0; g.signups += r.signups || 0; g.channels.add(r.channel);
     groups.set(key, g);
   }
-  const byEvent = [...groups.values()].sort((a, b) => (a.key === "general") - (b.key === "general") || String(b.date).localeCompare(String(a.date)));
+  const strat = await loadStrategies();
+  for (const g of groups.values()) g.strategy = g.act_id ? strat.get("a:" + g.act_id) || "" : g.key[0] === "e" ? strat.get("e:" + g.key.slice(1)) || "" : "";
+  // reports only count WMF events and WMF brand posts; other events stay on marketing's log
+  const all = [...groups.values()].sort((a, b) => (a.key === "general") - (b.key === "general") || String(b.date).localeCompare(String(a.date)));
+  const byEvent = all.filter((g) => !g.other), others = all.filter((g) => g.other);
+  const allRows = rows;
+  rows = rows.filter((r) => !(r.other_event && !r.act_id && !r.activity_id));
   const sum = (f) => rows.reduce((s, r) => s + (r[f] || 0), 0);
   const ev = byEvent.filter((g) => g.key !== "general");
-  return { rows, byEvent, totals: { actions: rows.length, reach: sum("reach"), eng: sum("engagements"), clicks: sum("clicks"), signups: sum("signups"),
+  return { rows, allRows, byEvent, others, strategies: strat, totals: { actions: rows.length, reach: sum("reach"), eng: sum("engagements"), clicks: sum("clicks"), signups: sum("signups"),
     events: ev.length, attended: ev.reduce((s, g) => s + (g.participants || 0), 0), registered: ev.reduce((s, g) => s + (g.registrants || 0), 0) } };
 }
 
@@ -81,24 +92,31 @@ function totalsHtml(mk) {
 }
 const generalLine = (mk) => { const g = mk.byEvent.find((x) => x.key === "general"); return g ? `<p class="hint" style="margin-top:10px">General / brand posts (not for one event): ${g.actions.length} ${g.actions.length === 1 ? "post" : "posts"} · ${nf(g.reach)} reach · ${nf(g.eng)} engagements.</p>` : ""; };
 
+const cutTxt = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+/** The plan behind an event's marketing. */
+const strategyHtml = (txt, n = 400) => `<p class="mk-strat"><b>Strategy</b> ${h(cutTxt(txt, n))}</p>`;
+
 /** The results on their own (management report). */
 function impactHtml(mk) {
   if (!mk.rows.length) return '<p class="muted">No marketing logged for this period yet.</p>';
   const ev = mk.byEvent.filter((g) => g.key !== "general"), mx = maxes(ev);
-  return `${totalsHtml(mk)}${ev.length ? `<div class="mi-cards">${ev.map((g) => `<article class="mi-card"><div class="mi-h"><b>${h(g.title)}</b><span class="muted">${g.date ? fmtDate(g.date) : ""}${g.city ? " · " + h(g.city) : ""}${g.other ? " · other event" : ""}</span></div>${funnel(g, mx)}</article>`).join("")}</div>` : ""}${generalLine(mk)}`;
+  return `${totalsHtml(mk)}${ev.length ? `<div class="mi-cards">${ev.map((g) => `<article class="mi-card"><div class="mi-h"><b>${h(g.title)}</b><span class="muted">${g.date ? fmtDate(g.date) : ""}${g.city ? " · " + h(g.city) : ""}</span></div>${g.strategy ? strategyHtml(g.strategy, 220) : ""}${funnel(g, mx)}</article>`).join("")}</div>` : ""}${generalLine(mk)}`;
 }
 
 /** The add / edit form. `base` is where it posts; `pre` preselects an event. */
-function formHtml({ base, tg, editing, pre, cancelHref }) {
+function formHtml({ base, tg, editing, pre, cancelHref, strategies }) {
   const opt = (v, l, cur) => `<option value="${h(v)}" ${String(cur) === String(v) ? "selected" : ""}>${h(l)}</option>`;
   const e = editing || {};
   const cur = editing ? (e.activation_id ? "a:" + e.activation_id : e.activity_id ? "e:" + e.activity_id : e.other_event ? "o" : "") : pre || "";
   return `<section class="card c12" id="log"><h2>${editing ? "Edit a post or campaign" : pre && pre !== "o" && tg.find((t) => t.v === pre) ? `Add marketing · ${h(tg.find((t) => t.v === pre).label)}` : "Add marketing"}</h2>
-    <p class="lead">One line per post, story, email or campaign. Choose the event it was for; it then shows on that event's card with its reach and turnout.</p>
+    <p class="lead">Choose the event, add its marketing strategy, then one line per post, story, email or campaign. It shows on that event's card with its reach and turnout.</p>
     <form class="form mk-form" method="post" action="${base}${editing ? `?edit=${e.id}` : ""}">
-      <label class="mk-wide">Event<select name="target" data-mk-target><option value="">General / brand (not for one event)</option>${tg.map((t) => opt(t.v, t.label, cur)).join("")}${opt("o", "Other event or activity (not a WMF event)…", cur)}</select></label>
+      <label class="mk-wide">Event<select name="target" data-mk-target><option value="">General / brand (not for one event)</option>${tg.map((t) => `<option value="${h(t.v)}" ${t.v === cur ? "selected" : ""} data-s="${h((strategies && strategies.get(t.v)) || "")}">${h(t.label)}</option>`).join("")}${opt("o", "Other event or activity (not a WMF event)…", cur)}</select></label>
       <div class="mk-other mk-wide" ${cur === "o" ? "" : "hidden"}><label>Event or activity name<input name="other_event" maxlength="120" value="${h(e.other_event || "")}" placeholder="e.g. Abu Dhabi Tour fan zone"></label>
         <label>Date<input type="date" name="other_date" value="${h(e.odate || "")}"></label><label>People there <span class="hint">(optional)</span><input name="other_people" inputmode="numeric" value="${e.other_people ?? ""}"></label></div>
+      <label class="mk-wide mk-strat-f" ${cur === "" || cur === "o" ? "hidden" : ""}>Marketing strategy for this event <span class="hint">(the plan: aim, audience, key messages, timing; shared by all its posts)</span>
+        <textarea name="strategy" rows="3" maxlength="1200" placeholder="e.g. Build up over 2 weeks: route teaser, partner reveal, reminder stories; aim at new riders in Abu Dhabi">${h(strategies && cur ? strategies.get(cur) || "" : "")}</textarea></label>
+      <p class="hint mk-wide" style="margin:0">Post details <span class="muted">(leave empty to save the strategy only)</span></p>
       <label>Channel<select name="channel">${CHANNELS.map((c) => opt(c, c, e.channel || "Instagram")).join("")}</select></label>
       <label>Type<select name="kind">${KINDS.map((c) => opt(c, c, e.kind || "Post")).join("")}</select></label>
       <label>Date posted<input type="date" name="posted_on" value="${h(e.posted || R.todayLocal())}" max="${R.todayLocal()}" required></label>
@@ -116,12 +134,20 @@ function formHtml({ base, tg, editing, pre, cancelHref }) {
 
 /** Everything logged, with Edit / Remove. */
 function logHtml(mk, { base, qs, label }) {
-  return `<section class="card c12"><h2>Marketing logged · ${h(label)}</h2>${mini(["Posted", "Event", "Channel", "Type", "Reach", "Engagements", ""], mk.rows.map((r) => [fmtDate(r.posted), h(r.ev_title || "General / brand"), h(r.channel), h(r.kind + (r.title ? " · " + r.title : "")) + (r.url && /^https:\/\//.test(r.url) ? ` <a href="${h(r.url)}" target="_blank" rel="noopener noreferrer">↗</a>` : ""),
+  return `<section class="card c12"><h2>Marketing logged · ${h(label)}</h2>${mini(["Posted", "Event", "Channel", "Type", "Reach", "Engagements", ""], (mk.allRows || mk.rows).map((r) => [fmtDate(r.posted), h(r.ev_title || "General / brand") + (r.other_event && !r.act_id && !r.activity_id ? ' <span class="muted">· other event</span>' : ""), h(r.channel), h(r.kind + (r.title ? " · " + r.title : "")) + (r.url && /^https:\/\//.test(r.url) ? ` <a href="${h(r.url)}" target="_blank" rel="noopener noreferrer">↗</a>` : ""),
     nf(r.reach), nf(r.engagements), `<a class="btn tblbtn" href="${base}?${qs({ edit: r.id })}#log">Edit</a> <form method="post" action="${base}?${qs({ remove: r.id })}" style="display:inline;margin:0"><button class="btn tblbtn" data-confirm="Remove this entry?">Remove</button></form>`]), { num: [4, 5], empty: "Nothing logged yet." })}</section>`;
 }
 
 async function save(req, by, linkId) {
   const b = req.body || {}, t = String(b.target || "");
+  if (b.strategy != null && /^(a:\d+|e:.+)$/.test(t)) {
+    const txt = R.clean(String(b.strategy)).slice(0, 1200), key = t.slice(0, 90);
+    if (txt) await pool.query(`INSERT INTO marketing_strategies (target, strategy, updated_by) VALUES ($1,$2,$3)
+      ON CONFLICT (target) DO UPDATE SET strategy = EXCLUDED.strategy, updated_by = EXCLUDED.updated_by, updated_at = now()`, [key, txt, by]);
+    else await pool.query("DELETE FROM marketing_strategies WHERE target = $1", [key]);
+  }
+  const hasPost = ["reach", "engagements", "clicks", "signups", "title", "url", "notes"].some((f) => String(b[f] || "").trim());
+  if (!hasPost && !req.query.edit) return "strategy";
   const other = t === "o" ? R.clean(b.other_event).slice(0, 120) : "";
   const row = { activation_id: /^a:\d+$/.test(t) ? +t.slice(2) : null, activity_id: /^e:/.test(t) ? t.slice(2).slice(0, 80) : null,
     other_event: other || null, other_date: other && /^\d{4}-\d{2}-\d{2}$/.test(b.other_date || "") ? b.other_date : null, other_people: other ? int(b.other_people) : null,
@@ -149,4 +175,4 @@ module.exports = function marketingInputs(app) {
   app.get("/report/marketing/log", (req, res) => res.redirect("/report/marketing" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "") + "#log"));
   app.get("/mk/:token", (req, res) => res.redirect(`/m/${encodeURIComponent(req.params.token)}`));
 };
-Object.assign(module.exports, { loadInputs, impactHtml, campaignLines, funnel, maxes, totalsHtml, generalLine, formHtml, logHtml, save, remove, editRow, targets, rateOf });
+Object.assign(module.exports, { loadStrategies, strategyHtml, loadInputs, impactHtml, campaignLines, funnel, maxes, totalsHtml, generalLine, formHtml, logHtml, save, remove, editRow, targets, rateOf });
