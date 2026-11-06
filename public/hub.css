@@ -545,3 +545,8 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .md-mkin { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
 .md-fold { display: contents; } .md-fold > summary { list-style: none; cursor: pointer; } .md-fold > summary::-webkit-details-marker { display: none; }
 .md-fold[open] > .card { flex: 1 1 100%; order: 2; }
+.rd-new { margin-top: 12px; } .rd-new > summary { list-style: none; cursor: pointer; display: inline-block; } .rd-new > summary::-webkit-details-marker { display: none; }
+.rd-new[open] > summary { margin-bottom: 10px; } .rd-new .form { max-width: 640px; }
+.rd-fresh { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; border: 2px solid #3fb68b; }
+.rd-fresh .qrbox img { width: 180px; height: 180px; }
+@media (max-width: 640px) { .rd-fresh { grid-template-columns: 1fr; justify-items: center; text-align: center; } }

@@ -666,7 +666,7 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
 
 // ======================= rides & events (see events.js, rides.js) =======================
 require("./events")(app, { need, page, setFlash, actor, user, wrap });
-require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn });
+require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn, qrSend, qrDataUrl });
 
 // ======================= WMF monthly export =======================
 app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
