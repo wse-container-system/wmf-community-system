@@ -550,3 +550,4 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .rd-fresh { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; border: 2px solid #3fb68b; }
 .rd-fresh .qrbox img { width: 180px; height: 180px; }
 @media (max-width: 640px) { .rd-fresh { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+.mg-fields textarea { font: inherit; font-size: 14px; line-height: 1.45; }

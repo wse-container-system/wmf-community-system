@@ -749,6 +749,22 @@ test("cycling development hub", async (t) => {
     assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'newMembersManual'")).rows[0].value[m], undefined, "back to the app's count");
   });
 
+  await t.test("A manager's link can edit the words; a normal management link can't", async () => {
+    await admin("/report/management/links", { method: "POST", form: { label: "Lynsey", can_edit: "1" } });
+    const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'management' AND label = 'Lynsey'")).rows[0];
+    assert.equal(l.can_edit, true);
+    const pub = client(), g = `/g/${l.token}`, m = E.helpers.addMonths(today.slice(0, 7), -1);
+    const pg = ok200(await pub(`${g}?period=month&p=${m}`), "manager link").text;
+    assert.match(pg, /Edit the words/); assert.doesNotMatch(pg, /For the team|@test\.local/);
+    const r = await pub(`${g}/notes`, { method: "POST", form: { period: `month:${m}`, back: `${g}?period=month&p=${m}`, developments: "Written by Lynsey", wins: "", misses: "", fwd: "", social: "", marketing: "", sponsor: "", closing: "", priorities: "" } });
+    assert.equal(r.status, 303);
+    assert.match(ok200(await admin(`/report/management?period=month&p=${m}`), "team view").text, /Written by Lynsey/, "the change shows for everyone");
+    await admin(`/report/management/links/${l.id}`, { method: "POST", form: { can_edit: "0" } });
+    assert.doesNotMatch(ok200(await pub(`${g}?period=month&p=${m}`), "now view only").text, /Edit the words/);
+    assert.equal((await pub(`${g}/notes`, { method: "POST", form: { period: `month:${m}`, developments: "x" } })).status, 404, "view-only link can't save");
+    await pool.query("DELETE FROM report_notes WHERE period = $1", [`month:${m}`]);
+  });
+
   await t.test("Dashboards: every number box opens its details", async () => {
     for (const u of ["/report/management?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
       const pg = ok200(await admin(u), u).text;
