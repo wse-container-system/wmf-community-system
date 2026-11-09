@@ -462,6 +462,7 @@ CREATE TABLE IF NOT EXISTS report_notes (
 );
 ALTER TABLE report_notes ADD COLUMN IF NOT EXISTS mgmt JSONB;
 ALTER TABLE report_links ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'marketing';
+ALTER TABLE report_links ADD COLUMN IF NOT EXISTS can_edit BOOLEAN NOT NULL DEFAULT false; -- a management link that can also edit the words (e.g. for the manager)
 UPDATE report_links SET kind = 'marketing' WHERE kind = 'mkinput'; -- one marketing link: input links became marketing links
 `;
 

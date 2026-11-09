@@ -209,6 +209,24 @@ function tilesOf(M) {
 }
 
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
+/** "Edit the words" for a period: the team's box, and a manager's link that may edit. */
+function wordsEditor(M, per, { action, back, open, intro }) {
+  return `<details class="mg-edit" ${open ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
+    ${intro ? `<p class="hint" style="margin:8px 0">${intro}</p>` : ""}
+    <form class="form" method="post" action="${h(action)}"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="${h(back)}">
+      <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
+      <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>`;
+}
+/** Save the words for a period (from the team or a manager's link). */
+async function saveWords(b, by) {
+  const key = String(b.period || "");
+  if (!/^(month|quarter|year):[\dQ-]+$/.test(key)) return false;
+  const mg = b.reset ? null : Object.fromEntries(FIELDS.map(([f]) => [f, String(b[f] || "").replace(/\r/g, "").trim().slice(0, 1200)]));
+  await pool.query(`INSERT INTO report_notes (period, mgmt, updated_by) VALUES ($1, $2, $3) ON CONFLICT (period) DO UPDATE SET mgmt = EXCLUDED.mgmt, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [key, mg ? JSON.stringify(mg) : null, by]);
+  return true;
+}
+
 /** The bits marketing (and the team) can edit, inside the same report. */
 function editForm(a, ed) {
   return `<details class="mk-edit noprint"><summary class="btn tblbtn">Edit feedback, strategy &amp; numbers</summary>
@@ -298,23 +316,22 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const base = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const share = links.map((l) => {
       const url = `${base}/g/${l.token}`;
-      return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'}
+      return `<div class="lr-link ${l.active ? "" : "off"}"><div><b>${h(l.label)}</b> ${l.active ? '<span class="badge good">On</span>' : '<span class="badge">Off</span>'} ${l.can_edit ? '<span class="badge">Can edit the words</span>' : '<span class="badge muted">View only</span>'}
         ${l.active ? `<div class="toolbar" style="margin:6px 0 0"><button class="btn tblbtn primary" type="button" data-copy="${h(url)}">Copy link</button>
           <a class="btn tblbtn" href="mailto:?subject=${encodeURIComponent("WMF performance dashboard")}&body=${encodeURIComponent(`Dear ${l.label},\n\nHere is the WMF performance dashboard. It is always up to date: choose the month, quarter or year at the top, and download the one-page report as PDF or PowerPoint whenever you need it.\n\n${url}\n\nKind regards`)}">Email</a>
           <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`The WMF performance dashboard, always up to date (choose the month, quarter or year at the top): ${url}`)}" target="_blank" rel="noopener">WhatsApp</a></div>` : ""}</div>
-        <form method="post" action="/report/management/links/${l.id}"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div>`;
+        <div class="toolbar" style="margin:0"><form method="post" action="/report/management/links/${l.id}" style="margin:0"><input type="hidden" name="can_edit" value="${l.can_edit ? "0" : "1"}"><button class="btn tblbtn">${l.can_edit ? "Make view only" : "Allow editing the words"}</button></form>
+          <form method="post" action="/report/management/links/${l.id}" style="margin:0"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div></div>`;
     }).join("");
     res.send(page(req, "Management report", `
       ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}`,
         edit: canEdit ? await editOf(req, per, { view: "/report/management", post: "/report/marketing", excelHref: `/report/marketing.xlsx?${qs(per)}` }) : null })}
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
-        <details class="mg-edit" ${req.query.edit ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
-          <form class="form" method="post" action="/report/management/notes"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="/report/management?${qs(per)}">
-            <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
-            <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>
+        ${wordsEditor(M, per, { action: "/report/management/notes", back: `/report/management?${qs(per)}`, open: req.query.edit })}
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
-          <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves.</p>
-          ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px"><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details>
+          <p class="hint" style="margin:8px 0">They see exactly this page, without this box: no sign-in, no member names or contact details. They pick the month, quarter or year themselves. A link that can edit the words also shows the "Edit the words" box.</p>
+          ${share}<form class="inline-form" method="post" action="/report/management/links" style="margin-top:10px"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Management" style="flex:1 1 200px">
+            <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="can_edit" value="1"> Can edit the words (e.g. for your manager)</label><button class="btn ${links.length ? "" : "primary"}">Make a link</button></form></details>
         ${await (async () => { // new members by hand, for months where the records are incomplete
           const manual = await require("./report").manualNewMembers();
           const mon = per.type === "month" ? per.p : E.helpers.addMonths(new Date().toISOString().slice(0, 7), -1);
@@ -340,13 +357,15 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
   app.post("/report/management/links", STAFF, wrap(async (req, res) => {
     const label = require("./rules").clean(req.body.label).slice(0, 60);
     if (label) {
-      await pool.query("INSERT INTO report_links (token, label, kind, created_by) VALUES ($1,$2,'management',$3)", [require("crypto").randomBytes(12).toString("base64url"), label, actor(req)]);
+      await pool.query("INSERT INTO report_links (token, label, kind, created_by, can_edit) VALUES ($1,$2,'management',$3,$4)", [require("crypto").randomBytes(12).toString("base64url"), label, actor(req), req.body.can_edit === "1"]);
       setFlash(req, "ok", `Link made for ${label}. Copy it or email it.`);
     }
     res.redirect("/report/management");
   }));
   app.post("/report/management/links/:id", STAFF, wrap(async (req, res) => {
-    await pool.query("UPDATE report_links SET active = $2 WHERE id = $1 AND kind = 'management'", [+req.params.id || 0, req.body.active === "1"]);
+    const id = +req.params.id || 0;
+    if (req.body.can_edit != null) await pool.query("UPDATE report_links SET can_edit = $2 WHERE id = $1 AND kind = 'management'", [id, req.body.can_edit === "1"]);
+    if (req.body.active != null) await pool.query("UPDATE report_links SET active = $2 WHERE id = $1 AND kind = 'management'", [id, req.body.active === "1"]);
     res.redirect("/report/management");
   }));
   // ----- the management link (no sign-in)
@@ -356,7 +375,16 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), M = await mgmtData(per), b = `/g/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${onePage(M)}`, { active: "/wmf" }));
+    const words = l.can_edit ? `<section class="card noprint">${wordsEditor(M, per, { action: `${b}/notes`, back: `${b}?${qs(per)}`, open: req.query.edit,
+      intro: "Adjust any wording for this period. Your changes show in the report and the one-page version straight away; “Back to the suggested text” undoes them." })}</section>` : "";
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${words}${onePage(M)}`, { active: "/wmf" }));
+  }));
+  app.post("/g/:token/notes", limit("mgmtlinkpost", 60, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkOf(req.params.token); if (!l || !l.can_edit) return closed(req, res);
+    const b = req.body || {}, base = `/g/${encodeURIComponent(l.token)}`;
+    await saveWords(b, "Management link: " + l.label);
+    setFlash(req, "ok", b.reset ? "Back to the suggested text." : "Saved.");
+    const back = String(b.back || ""); res.redirect(303, back.startsWith(base + "?") ? back : base);
   }));
   // ----- the marketing link: this same report, with feedback, strategy, numbers and posts editable
   const mkLinkOf = async (t) => (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active AND kind = 'marketing'", [String(t || "").slice(0, 60)])).rows[0];
@@ -392,11 +420,8 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const back = String(req.body.back || ""); res.redirect((back.startsWith("/report/management?") ? back : "/report/management") + (back.includes("?") ? "&" : "?") + "nm=1#newmem");
   }));
   app.post("/report/management/notes", STAFF, wrap(async (req, res) => {
-    const b = req.body || {}, key = String(b.period || "");
-    if (!/^(month|quarter|year):[\dQ-]+$/.test(key)) return res.redirect("/report/management");
-    const mg = b.reset ? null : Object.fromEntries(FIELDS.map(([f]) => [f, String(b[f] || "").replace(/\r/g, "").trim().slice(0, 1200)]));
-    await pool.query(`INSERT INTO report_notes (period, mgmt, updated_by) VALUES ($1, $2, $3) ON CONFLICT (period) DO UPDATE SET mgmt = EXCLUDED.mgmt, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [key, mg ? JSON.stringify(mg) : null, actor(req)]);
+    const b = req.body || {};
+    if (!(await saveWords(b, actor(req)))) return res.redirect("/report/management");
     setFlash(req, "ok", b.reset ? "Back to the suggested text." : "Saved.");
     const back = String(b.back || ""); res.redirect(back.startsWith("/report/management?") ? back : "/report/management");
   }));
