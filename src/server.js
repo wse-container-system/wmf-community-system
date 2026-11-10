@@ -715,6 +715,7 @@ async function init() {
   await require("./calendar").seed();
   await require("./seasonsurvey").seed();
   await require("./social").seed();
+  await require("./teamcal").seedHolidays();
   await require("./corpdata").seedCompanies();
   await require("./corpdata").seedSchedules();
   await require("./deptschedule").seedTeam();

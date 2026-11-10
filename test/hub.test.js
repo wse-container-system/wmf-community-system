@@ -803,6 +803,9 @@ test("cycling development hub", async (t) => {
     for (const x of ["WMF rides &(amp;)? events", "Corporate rides", "Leave &(amp;)? days off", "Team entries", "Team meeting"]) assert.match(pg, new RegExp(x));
     assert.match(ok200(await admin(`/department/calendar?view=week&d=${d}`), "week").text, /Whole team/, "week view shows who");
     assert.doesNotMatch(ok200(await admin(`/department/calendar?m=${m}&show=wmf,corp`), "filtered").text, /Team meeting/, "filters hide team entries");
+    const jan = ok200(await admin("/department/calendar?m=2027-01"), "holidays").text;
+    assert.match(jan, /New Year&#39;s Day|New Year's Day/, "UAE public holidays on the calendar"); assert.match(jan, /tc-day[^"]*hol/, "holiday days are highlighted");
+    assert.ok((await pool.query("SELECT 1 FROM dept_holidays WHERE holiday = '2027-03-10'")).rows[0], "2027 holidays added");
     await admin(`/department/calendar/entry/${e.id}/delete`, { method: "POST", form: {} });
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM dept_calendar")).rows[0].n, 0);
   });

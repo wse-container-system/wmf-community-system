@@ -18,8 +18,22 @@ const dow = (d) => new Date(d + "T12:00:00Z").getUTCDay();
 const okDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
 const okTime = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s || "");
 const SUGGEST = ["Meeting", "Training", "Workshop", "Admin", "Travel", "Partner visit", "Deadline", "Event support"];
-const SOURCES = { wmf: "WMF rides & events", corp: "Corporate rides", away: "Leave & days off", team: "Team entries" };
-const SRC_COLOR = { wmf: "#5b7cf0", corp: "#e8833a", away: "#1d9e75", team: "#7a5cc8" };
+const SOURCES = { hol: "UAE public holidays", wmf: "WMF rides & events", corp: "Corporate rides", away: "Leave & days off", team: "Team entries" };
+const SRC_COLOR = { hol: "#d03b3b", wmf: "#5b7cf0", corp: "#e8833a", away: "#1d9e75", team: "#7a5cc8" };
+
+/**
+ * UAE public holidays for the rest of 2026 and for 2027, added once (the team keeps the list under Department → Team).
+ * Islamic holidays follow the moon, so they're marked "expected" until the Cabinet confirms the dates.
+ * Source: dates reported for 2027 (The National, Aug 2026).
+ */
+const UAE_2027 = [["2026-12-02", "UAE National Day"], ["2026-12-03", "UAE National Day"], ["2027-01-01", "New Year's Day"], ["2027-03-09", "Eid Al Fitr (expected)"], ["2027-03-10", "Eid Al Fitr (expected)"], ["2027-03-11", "Eid Al Fitr (expected)"],
+  ["2027-05-15", "Arafat Day (expected)"], ["2027-05-16", "Eid Al Adha (expected)"], ["2027-05-17", "Eid Al Adha (expected)"], ["2027-05-18", "Eid Al Adha (expected)"],
+  ["2027-06-06", "Islamic New Year (expected)"], ["2027-08-14", "Prophet Mohammed's Birthday (expected)"], ["2027-12-02", "UAE National Day"], ["2027-12-03", "UAE National Day"]];
+async function seedHolidays() {
+  if ((await pool.query("SELECT 1 FROM settings WHERE key = 'uaeHolidays2027Seeded'")).rows[0]) return;
+  for (const [d, n] of UAE_2027) await pool.query("INSERT INTO dept_holidays (holiday, name) VALUES ($1,$2) ON CONFLICT (holiday) DO NOTHING", [d, n]);
+  await pool.query("INSERT INTO settings (key, value) VALUES ('uaeHolidays2027Seeded', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify({ at: new Date().toISOString(), days: UAE_2027.length })]);
+}
 const PALETTE = ["#7a5cc8", "#1baf7a", "#d4537e", "#b8860b", "#0f6e56", "#c2410c", "#4b5563", "#2563eb"];
 /** A steady colour per team category (the same name always gets the same colour). */
 const catColor = (c) => { let n = 0; for (const ch of String(c || "").toLowerCase()) n = (n * 31 + ch.charCodeAt(0)) >>> 0; return PALETTE[n % PALETTE.length]; };
@@ -51,6 +65,9 @@ async function load(from, to) {
     put({ date: s.session_date, time: s.start_time || "", title: C.sessionName ? C.sessionName(s, co) : s.title || s.kind, where: s.location || "", src: "corp", cat: co ? co.name : s.company,
       color: "#e8833a", href: `/corporate/session/${s.id}`, cancel: s.status === "Cancelled" });
   }
+  // UAE public holidays (the list kept under Department → Team)
+  for (const r of (await pool.query("SELECT holiday::text AS d, name FROM dept_holidays WHERE holiday BETWEEN $1 AND $2", [from, to])).rows)
+    put({ date: r.d, time: "", title: r.name, where: "", src: "hol", cat: "UAE public holiday", color: SRC_COLOR.hol, href: null, hol: true });
   // who is away: leave (not rejected or cancelled) and days off from the team schedule
   const first = (n) => String(n || "").split(" ")[0];
   const leave = (await pool.query(`SELECT l.*, l.start_date::text AS s, l.end_date::text AS e, st.full_name FROM dept_leave l JOIN dept_staff st ON st.id = l.staff_id
@@ -71,7 +88,7 @@ async function load(from, to) {
     put({ date: d, end: o.end > d ? o.end : null, time: t.start_time ? t.start_time + (t.end_time ? "–" + t.end_time : "") : "", title: t.title, where: t.location || "", src: "team", cat: t.category, who: t.who || "",
       color: catColor(t.category), href: `/department/calendar/entry/${t.id}`, note: t.notes || "", repeat: t.repeat });
   }
-  out.sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99").localeCompare(b.time || "99") || a.title.localeCompare(b.title));
+  out.sort((a, b) => a.date.localeCompare(b.date) || !!b.hol - !!a.hol || (a.time || "99").localeCompare(b.time || "99") || a.title.localeCompare(b.title));
   return out;
 }
 
@@ -97,7 +114,7 @@ function monthGrid(m, items, show) {
   let cells = "";
   for (let d = start; d <= end; d = addDays(d, 1)) {
     const list = by.get(d) || [], out = d.slice(0, 7) !== m;
-    cells += `<div class="tc-day ${out ? "out" : ""} ${d === today ? "today" : ""} ${dow(d) === 0 || dow(d) === 6 ? "we" : ""}"><div class="tc-dn">${+d.slice(8)}
+    cells += `<div class="tc-day ${out ? "out" : ""} ${d === today ? "today" : ""} ${dow(d) === 0 || dow(d) === 6 ? "we" : ""} ${list.some((x) => x.hol) ? "hol" : ""}"><div class="tc-dn">${+d.slice(8)}
       <a class="tc-add noprint" href="/department/calendar/new?date=${d}" aria-label="Add on ${fmtDate(d)}">+</a></div>${list.map(chip).join("")}</div>`;
   }
   // on phones: a simple list of the days that have something
@@ -113,7 +130,7 @@ function weekGrid(d0, items, show) {
   let cols = "";
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i), list = by.get(d) || [];
-    cols += `<div class="tc-wd ${d === today ? "today" : ""}"><div class="tc-wh">${DOW[dow(d)]} <b>${+d.slice(8)}</b><a class="tc-add noprint" href="/department/calendar/new?date=${d}" aria-label="Add on ${fmtDate(d)}">+</a></div>
+    cols += `<div class="tc-wd ${d === today ? "today" : ""} ${list.some((x) => x.hol) ? "hol" : ""}"><div class="tc-wh">${DOW[dow(d)]} <b>${+d.slice(8)}</b><a class="tc-add noprint" href="/department/calendar/new?date=${d}" aria-label="Add on ${fmtDate(d)}">+</a></div>
       ${list.map((x) => chip(x, true)).join("") || '<span class="muted" style="font-size:12px">—</span>'}</div>`;
   }
   return `<div class="tc-week">${cols}</div>`;
@@ -167,7 +184,7 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
       <div class="tc-filters">${Object.entries(SOURCES).map(([k, l]) => `<a class="tc-f ${show.has(k) ? "on" : ""}" href="${toggle(k)}" aria-pressed="${show.has(k)}"><i style="background:${SRC_COLOR[k]}"></i>${l}</a>`).join("")}
         ${show.has("team") && teamCats.length ? `<span class="tc-cats">${teamCats.map((c) => `<span><i style="background:${catColor(c)}"></i>${h(c)}</span>`).join("")}</span>` : ""}</div>
       ${week ? weekGrid(d0, items, show) : monthGrid(m, items, show)}
-      <p class="muted" style="font-size:12.5px;margin:10px 0 0">WMF rides and events come from the <a href="/calendar">WMF calendar</a>; corporate rides from each company's <a href="/corporate/schedule">schedule</a> and recorded sessions; leave and days off from <a href="/department/leave">Leave</a> and the <a href="/department/schedule">Schedule</a>. Click an entry to open it · + on a day adds an entry · struck through = cancelled.</p></section>`, PAGE));
+      <p class="muted" style="font-size:12.5px;margin:10px 0 0">WMF rides and events come from the <a href="/calendar">WMF calendar</a>; corporate rides from each company's <a href="/corporate/schedule">schedule</a> and recorded sessions; leave and days off from <a href="/department/leave">Leave</a> and the <a href="/department/schedule">Schedule</a>; UAE public holidays from the list under <a href="/department/staff">Team</a> (Islamic holidays are expected dates until announced). Click an entry to open it · + on a day adds an entry · struck through = cancelled.</p></section>`, PAGE));
   }));
 
   app.get("/department/calendar/new", S, wrap(async (req, res) => {
@@ -204,3 +221,4 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
   }));
 };
 module.exports.load = load;
+module.exports.seedHolidays = seedHolidays;

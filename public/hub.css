@@ -624,3 +624,5 @@ a.tc-chip:hover { background: color-mix(in srgb, var(--c) 24%, transparent); }
 .tc-wd:hover .tc-add { visibility: visible; }
 .tc-wd .tc-chip { white-space: normal; } .tc-chip small { display: block; color: var(--muted); font-size: 11px; }
 @media (max-width: 760px) { .tc-week { grid-template-columns: 1fr; } .tc-wd { min-height: 0; } }
+.tc-day.hol, .tc-wd.hol { background: color-mix(in srgb, #d03b3b 7%, transparent) !important; }
+.tc-day.hol .tc-dn { color: #b02a2a; font-weight: 700; }
