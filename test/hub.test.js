@@ -71,14 +71,14 @@ test("cycling development hub", async (t) => {
       await c.query("INSERT INTO activities (activity_id, name, kind, status) VALUES ('ACT-TEST-EVENT','Test Workshop','event','Active')");
       await R.addParticipation(c, { member: m2, recordType: "Event Registration", date: today + "T09:00:00", activityId: "ACT-TEST-EVENT", activityName: "Test Workshop", activityType: "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: "event|x" }, "test");
     });
-    const from = E.helpers.addMonths(today.slice(0, 7), -2), to = today.slice(0, 7);
+    const from = E.helpers.addDays(today, -40).slice(0, 7), to = today.slice(0, 7); // starts at the first month with data (date-proof)
     const r = await admin(`/api/wmf/monthly.xlsx?from=${from}&to=${to}`, { raw: true });
     assert.equal(r.status, 200); assert.match(r.type, /spreadsheetml/);
     const wb = await xlsx(r.text);
     assert.deepEqual(wb.worksheets.map((w) => w.name), ["Monthly summary", "Rides by month", "Events by month", "Impact", "About"]);
     const ws = wb.getWorksheet("Monthly summary");
     const rows = []; ws.eachRow((row, n) => { if (n >= 4 && /\d{4}$/.test(String(row.getCell(1).value))) rows.push(row.values.slice(1)); });
-    assert.equal(rows.length, 3);
+    assert.equal(rows.length, E.helpers.monthsBetween(from, to).length);
     const ride = rows.reduce((a, r) => a + (r[2] || 0), 0), ev = rows.reduce((a, r) => a + (r[5] || 0), 0);
     assert.equal(ride, 3, "three ride check-ins");
     assert.equal(ev, 1, "one event participation");
@@ -763,6 +763,30 @@ test("cycling development hub", async (t) => {
     assert.doesNotMatch(ok200(await pub(`${g}?period=month&p=${m}`), "now view only").text, /Edit the words/);
     assert.equal((await pub(`${g}/notes`, { method: "POST", form: { period: `month:${m}`, developments: "x" } })).status, 404, "view-only link can't save");
     await pool.query("DELETE FROM report_notes WHERE period = $1", [`month:${m}`]);
+  });
+
+  await t.test("Marketing: several channels, several types per channel, extra metrics; graph per event", async () => {
+    await admin("/report/marketing/links", { method: "POST", form: { label: "Channels test" } });
+    const l = (await pool.query("SELECT token FROM report_links WHERE kind = 'marketing' AND label = 'Channels test'")).rows[0];
+    const pub = client(), base = `/m/${l.token}`, y = `?period=year&p=${today.slice(0, 4)}`;
+    const form = ok200(await pub(base + y), "marketing link").text;
+    assert.match(form, /Add a channel/); assert.match(form, /Add a metric/); assert.match(form, /Add another type/);
+    const before = (await pool.query("SELECT count(*)::int AS n FROM marketing_actions")).rows[0].n;
+    // two Instagram types and one TikTok post, in one save (as the page sends them)
+    const body = new URLSearchParams([["target", ""],
+      ["r_channel", "Instagram"], ["r_metrics", "Saves=45|Shares=30"], ["r_kind", "Reel"], ["r_date", today], ["r_reach", "3,000"], ["r_eng", "220"], ["r_url", ""],
+      ["r_channel", "Instagram"], ["r_metrics", "Link clicks=38"], ["r_kind", "Story"], ["r_date", today], ["r_reach", "1200"], ["r_eng", "90"], ["r_url", ""],
+      ["r_channel", "TikTok"], ["r_metrics", "Plays=5200"], ["r_kind", "Video"], ["r_date", today], ["r_reach", "2500"], ["r_eng", "180"], ["r_url", ""],
+      ["r_channel", "TikTok"], ["r_metrics", ""], ["r_kind", "Post"], ["r_date", today], ["r_reach", ""], ["r_eng", ""], ["r_url", ""]]);
+    assert.equal((await pub(base + y, { method: "POST", form: body })).status, 303);
+    const rows = (await pool.query("SELECT channel, kind, reach, clicks, metrics FROM marketing_actions ORDER BY id DESC LIMIT 3")).rows.reverse();
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM marketing_actions")).rows[0].n, before + 3, "empty rows are skipped");
+    assert.deepEqual(rows.map((r) => `${r.channel} ${r.kind}`), ["Instagram Reel", "Instagram Story", "TikTok Video"]);
+    assert.deepEqual(rows[0].metrics, { Saves: 45, Shares: 30 }); assert.equal(rows[1].clicks, 38, "link clicks keep their own column"); assert.equal(rows[0].reach, 3000);
+    const mk = await require("../src/mkinputs").loadInputs({ start: "2000-01-01", end: "2100-12-31" });
+    const g = mk.byEvent.find((x) => x.key === "general");
+    assert.ok(g.byChannel.get("TikTok") && g.metrics.get("Plays") === 5200, "channel split and metric totals");
+    await pool.query("DELETE FROM marketing_actions WHERE id > (SELECT max(id) - 3 FROM marketing_actions)");
   });
 
   await t.test("Dashboards: every number box opens its details", async () => {
