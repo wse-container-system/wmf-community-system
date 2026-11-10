@@ -20,7 +20,7 @@ const SECTIONS = [
     ["/corporate", "Dashboard", ALL], ["/corporate/rides", "Rides", STAFF], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
     ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department/schedule", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
-    ["/department/schedule", "Schedule", STAFF], ["/department/leave", "Leave", STAFF], ["/department/staff", "Team", ["admin"]], ["/department/share", "Share", ["admin"]]] },
+    ["/department/schedule", "Schedule", STAFF], ["/department/calendar", "Team calendar", STAFF], ["/department/leave", "Leave", STAFF], ["/department/staff", "Team", ["admin"]], ["/department/share", "Share", ["admin"]]] },
 ];
 const sectionsFor = (u) => SECTIONS.filter((s) => s.roles.includes(u.role) && (!u.company || s.scoped));
 
