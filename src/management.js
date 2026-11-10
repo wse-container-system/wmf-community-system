@@ -100,7 +100,7 @@ async function mgmtData(per) {
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
-    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season) };
+    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp: await require("./sponsorreport").sponsorData(per) };
 }
 
 // ---------------------------------------------------------------- the page (16:9, prints as one page)
@@ -207,6 +207,11 @@ function tilesOf(M) {
     { label: "Community activations", value: nf(k.acts), note: `${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}`, detail: { title: `Community activations · ${M.per.label}`, html: actList } },
     { label: "Community", value: nf(k.members), note: "members in Abu Dhabi and Dubai", detail: { title: "The community", html: community } },
   ];
+  if (M.sp && M.sp.sponsors.length) {
+    const T = M.sp.T, d = T.prevAttendance ? Math.round(((T.attendance - T.prevAttendance) / T.prevAttendance) * 100) : null;
+    tiles.push({ label: "Corporate participations", value: nf(T.attendance), note: `${d == null ? "" : d === 0 ? "no change vs before · " : `${d > 0 ? "▲" : "▼"} ${Math.abs(d)}% vs before · `}${nf(T.held)} sessions${spark(M.sp.monthly.map((m) => m.attendance), "#9b7be0")}`,
+      detail: { title: "Corporate programme", html: require("./sponsorreport").sponsorSummaryHtml(M.sp, null).replace(/^<section class="card c12"><h2>Corporate programme<\/h2>/, "<div>").replace(/<\/section>$/, "</div>") } });
+  }
   // a small trend line under the numbers that have one (the months shown in the graphs)
   const mo = D.monthly || [], SP = { "Ride participation": ["ride", "#5b7cf0"], "Rides held": ["sessions", "#5b7cf0"], "New joiners": ["joiners", "#1baf7a"], "Community activations": ["events", "#e8833a"] };
   if (mo.length > 1) for (const t of tiles) if (SP[t.label]) t.note += spark(mo.map((x) => x[SP[t.label][0]]), SP[t.label][1]);
@@ -217,14 +222,16 @@ function tilesOf(M) {
 function graphsHtml(M) {
   const mo = M.D.monthly || [], short = (m) => monLabel(m);
   const span = mo.length ? `${monLabel(mo[0].m, true)} – ${monLabel(mo[mo.length - 1].m, true)}` : "";
-  const rides = M.rides.filter((r) => r.n || r.city !== "corp" || /L.IMAD/i.test(r.type));
   const acts = M.acts.filter((a) => a.raw.participants != null || a.raw.registrants).slice(0, 8);
   return `<section class="card c6 md-g"><h2>Ride participation by month</h2><p class="hint">${h(span)}</p>
       ${columns({ categories: mo.map((x) => x.m), series: [{ name: "Abu Dhabi", color: "#5b7cf0", values: mo.map((x) => x.auh) }, { name: "Dubai", color: "#e8833a", values: mo.map((x) => x.dxb) }], height: 190, label: "Ride participation by month", short })}</section>
     <section class="card c6 md-g"><h2>New joiners by month</h2><p class="hint">The community is now ${nf(M.kpi.members)} members</p>
       ${columns({ categories: mo.map((x) => x.m), series: [{ name: "New joiners", color: "#1baf7a", values: mo.map((x) => x.joiners) }], height: 190, label: "New joiners by month", short })}</section>
-    <section class="card c6 md-g"><h2>Rides by type</h2><p class="hint">Average riders per ride · ${h(M.per.label)}</p>
-      ${hbars(rides.map((r) => ({ name: r.type.replace(" Community Rides", " community"), value: r.avg ? Math.round(r.avg) : 0, color: r.city === "dxb" ? "#e8833a" : r.city === "corp" ? "#9b7be0" : "#5b7cf0" })), { empty: "No rides in this period." })}</section>
+    <section class="card c6 md-g"><h2>Member engagement</h2><p class="hint">From the whole community to our champions · ${h(M.per.label)}</p>
+      ${(() => { const D = M.D, mx = Math.max(1, M.kpi.members);
+        const row = (l, v, c, tip) => `<div class="sr-f" title="${h(tip)}"><span>${l}</span><span class="sr-ft"><i style="width:${Math.max(v ? 2 : 0, (v / mx) * 100)}%;background:${c}"></i></span><b>${nf(v)}</b></div>`;
+        return row("Members", M.kpi.members, "#c6d6f5", "Everyone in the community") + row("Took part", D.k.participants, "#8fb3ef", "Came to a ride or event in this period")
+          + row("Active (2+ in 90 days)", M.kpi.active, "#5b7cf0", "Took part at least twice in the 90 days up to the end of the period") + row(`Champions (${D.champAt}+ rides)`, D.champions, "#2f5fb3", "About weekly riders in this period"); })()}</section>
     <section class="card c6 md-g"><h2>Event participation</h2><p class="hint">Came against registered · ${h(M.per.label)}</p>
       ${hbars2(acts.map((a) => ({ name: a.name, a: a.raw.participants, b: a.raw.registrants })), { colorA: "#2f5fb3", colorB: "#c6d6f5", labelA: "Came", labelB: "Registered", empty: "No activations in this period." })}</section>`;
 }
@@ -260,9 +267,48 @@ function editForm(a, ed) {
     <a class="btn tblbtn noprint" href="${ed.view}?${ed.qs({ target: "a:" + a.id })}#log">+ Add a post</a>`;
 }
 
-function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
+/** Details behind a point in the key boxes: the activation, partner, sponsor, upcoming item or figures it talks about. */
+function detailFor(text, M, box) {
+  const t = String(text || "").toLowerCase(), D = M.D, out = [];
+  const norm = (x) => String(x || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  if (box === "fwd") { // the forward view only talks about what's coming up
+    for (const u of D.upcoming || []) if (norm(t).includes(norm(u.title).slice(0, 30)) || norm(u.title).includes(norm(t.replace(/^\d{1,2} \w{3}:\s*/, "")).slice(0, 30)))
+      out.push(`<b>${h(fmtDate(u.d))}</b> · ${h(u.title)}${u.location ? ` · ${h(u.location)}` : ""}${u.category === "wmf_ride" ? " · WMF ride" : " · WMF event"}`);
+    return out.slice(0, 1).join("");
+  }
+  const has = (name) => name && name.length >= 4 && t.includes(String(name).toLowerCase().replace(/\s+/g, " ").slice(0, 40));
+  for (const a of M.acts) if (has(a.name)) out.push(`<b>${h(a.name)}</b> · ${h(a.date)} · ${h(a.people)}${a.note ? `<br>${h(cut(a.note, 260))}` : ""}${a.mk ? `<br>Marketing: ${a.mk.actions.length} posts · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements` : ""}`);
+  if (!out.length) for (const c of M.collab) if (has(c.name)) out.push(`<b>${h(c.name)}</b> · ${h(c.event)}${c.note ? `<br>${h(cut(c.note, 220))}` : ""}`);
+  if (M.sp) for (const sp of M.sp.sponsors) if (has(sp.name) && !out.length) out.push(`<b>${h(sp.name)}</b> · ${nf(sp.held)}${sp.planned ? ` of ${nf(sp.planned)}` : ""} sessions · ${nf(sp.attendance)} participations · ${sp.avgAll != null ? sp.avgAll.toFixed(1) : "—"} per session · ${h(sp.status)}`);
+  if (!out.length && /new|joiner|member|community at/.test(t)) {
+    const j = D.joined || {};
+    out.push(`${nf(M.kpi.newMembers)} new members${j.city ? ` · Abu Dhabi ${nf(j.city.auh || 0)} · Dubai ${nf(j.city.dxb || 0)}` : ""} · community ${nf(M.kpi.members)}`);
+  }
+  if (!out.length && /ride|participation/.test(t)) out.push(M.rides.filter((r) => r.city !== "corp").map((r) => `${h(r.type)}: ${nf(r.n || 0)} rides, ${r.avg ? Math.round(r.avg) : "—"} per ride`).join("<br>"));
+  if (!out.length && /strava|whatsapp/.test(t)) out.push(`Strava: AUH ${h(M.social.strava[0])} · DXB ${h(M.social.strava[1])}<br>WhatsApp: AUH ${h(M.social.whatsapp[0])} · DXB ${h(M.social.whatsapp[1])}`);
+  return out.length ? out.slice(0, 3).join("<hr>") : "";
+}
+
+const chg = (a, b) => { const d = Math.round(((a - b) / b) * 100); return d === 0 ? "No change vs before" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d)}% vs before`; };
+/** Abu Dhabi rides, Dubai rides and community activations at a glance, each with a status. */
+function scorecard(M) {
+  const D = M.D, st = (cur, prev) => { if (!cur && !prev) return ["No activity", ""]; if (!prev) return ["New", "good"]; const c = (cur - prev) / prev; return c >= 0.1 ? ["Growing", "good"] : c <= -0.25 ? ["Needs attention", "bad"] : c <= -0.1 ? ["Watch", "warn"] : ["On track", "good"]; };
+  const city = (c, key, label) => { const x = D.city[c], r = M.rides.find((y) => y.city === key) || {}; const [s, cls] = st(x.att, x.prevAtt);
+    return `<article class="sr-sp"><div class="sr-h"><b>${label}</b><span class="badge ${cls}">${s}</span></div><dl class="sr-dl"><dt>Rides</dt><dd>${nf(r.n || 0)}</dd><dt>Participation</dt><dd>${nf(x.att)}</dd>
+      <dt>Avg per ride</dt><dd>${r.avg ? r.avg.toFixed(1) : "—"}</dd><dt>New riders</dt><dd>${nf(r.fresh || 0)}</dd></dl>${x.prevAtt ? `<p class="hint" style="margin:4px 0 0">${chg(x.att, x.prevAtt)}</p>` : ""}</article>`; };
+  const acts = D.done, reg = acts.reduce((s, a) => s + (a.registrants || 0), 0), came = acts.filter((a) => a.registrants).reduce((s, a) => s + (a.participants || 0), 0);
+  const [as, acls] = st(D.evPeople, D.prevEvPeople);
+  return `<section class="card"><h2>Community scorecard</h2><p class="hint" style="margin:2px 0 10px">How each part of WMF performed in ${h(M.per.label)}</p><div class="sr-sc">
+    ${city("Abu Dhabi", "auh", "Abu Dhabi rides")}${city("Dubai", "dxb", "Dubai rides")}
+    <article class="sr-sp"><div class="sr-h"><b>Community activations</b><span class="badge ${acls}">${as}</span></div><dl class="sr-dl"><dt>Activations</dt><dd>${nf(acts.length)}</dd><dt>Participants</dt><dd>${nf(D.evPeople)}</dd>
+      <dt>Partners</dt><dd>${nf(D.partners.length)}</dd><dt>Turnout</dt><dd>${reg ? Math.round((came / reg) * 100) + "%" : "—"}</dd></dl>${D.prevEvPeople ? `<p class="hint" style="margin:4px 0 0">${chg(D.evPeople, D.prevEvPeople)}</p>` : ""}</article></div></section>`;
+}
+
+function dashboard(M, { nav, pdf, pptxHref, edit: ed, corpHref }) {
   const k = M.kpi, unit = M.W.unit === "month" ? "Month" : M.W.unit === "quarter" ? "Quarter" : "Year";
-  const li = (t, n = 200) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => `<li>${h(cut(x, n))}</li>`).join("")}</ul>` : '<p class="muted">—</p>'; };
+  const li = (t, n = 200, box) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => { const d = detailFor(x, M, box);
+    return d ? `<li><details class="md-pt"><summary>${h(cut(x, n))}</summary><div class="md-ptd">${d}</div></details></li>` : `<li>${h(cut(x, n))}</li>`; }).join("")}</ul>` : '<p class="muted">—</p>'; };
+  const plain = (t, n = 200) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => `<li>${h(cut(x, n))}</li>`).join("")}</ul>` : '<p class="muted">—</p>'; };
   const maxAvg = Math.max(1, ...M.rides.map((r) => r.avg || 0));
   const color = { auh: "#5b7cf0", dxb: "#e8833a", corp: "#2e86c1" };
   const socTile = (name, list) => `<div class="md-soc"><b>${name}</b>${["Abu Dhabi", "Dubai"].map((c, i) => { const r = list && list[i]; return `<div><span>${c === "Abu Dhabi" ? "AUH" : "DXB"}</span><strong>${r && r.now != null ? nf(r.now) : "—"}</strong>${r && r.pct != null ? `<em class="${r.pct >= 0 ? "rp-up" : "rp-down"}">${fmtPct(r.pct)}</em>` : ""}</div>`; }).join("")}</div>`;
@@ -271,13 +317,14 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
       <div class="mk-actions">${nav}${pdf}${ed && ed.excelHref ? `<a class="btn" href="${h(ed.excelHref)}">Excel</a>` : ""}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
     ${ed && ed.banner ? `<div class="md-editnote noprint"><b>You can edit this report:</b> feedback, marketing strategy and numbers under <a href="#acts">Community activations</a>, and posts under <a href="#log">Marketing &amp; impact</a>. Management sees your changes straight away.</div>` : ""}
     ${detailTiles(tilesOf(M), { cls: "tiles ov-tiles mk-tiles md-tiles" })}
-    <div class="grid md-graphs">${graphsHtml(M)}</div>
     <div class="md-keys">
       <section class="card md-k"><h2>Key developments</h2>${li(M.T.developments)}</section>
       <section class="card md-k win"><h2>Key execution wins</h2>${li(M.T.wins)}</section>
       <section class="card md-k miss"><h2>Key execution misses</h2>${li(M.T.misses)}</section>
-      <section class="card md-k next"><h2>Forward view (next ${unit.toLowerCase()})</h2>${li(M.T.forward)}</section>
+      <section class="card md-k next"><h2>Forward view (next ${unit.toLowerCase()})</h2>${li(M.T.forward, 200, "fwd")}</section>
     </div>
+    ${scorecard(M)}
+    <div class="grid md-graphs">${graphsHtml(M)}</div>
     <div class="grid">
       <section class="card c7"><h2>Rides</h2><div class="tw"><table class="md-rides"><thead><tr><th>Ride type</th><th class="n">No. of rides</th><th>Avg. number of riders</th><th class="n">New riders</th><th>Comment</th></tr></thead><tbody>
         ${M.rides.map((r) => `<tr><td><span class="md-dot" style="background:${color[r.city]}"></span>${h(r.type)}</td><td class="n">${r.n ? nf(r.n) : "—"}</td>
@@ -285,14 +332,16 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
           <td class="n">${r.fresh ? nf(r.fresh) : "—"}</td><td class="muted">${h(r.comment)}</td></tr>`).join("")}</tbody></table></div></section>
       <section class="card c5"><h2>Corporate rides &amp; marketing</h2>
         <div class="md-socs">${socTile("Strava", M.soc && M.soc.strava)}${socTile("WhatsApp", M.soc && M.soc.whatsapp)}</div>
-        <dl class="md-dl"><dt>Social media campaigns</dt><dd>${li(M.T.social, 120)}</dd><dt>Marketing highlights</dt><dd>${li(M.T.marketing, 120)}</dd>
-          <dt>Sponsor activations</dt><dd>${li(M.T.sponsor, 120)}</dd><dt>Community activations</dt><dd>${h(M.community)}</dd></dl></section>
+        <dl class="md-dl"><dt>Social media campaigns</dt><dd>${plain(M.T.social, 120)}</dd><dt>Marketing highlights</dt><dd>${plain(M.T.marketing, 120)}</dd>
+          <dt>Sponsor activations</dt><dd>${plain(M.T.sponsor, 120)}</dd><dt>Community activations</dt><dd>${h(M.community)}</dd></dl></section>
       <section class="card c7" id="acts"><h2>Community activations</h2>
-        ${M.acts.length ? `<div class="md-acts">${M.acts.map((a) => `<article id="act-${a.id}"><div><b>${h(a.name)}</b><span class="md-n">${h(a.people)}</span></div><span class="md-date">${h(a.date)}</span>${a.note ? `<p>${h(a.note)}</p>` : ""}
+        <p class="hint" style="margin:2px 0 8px">Click an activation for its feedback, strategy and marketing</p>
+        ${M.acts.length ? `<div class="md-acts md-fold-list">${M.acts.map((a) => `<details class="md-ac" id="act-${a.id}" ${ed && ed.openAct === a.id ? "open" : ""}><summary><b>${h(a.name)}</b><span class="md-n">${h(a.people)} · ${h(a.date)}</span></summary><div class="md-acd">${a.note ? `<p>${h(a.note)}</p>` : ""}
           ${a.strategy ? `<p class="md-strat"><b>Strategy</b> ${h(a.strategy)}</p>` : ""}
-          ${a.mk ? `<p class="md-mk">Marketing: ${a.mk.actions.length} post${a.mk.actions.length === 1 ? "" : "s"} · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements</p>` : ""}${ed ? `<div class="mk-ev-actions">${editForm(a, ed)}</div>` : ""}</article>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
+          ${a.mk ? `<p class="md-mk">Marketing: ${a.mk.actions.length} post${a.mk.actions.length === 1 ? "" : "s"} · ${nf(a.mk.reach)} reach · ${nf(a.mk.eng)} engagements</p>` : ""}${ed ? `<div class="mk-ev-actions">${editForm(a, ed)}</div>` : ""}${!a.note && !a.strategy && !a.mk && !ed ? '<p class="muted">No feedback or marketing added yet.</p>' : ""}</div></details>`).join("")}</div>` : '<p class="muted">No activations in this period.</p>'}</section>
       <section class="card c5"><h2>Cross collaborations</h2>
-        ${M.collab.length ? `<div class="md-acts">${M.collab.map((c) => `<article><div><b>${h(c.name)}</b></div><span class="md-date">${h(c.event)}</span>${c.note ? `<p>${h(c.note)}</p>` : ""}</article>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
+        <p class="hint" style="margin:2px 0 8px">Click a partner for details</p>
+        ${M.collab.length ? `<div class="md-acts md-fold-list">${M.collab.map((c) => `<details class="md-ac"><summary><b>${h(c.name)}</b><span class="md-n">${h(cut(c.event, 60))}</span></summary><div class="md-acd"><p><b>Events:</b> ${h(c.event)}</p>${c.note ? `<p>${h(c.note)}</p>` : ""}</div></details>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
       <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
       <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       ${ed ? (() => { const MK = require("./mkinputs");
@@ -301,7 +350,8 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
         const n = (M.D.mk.allRows || M.D.mk.rows).length;
         return `<div class="c12 noprint md-mkin"><details class="md-fold" ${ed.pre || ed.editing ? "open" : ""}><summary class="btn primary">${ed.editing ? "Edit a post" : "+ Add a post or campaign"}</summary>${MK.formHtml({ base: ed.post, tg: ed.tg, editing: ed.editing, pre: ed.pre, cancelHref: ed.cancelHref, strategies: ed.strategies })}</details>
           ${n ? `<details class="md-fold" ${ed.editing ? "open" : ""}><summary class="btn">All posts logged (${n})</summary>${MK.logHtml(M.D.mk, { base: ed.post, view: ed.view, qs: ed.qs, label: M.per.label })}${others}</details>` : ""}</div>`; })() : ""}
-      <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${li(M.T.priorities, 160)}</section>
+      ${M.sp ? require("./sponsorreport").sponsorSummaryHtml(M.sp, corpHref) : ""}
+      <section class="card c12 md-close"><h2>Closing note &amp; ${h(M.W.next)} priorities</h2><p>${h(M.T.closing)}</p>${plain(M.T.priorities, 160)}</section>
     </div>`;
 }
 
@@ -324,7 +374,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const MK = require("./mkinputs");
     const q = (o) => new URLSearchParams({ period: per.type, p: per.p, ...o }).toString();
     const pre = String(req.query.target || "").slice(0, 90);
-    return { view, post, excelHref, banner, qs: q, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
+    return { view, post, excelHref, banner, qs: q, openAct: +req.query.act || 0, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
       pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${view}?${q({})}#log` };
   };
   const onePage = (M) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><p class="lead">The same report in management's template. <b>Download PDF</b> saves this page; PowerPoint gives an editable copy.</p></section>
@@ -347,7 +397,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     }).join("");
     res.send(page(req, "Management report", `
       ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}`,
-        edit: canEdit ? await editOf(req, per, { view: "/report/management", post: "/report/marketing", excelHref: `/report/marketing.xlsx?${qs(per)}` }) : null })}
+        edit: canEdit ? await editOf(req, per, { view: "/report/management", post: "/report/marketing", excelHref: `/report/marketing.xlsx?${qs(per)}` }) : null, corpHref: `/corporate/management?${qs(per)}` })}
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
         ${wordsEditor(M, per, { action: "/report/management/notes", back: `/report/management?${qs(per)}`, open: req.query.edit })}
         <details ${links.length ? "" : "open"} style="margin-top:10px"><summary><b>Share with management</b> <span class="muted">(a view-only link to this dashboard, always up to date)</span></summary>
@@ -399,7 +449,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
     const words = l.can_edit ? `<section class="card noprint">${wordsEditor(M, per, { action: `${b}/notes`, back: `${b}?${qs(per)}`, open: req.query.edit,
       intro: "Adjust any wording for this period. Your changes show in the report and the one-page version straight away; “Back to the suggested text” undoes them." })}</section>` : "";
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}` })}${words}${onePage(M)}`, { active: "/wmf" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`, corpHref: `${b}/corporate?${qs(per)}` })}${words}${onePage(M)}`, { active: "/wmf" }));
   }));
   app.post("/g/:token/notes", limit("mgmtlinkpost", 60, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l || !l.can_edit) return closed(req, res);
@@ -415,7 +465,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const per = periodOf(req.query), M = await mgmtData(per), b = `/m/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
     res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`,
-      edit: await editOf(req, per, { view: b, post: b, excelHref: `${b}/excel?${qs(per)}`, banner: true }) })}${onePage(M)}`, { active: "/wmf" }));
+      edit: await editOf(req, per, { view: b, post: b, excelHref: `${b}/excel?${qs(per)}`, banner: true }), corpHref: `${b}/corporate?${qs(per)}` })}${onePage(M)}`, { active: "/wmf" }));
   }));
   app.get("/m/:token/pptx", limit("reportlink", 150, 60 * 60e3), wrap(async (req, res) => {
     const l = await mkLinkOf(req.params.token); if (!l) return closed(req, res);
@@ -423,6 +473,27 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     res.type("application/vnd.openxmlformats-officedocument.presentationml.presentation")
       .set("Content-Disposition", `attachment; filename="WMF-${M.W.kind}-Report-${per.p}.pptx"`).send(await pptx(M));
   }));
+  // ----- the full corporate sponsor report: for the team, and through the management and marketing links
+  const SP = require("./sponsorreport");
+  const corpPage = (req, S, base, extra = {}) => SP.sponsorHtml(S, { nav: periodNav(S.per, base), pdf: '<button class="btn" data-print>Download PDF</button>', ...extra });
+  app.get("/corporate/management", READ, wrap(async (req, res) => {
+    const per = periodOf(req.query), S = await SP.sponsorData(per), canEdit = req.session.user.role !== "viewer";
+    res.send(page(req, "Corporate report", corpPage(req, S, "/corporate/management", { edit: canEdit ? { action: "/corporate/management/notes", back: `/corporate/management?${qs(per)}` } : null,
+      back: `<p class="noprint" style="margin:0"><a href="/report/management?${qs(per)}">← WMF management report</a></p>` }), { active: "/corporate/management" }));
+  }));
+  app.post("/corporate/management/notes", STAFF, wrap(async (req, res) => {
+    await SP.saveWords(req.body || {}, actor(req));
+    setFlash(req, "ok", req.body.reset ? "Back to the suggested text." : "Saved.");
+    const back = String(req.body.back || ""); res.redirect(back.startsWith("/corporate/management") ? back : "/corporate/management");
+  }));
+  for (const [pre, kind] of [["g", "management"], ["m", "marketing"]]) {
+    app.get(`/${pre}/:token/corporate`, limit("reportlink", 150, 60 * 60e3), wrap(async (req, res) => {
+      const l = (await pool.query("SELECT * FROM report_links WHERE token = $1 AND active AND kind = $2", [String(req.params.token || "").slice(0, 60), kind])).rows[0];
+      if (!l) return closed(req, res);
+      const per = periodOf(req.query), S = await SP.sponsorData(per), b = `/${pre}/${encodeURIComponent(l.token)}`;
+      res.set("X-Robots-Tag", "noindex").send(page(req, "Corporate report", corpPage(req, S, `${b}/corporate`, { back: `<p class="noprint" style="margin:0"><a href="${b}?${qs(per)}">← WMF management report</a></p>` }), { active: "/wmf" }));
+    }));
+  }
   app.get("/g/:token/pptx", limit("mgmtlink", 150, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), M = await mgmtData(per);
