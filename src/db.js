@@ -454,6 +454,7 @@ CREATE TABLE IF NOT EXISTS marketing_actions (
 ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_event TEXT;
 ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_date DATE;
 ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS other_people INTEGER;
+ALTER TABLE marketing_actions ADD COLUMN IF NOT EXISTS metrics JSONB NOT NULL DEFAULT '{}'::jsonb; -- extra metrics per post, e.g. {"Saves": 45, "Shares": 30}
 -- the marketing plan for a WMF event ("a:<activation id>" or "e:<activity id>")
 CREATE TABLE IF NOT EXISTS marketing_strategies (target TEXT PRIMARY KEY, strategy TEXT NOT NULL, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 -- what the team writes into a report: strategy, what's next

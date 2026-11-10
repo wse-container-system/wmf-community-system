@@ -94,13 +94,15 @@ async function workbook(M) {
   // ----- Marketing: per event, then every post (WMF only)
   const ms = wb.addWorksheet("Marketing", { views: [{ state: "frozen", ySplit: 1, showGridLines: false }] });
   ms.columns = [{ header: "Event", key: "title", width: 34 }, { header: "Date", key: "date", width: 13 }, { header: "Posts", key: "posts", width: 9 }, { header: "Channels", key: "ch", width: 26 },
-    { header: "Reach", key: "reach", width: 11 }, { header: "Engagements", key: "eng", width: 13 }, { header: "Engagement rate", key: "rate", width: 15 }, { header: "Registered", key: "reg", width: 11 }, { header: "Came", key: "came", width: 9 }];
-  for (const g of M.mk.byEvent) ms.addRow({ title: g.title, date: g.date ? fmtDate(g.date) : "", posts: g.actions.length, ch: [...g.channels].join(", "), reach: g.reach, eng: g.eng,
-    rate: MK.rateOf(g) || "", reg: g.key === "general" ? null : g.registrants, came: g.key === "general" ? null : g.participants });
+    { header: "Reach", key: "reach", width: 11 }, { header: "Engagements", key: "eng", width: 13 }, { header: "Engagement rate", key: "rate", width: 15 }, { header: "Registered", key: "reg", width: 11 }, { header: "Came", key: "came", width: 9 }, { header: "More metrics", key: "mets", width: 40 }];
+  for (const g of M.mk.byEvent) ms.addRow({ title: g.title, date: g.date ? fmtDate(g.date) : "", posts: g.actions.length,
+    ch: [...g.byChannel.entries()].map(([c, x]) => `${c} (${x.n})`).join(", "), reach: g.reach, eng: g.eng,
+    rate: MK.rateOf(g) || "", reg: g.key === "general" ? null : g.registrants, came: g.key === "general" ? null : g.participants,
+    mets: [...g.metrics.entries()].sort((a, b) => b[1] - a[1]).map(([m, v]) => `${m} ${v}`).join("; ") });
   ms.addRow({});
   ms.addRow({ title: "Every post" }).font = { name: F, size: 11, bold: true };
-  ms.addRow({ title: "Event", date: "Posted", posts: "Channel", ch: "Type", reach: "Reach", eng: "Engagements", rate: "Clicks", reg: "Sign-ups" }).font = { name: F, size: 10, bold: true, color: { argb: MUT } };
-  for (const r of M.mk.rows) ms.addRow({ title: r.ev_title || "General / brand", date: fmtDate(r.posted), posts: r.channel, ch: r.kind + (r.title ? " · " + r.title : ""), reach: r.reach, eng: r.engagements, rate: r.clicks, reg: r.signups });
+  ms.addRow({ title: "Event", date: "Posted", posts: "Channel", ch: "Type", reach: "Reach", eng: "Engagements", rate: "Clicks", reg: "Sign-ups", came: "", mets: "More metrics" }).font = { name: F, size: 10, bold: true, color: { argb: MUT } };
+  for (const r of M.mk.rows) ms.addRow({ title: r.ev_title || "General / brand", date: fmtDate(r.posted), posts: r.channel, ch: r.kind + (r.title ? " · " + r.title : ""), reach: r.reach, eng: r.engagements, rate: r.clicks, reg: r.signups, mets: Object.entries(r.metrics || {}).map(([k, v]) => `${k} ${v}`).join("; ") });
   ms.getRow(1).eachCell((c) => { c.font = { name: F, size: 10, bold: true, color: { argb: "FFFFFFFF" } }; c.fill = fill(BLUE); });
   return wb.xlsx.writeBuffer();
 }
