@@ -86,6 +86,14 @@ const STATUS_CLS = { "Growing": "good", "On track": "good", "Watch": "warn", "Ne
 const lines = (t) => String(t || "").split(/\r?\n/).map((x) => x.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
 const bullets = (t) => { const l = lines(t); return l.length ? `<ul class="md-list">${l.map((x) => `<li>${h(x)}</li>`).join("")}</ul>` : '<p class="muted">—</p>'; };
 
+/** One sponsor at a glance (scorecard card). */
+const card = (s) => `<article class="sr-sp"><div class="sr-h"><b>${h(s.name)}</b><span class="badge ${STATUS_CLS[s.status] || ""}">${h(s.status)}</span></div>
+      <dl class="sr-dl"><dt>Sessions held</dt><dd>${nf(s.held)}${s.planned ? ` / ${nf(s.planned)}` : ""}</dd><dt>Participations</dt><dd>${nf(s.attendance)}</dd>
+        <dt>Avg per session</dt><dd>${s.avgAll != null ? s.avgAll.toFixed(1) : "—"}</dd><dt>Staff reached</dt><dd>${s.people || !s.attendance ? nf(s.people) : "—"}</dd></dl>
+      ${s.activeShare != null ? `<div class="sr-m"><i style="width:${Math.min(100, Math.round(s.activeShare * 100))}%;background:${s.status === "Watch" || s.status === "Needs attention" ? "#e8a33a" : "#1d9e75"}"></i></div>
+        <p class="hint" style="margin:2px 0 0">${Math.round(s.activeShare * 100)}% of ${nf(s.roster)} enrolled staff active${s.cancelled ? ` · ${nf(s.cancelled)} cancelled` : ""}</p>` : ""}
+      ${s.trend != null ? `<p class="hint" style="margin:2px 0 0">${arrow(s.trend)}</p>` : ""}</article>`;
+
 /** The full report. opts: nav (period picker), pdf (button), edit ({ action, back } for the team), back (link above). */
 function sponsorHtml(S, { nav = "", pdf = "", edit = null, back = "" } = {}) {
   const T = S.T, per = S.per;
@@ -104,12 +112,7 @@ function sponsorHtml(S, { nav = "", pdf = "", edit = null, back = "" } = {}) {
     { label: "New staff joined", value: nf(T.newJoiners), note: `${arrow(ch(T.newJoiners, T.prevNew))}${spark(sp("people"), "#1baf7a")}`,
       detail: { title: "New staff", html: `<p class="hint">Staff whose first session was in ${h(per.label)}.</p>` } },
   ];
-  const card = (s) => `<article class="sr-sp"><div class="sr-h"><b>${h(s.name)}</b><span class="badge ${STATUS_CLS[s.status] || ""}">${h(s.status)}</span></div>
-      <dl class="sr-dl"><dt>Sessions held</dt><dd>${nf(s.held)}${s.planned ? ` / ${nf(s.planned)}` : ""}</dd><dt>Participations</dt><dd>${nf(s.attendance)}</dd>
-        <dt>Avg per session</dt><dd>${s.avgAll != null ? s.avgAll.toFixed(1) : "—"}</dd><dt>Staff reached</dt><dd>${s.people || !s.attendance ? nf(s.people) : "—"}</dd></dl>
-      ${s.activeShare != null ? `<div class="sr-m"><i style="width:${Math.min(100, Math.round(s.activeShare * 100))}%;background:${s.status === "Watch" || s.status === "Needs attention" ? "#e8a33a" : "#1d9e75"}"></i></div>
-        <p class="hint" style="margin:2px 0 0">${Math.round(s.activeShare * 100)}% of ${nf(s.roster)} enrolled staff active${s.cancelled ? ` · ${nf(s.cancelled)} cancelled` : ""}</p>` : ""}
-      ${s.trend != null ? `<p class="hint" style="margin:2px 0 0">${arrow(s.trend)}</p>` : ""}</article>`;
+
   const fun = S.funnel, fmax = Math.max(1, fun.enrolled, fun.tookPart);
   const frow = (l, v, c) => `<div class="sr-f"><span>${l}</span><span class="sr-ft"><i style="width:${Math.max(v ? 2 : 0, (v / fmax) * 100)}%;background:${c}"></i></span><b>${nf(v)}</b></div>`;
   const inR = S.monthly.filter((m) => m.inRange || S.monthly.length <= 6);
@@ -147,8 +150,7 @@ function sponsorSummaryHtml(S, fullHref) {
   const T = S.T;
   if (!S.sponsors.length) return "";
   return `<section class="card c12"><h2>Corporate programme</h2><p class="hint" style="margin:2px 0 10px">Sponsor performance at a glance${fullHref ? ` · <a href="${h(fullHref)}">Open the full corporate report</a>` : ""}</p>
-    ${mini(["Sponsor", "Sessions held", "Participations", "Avg per session", "Staff reached", "Status"], S.sponsors.map((s) => [h(s.name), `${nf(s.held)}${s.planned ? ` / ${nf(s.planned)}` : ""}`, nf(s.attendance),
-      s.avgAll != null ? s.avgAll.toFixed(1) : "—", s.people || !s.attendance ? nf(s.people) : "—", `<span class="badge ${STATUS_CLS[s.status] || ""}">${h(s.status)}</span>`]), { num: [1, 2, 3, 4] })}
+    <div class="sr-sc">${S.sponsors.map(card).join("")}</div>
     <p class="hint" style="margin:8px 0 0">${nf(T.held)} of ${nf(T.planned)} sessions delivered${T.planned ? ` (${pct(T.held, T.planned)}%)` : ""} · ${nf(T.attendance)} participations · ${T.avg != null ? T.avg.toFixed(1) : "—"} per session${T.people ? ` · ${nf(T.people)} staff reached` : ""}</p></section>`;
 }
 
