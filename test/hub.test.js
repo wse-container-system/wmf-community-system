@@ -715,7 +715,7 @@ test("cycling development hub", async (t) => {
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
     assert.match(mg, /Community voice · End of Summer Season Survey 2026/);
     assert.match(mg, /Active members/); assert.match(mg, /sv-ring/, "survey shown with score rings");
-    for (const x of ["Ride participation by month", "New joiners by month", "Rides by type", "Event participation"]) assert.match(mg, new RegExp(x), "graph: " + x);
+    for (const x of ["Ride participation by month", "New joiners by month", "Member engagement", "Event participation", "Community scorecard", "Corporate programme"]) assert.match(mg, new RegExp(x), "graph: " + x);
     assert.match(mg, /class="spark"/, "trend lines under the numbers");
     assert.match(mg, /id="mklinks"/, "marketing link made from the management report"); assert.match(mg, /Community Survey<\/th>/);
     assert.match(ok200(await admin("/report?period=year"), "performance report").text, /What the community said/);
@@ -808,6 +808,26 @@ test("cycling development hub", async (t) => {
     assert.ok((await pool.query("SELECT 1 FROM dept_holidays WHERE holiday = '2027-03-10'")).rows[0], "2027 holidays added");
     await admin(`/department/calendar/entry/${e.id}/delete`, { method: "POST", form: {} });
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM dept_calendar")).rows[0].n, 0);
+  });
+
+  await t.test("Corporate sponsor report: for the team, and reachable from the management and marketing links", async () => {
+    const m = E.helpers.addMonths(today.slice(0, 7), -1), q = `?period=month&p=${m}`;
+    const pg = ok200(await admin(`/corporate/management${q}`), "sponsor report").text;
+    for (const x of ["Sponsor scorecard", "Sessions delivered", "Avg per session", "Participation by month", "Sessions delivered vs planned", "Staff engagement", "Activity mix", "Highlights for our sponsors", "Next month", "Edit the words"])
+      assert.match(pg, new RegExp(x), x);
+    await admin("/corporate/management/notes", { method: "POST", form: { period: `month:${m}`, back: `/corporate/management${q}`, highlights: "Sponsor praise from HR", next: "" } });
+    assert.match(ok200(await admin(`/corporate/management${q}`), "after saving").text, /Sponsor praise from HR/);
+    await admin("/report/management/links", { method: "POST", form: { label: "Corp view" } });
+    const g = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND label = 'Corp view'")).rows[0].token;
+    const pub = client();
+    const wm = ok200(await pub(`/g/${g}${q}`), "management link").text;
+    assert.match(wm, new RegExp(`/g/${g}/corporate`), "management report links to the full corporate view");
+    const cv = ok200(await pub(`/g/${g}/corporate${q}`), "corporate via management link").text;
+    assert.match(cv, /Sponsor scorecard/); assert.doesNotMatch(cv, /Edit the words|For the team|@test\.local/, "view only, no hub");
+    const mk = (await pool.query("SELECT token FROM report_links WHERE kind = 'marketing' AND active LIMIT 1")).rows[0];
+    if (mk) assert.match(ok200(await pub(`/m/${mk.token}/corporate${q}`), "corporate via marketing link").text, /Sponsor scorecard/);
+    assert.equal((await pub(`/g/nope/corporate${q}`)).status, 404);
+    await pool.query("DELETE FROM report_notes WHERE period = $1", [`corp:month:${m}`]);
   });
 
   await t.test("Dashboards: every number box opens its details", async () => {

@@ -140,7 +140,7 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
   }));
   app.post("/report/marketing/act/:id", STAFF, wrap(async (req, res) => {
     await saveActivation(req, actor(req));
-    setFlash(req, "ok", "Saved."); res.redirect(303, "/report/management?" + backQs(req) + "#act-" + (+req.params.id || ""));
+    setFlash(req, "ok", "Saved."); res.redirect(303, "/report/management?" + backQs(req) + "&act=" + (+req.params.id || "") + "#act-" + (+req.params.id || ""));
   }));
   app.get("/report/marketing.xlsx", READ, wrap(async (req, res) => sendXlsx(res, periodOf(req.query))));
   app.post("/report/marketing/links", STAFF, wrap(async (req, res) => {
@@ -170,7 +170,7 @@ module.exports = function marketing(app, { need, page, setFlash, actor, wrap, li
   app.post("/m/:token/act/:id", limit("reportlinkpost", 200, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);
     await saveActivation(req, "Marketing link: " + l.label);
-    setFlash(req, "ok", "Saved. Thank you!"); res.redirect(303, `/m/${encodeURIComponent(l.token)}?` + backQs(req) + "#act-" + (+req.params.id || ""));
+    setFlash(req, "ok", "Saved. Thank you!"); res.redirect(303, `/m/${encodeURIComponent(l.token)}?` + backQs(req) + "&act=" + (+req.params.id || "") + "#act-" + (+req.params.id || ""));
   }));
   app.get("/m/:token/excel", limit("reportlink", 120, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l) return closed(req, res);

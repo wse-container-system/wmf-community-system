@@ -64,4 +64,22 @@ function hbars2(items, { colorA, colorB, labelA, labelB, empty = "Nothing in thi
       <b>${i.a != null ? nf(i.a) : "—"}${i.b ? `<small> / ${nf(i.b)}</small>` : ""}</b></div>`).join("")}</div>`;
 }
 
-module.exports = { columns, hbars, spark, hbars2 };
+/** Line chart, one line per series (dashed lines tell series apart without colour). series: [{ name, color, values[], dash? }]. */
+function lines({ categories, series, height = 210, label = "Chart", short = (c) => c }) {
+  const W = Math.max(320, categories.length * 56 + 50), H = height, L = 34, B = 26, T = 16, R = 14;
+  const max = niceMax(Math.max(1, ...series.flatMap((s) => s.values.map((v) => v || 0))));
+  const ph = H - B - T, x = (i) => L + (categories.length > 1 ? (i / (categories.length - 1)) * (W - L - R) : (W - L - R) / 2), y = (v) => T + ph - (v / max) * ph;
+  let g = "";
+  for (let k = 0; k <= 4; k++) { const v = (max / 4) * k; g += `<line class="gl" x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${nf(v)}</text>`; }
+  const dashes = ["", "6 4", "2 4", "10 4 2 4"];
+  const ls = series.map((s, j) => {
+    const pts = s.values.map((v, i) => `${x(i).toFixed(1)},${y(v || 0).toFixed(1)}`).join(" ");
+    return `<polyline fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" ${s.dash || dashes[j % 4] ? `stroke-dasharray="${s.dash || dashes[j % 4]}"` : ""} points="${pts}"/>`
+      + s.values.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v || 0).toFixed(1)}" r="3.4" fill="${s.color}" stroke="var(--surface,#fff)" stroke-width="1.5"><title>${h(short(categories[i]))} · ${h(s.name)}: ${nf(v || 0)}</title></circle>`).join("");
+  }).join("");
+  const labels = categories.map((c, i) => `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle">${h(short(c))}</text>`).join("");
+  const legend = series.length > 1 ? `<div class="legend">${series.map((s, j) => `<span><i class="line" style="background:${s.color}${dashes[j % 4] ? ";opacity:.85" : ""}"></i>${h(s.name)}</span>`).join("")}</div>` : "";
+  return `${legend}<div class="tw"><svg class="svgchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${h(label)}" style="max-height:${H + 40}px"><line class="ax" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${g}${ls}${labels}</svg></div>`;
+}
+
+module.exports = { columns, hbars, spark, hbars2, lines };

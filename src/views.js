@@ -11,14 +11,14 @@ const STAFF = ["admin", "coordinator"], ALL = ["admin", "coordinator", "viewer",
 const SECTIONS = [
   { key: "reports", label: "Reports", home: "/report/management", roles: ["admin", "coordinator", "viewer"], scoped: false, match: /^\/report(\/|\.|$)/, links: [
     ["/report/management", "Management", ["admin", "coordinator", "viewer"]], ["/report", "Performance report", ["admin", "coordinator", "viewer"]],
-    ["/corporate/report", "Corporate report", ["admin", "coordinator", "viewer"]]] },
+    ["/corporate/management", "Corporate report", ["admin", "coordinator", "viewer"]]] },
   { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
     ["/corporate", "Dashboard", ALL], ["/corporate/rides", "Rides", STAFF], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
-    ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/report", "Reports", ALL]] },
+    ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/management", "Management report", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department/schedule", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
     ["/department/schedule", "Schedule", STAFF], ["/department/calendar", "Team calendar", STAFF], ["/department/leave", "Leave", STAFF], ["/department/staff", "Team", ["admin"]], ["/department/share", "Share", ["admin"]]] },
 ];
