@@ -382,6 +382,15 @@ CREATE TABLE IF NOT EXISTS dept_share_links (
 -- a personal link belongs to one person, who can change only their own schedule and leave
 ALTER TABLE dept_share_links ADD COLUMN IF NOT EXISTS staff_id INTEGER REFERENCES dept_staff(id);
 CREATE TABLE IF NOT EXISTS dept_holidays (holiday DATE PRIMARY KEY, name TEXT NOT NULL);
+-- the team calendar's own entries (WMF and corporate rides are shown from their own tables); category is free text
+CREATE TABLE IF NOT EXISTS dept_calendar (
+  id SERIAL PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'Other',
+  start_date DATE NOT NULL, end_date DATE, start_time TEXT, end_time TEXT,
+  repeat TEXT CHECK (repeat IN ('weekly','monthly')), until DATE,
+  location TEXT, notes TEXT, created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS dept_calendar_day ON dept_calendar (start_date);
 -- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
 ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
 ALTER TABLE dept_leave ADD CONSTRAINT dept_leave_status_check CHECK (status IN ('Pending','Approved','Rejected','Cancelled','Tentative'));

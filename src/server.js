@@ -685,6 +685,7 @@ require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar"), qrSend, qrDataUrl });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });
+require("./teamcal")(app, { need, page, setFlash, actor, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
