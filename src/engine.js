@@ -122,7 +122,7 @@
       if (!r.qualifying || !r.person) continue;
       if (!persons.has(r.person)) persons.set(r.person, { person: r.person, member: r.member, dates: [], rideDates: [], label: null });
       persons.get(r.person).dates.push(r.d);
-      if (r.kind === "ride") persons.get(r.person).rideDates.push(r.d);
+      if (r.kind === "ride") { const p = persons.get(r.person); p.rideDates.push(r.d); if (!p.fr || r.d < p.fr) { p.fr = r.d; p.firstSeries = r.series; } }
     }
     for (const p of persons.values()) {
       p.dates.sort(); p.first = p.dates[0]; p.last = p.dates[p.dates.length - 1];

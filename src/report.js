@@ -94,6 +94,17 @@ async function reportData(per) {
   city["Abu Dhabi"].share = pctOf(city["Abu Dhabi"].att, attSum);
   city.Dubai.share = city.Dubai.att ? 100 - city["Abu Dhabi"].share : 0;
   const months = per.type === "month" ? H.monthsBetween(H.addMonths(start.slice(0, 7), -5), start.slice(0, 7)) : H.monthsBetween(start.slice(0, 7), end.slice(0, 7));
+  // new joiners month by month in the period, and first rides per ride (named check-ins plus imported history)
+  const histNew = (await pool.query(`SELECT to_char(ride_date, 'YYYY-MM') AS m, trim(to_char(ride_date, 'Day')) AS wd, sum(coalesce(new_riders, 0))::int AS n
+    FROM history_rides WHERE ride_date BETWEEN $1 AND $2 GROUP BY 1, 2`, [start, end])).rows;
+  const joinByMonth = H.monthsBetween(start.slice(0, 7), end.slice(0, 7)).map((m) => {
+    const a = m + "-01" < start ? start : m + "-01", b = H.monthEnd(m) > end ? end : H.monthEnd(m);
+    const bySeries = {};
+    for (const p of P.persons.values()) if (p.firstRide && p.firstRide >= a && p.firstRide <= b) { const k = p.firstSeries || "Other ride"; bySeries[k] = (bySeries[k] || 0) + 1; }
+    for (const x of histNew.filter((y) => y.m === m && y.n)) { const k = x.wd + " Ride"; bySeries[k] = (bySeries[k] || 0) + x.n; }
+    const joined = manual[m] != null ? +manual[m] : data.members.filter((x) => { const d = String(x.firstSeen || "").slice(0, 10); return d >= a && d <= b; }).length;
+    return { m, joined, manualSet: manual[m] != null, bySeries, fresh: Object.values(bySeries).reduce((s, n) => s + n, 0) };
+  });
   // champions: about weekly riders (4+ rides a month in the period)
   const champAt = 4 * H.monthsBetween(start.slice(0, 7), end.slice(0, 7)).length;
   const champions = [...P.persons.values()].filter((p) => (p.rideDates || []).filter((d) => d >= start && d <= end).length >= champAt).length;
@@ -161,7 +172,7 @@ async function reportData(per) {
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
   const season = await require("./seasonsurvey").reportSurvey().catch(() => null);
-  return { champions, champAt, monthly, season, newManual: fixNew != null ? { app: appNew, months: E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7)).filter((m) => manual[m] != null) } : null, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  return { joinByMonth, champions, champAt, monthly, season, newManual: fixNew != null ? { app: appNew, months: E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7)).filter((m) => manual[m] != null) } : null, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages
