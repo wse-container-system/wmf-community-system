@@ -222,15 +222,10 @@ function tilesOf(M) {
 function graphsHtml(M) {
   const mo = M.D.monthly || [], short = (m) => monLabel(m);
   const span = mo.length ? `${monLabel(mo[0].m, true)} – ${monLabel(mo[mo.length - 1].m, true)}` : "";
-  return `<section class="card c4 md-g"><h2>Ride participation by month</h2><p class="hint">${h(span)}</p>
+  return `<section class="card c6 md-g"><h2>Ride participation by month</h2><p class="hint">${h(span)}</p>
       ${lineChart({ categories: mo.map((x) => x.m), series: [{ name: "Abu Dhabi", color: "#2a78d6", values: mo.map((x) => x.auh) }, { name: "Dubai", color: "#eb6834", values: mo.map((x) => x.dxb), dash: true }], height: 200, label: "Ride participation by month, Abu Dhabi and Dubai", short })}</section>
-    <section class="card c4 md-g"><h2>New joiners by month</h2><p class="hint">The community is now ${nf(M.kpi.members)} members</p>
-      ${columns({ categories: mo.map((x) => x.m), series: [{ name: "New joiners", color: "#1baf7a", values: mo.map((x) => x.joiners) }], height: 190, label: "New joiners by month", short })}</section>
-    <section class="card c4 md-g"><h2>Member engagement</h2><p class="hint">From the whole community to our champions · ${h(M.per.label)}</p>
-      ${(() => { const D = M.D, mx = Math.max(1, M.kpi.members);
-        const row = (l, v, c, tip) => `<div class="sr-f" title="${h(tip)}"><span>${l}</span><span class="sr-ft"><i style="width:${Math.max(v ? 2 : 0, (v / mx) * 100)}%;background:${c}"></i></span><b>${nf(v)}</b></div>`;
-        return row("Members", M.kpi.members, "#c6d6f5", "Everyone in the community") + row("Took part", D.k.participants, "#8fb3ef", "Came to a ride or event in this period")
-          + row("Active (2+ in 90 days)", M.kpi.active, "#5b7cf0", "Took part at least twice in the 90 days up to the end of the period") + row(`Champions (${D.champAt}+ rides)`, D.champions, "#2f5fb3", "About weekly riders in this period"); })()}</section>`;
+    <section class="card c6 md-g"><h2>New joiners by month</h2><p class="hint">The community is now ${nf(M.kpi.members)} members</p>
+      ${columns({ categories: mo.map((x) => x.m), series: [{ name: "New joiners", color: "#1baf7a", values: mo.map((x) => x.joiners) }], height: 190, label: "New joiners by month", short })}</section>`;
 }
 
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
