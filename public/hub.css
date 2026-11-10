@@ -577,3 +577,15 @@ a.sc-chip:hover { background: color-mix(in srgb, var(--ac) 22%, var(--surface));
 .mc-tiles span { font-size: 11.5px; color: var(--muted); } .mc-tiles b { font-size: 14px; text-transform: none; }
 .form .mk-met input { width: 130px; min-height: 0; height: 30px; padding: 3px 7px; font-size: 13px; } .form .mk-met .mk-mv { width: 72px; }
 .mk-ch > [data-mk-addrow] { justify-self: start; }
+/* management report graphs */
+.spark { display: block; width: 100%; height: 26px; margin-top: 6px; }
+.md-graphs { margin: 0; } .md-g h2 { margin-bottom: 0; } .md-g .hint { margin: 2px 0 10px; }
+.md-g .hbar { grid-template-columns: minmax(0, 170px) minmax(0, 1fr) auto; margin: 0 0 10px; }
+.md-g .hbar > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-g .hbar .bar { height: 14px; border-radius: 4px; }
+.hb2 { position: relative; display: block; height: 14px; } .hb2 .bar { position: absolute; left: 0; top: 0; display: block; }
+.hbar2 b small { font-weight: 500; color: var(--muted); }
+.md-g .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.md-g .tw { overflow: visible; } .md-g .svgchart { width: 100%; height: 210px; min-width: 0 !important; display: block; }
+.md-g .hint { font-size: 13px; }
+.md-g .hbar > span:first-child { white-space: normal; text-overflow: clip; line-height: 1.25; }

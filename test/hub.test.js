@@ -715,6 +715,8 @@ test("cycling development hub", async (t) => {
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
     assert.match(mg, /Community voice · End of Summer Season Survey 2026/);
     assert.match(mg, /Active members/); assert.match(mg, /sv-ring/, "survey shown with score rings");
+    for (const x of ["Ride participation by month", "New joiners by month", "Rides by type", "Event participation"]) assert.match(mg, new RegExp(x), "graph: " + x);
+    assert.match(mg, /class="spark"/, "trend lines under the numbers");
     assert.match(mg, /id="mklinks"/, "marketing link made from the management report"); assert.match(mg, /Community Survey<\/th>/);
     assert.match(ok200(await admin("/report?period=year"), "performance report").text, /What the community said/);
     const w = (await pool.query("SELECT id FROM season_surveys WHERE title = 'End of Winter Season Survey 2026'")).rows[0];

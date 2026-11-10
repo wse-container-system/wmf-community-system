@@ -94,6 +94,10 @@ async function reportData(per) {
   city["Abu Dhabi"].share = pctOf(city["Abu Dhabi"].att, attSum);
   city.Dubai.share = city.Dubai.att ? 100 - city["Abu Dhabi"].share : 0;
   const months = per.type === "month" ? H.monthsBetween(H.addMonths(start.slice(0, 7), -5), start.slice(0, 7)) : H.monthsBetween(start.slice(0, 7), end.slice(0, 7));
+  // month by month for the graphs: rides, rides held, new joiners (hand-set months win), event participation
+  const tmap = new Map(cur.trend.map((t) => [t.month, t]));
+  const monthly = months.map((m) => { const t = tmap.get(m) || {}; return { m, ride: t.rideAttendance || 0, sessions: t.sessions || 0, joiners: manual[m] != null ? +manual[m] : t.newMembers || 0, events: t.eventParticipation || 0,
+    auh: (city["Abu Dhabi"].trend.find((x) => x.m === m) || {}).v || 0, dxb: (city.Dubai.trend.find((x) => x.m === m) || {}).v || 0 }; });
 
   // ---- who rode: community and gender (live check-ins; history headcounts add the community split they recorded)
   const prof = new Map(profiles.map((p) => [p.id, p]));
@@ -154,7 +158,7 @@ async function reportData(per) {
   if (wins.length < 3 && survey.avg) wins.push({ big: `${survey.avg.toFixed(1)} / 5`, text: `Average event rating (${survey.n} answers)` });
 
   const season = await require("./seasonsurvey").reportSurvey().catch(() => null);
-  return { season, newManual: fixNew != null ? { app: appNew, months: E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7)).filter((m) => manual[m] != null) } : null, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
+  return { monthly, season, newManual: fixNew != null ? { app: appNew, months: E.helpers.monthsBetween(start.slice(0, 7), end.slice(0, 7)).filter((m) => manual[m] != null) } : null, sessionsList, prevR, prevEvents: prevDone.length, prevEvPeople: prevDone.filter((a) => !isBig(a)).reduce((s, a) => s + (a.participants || 0), 0), per, start, end, today, k, prev, city, months, riders, firstRiders, db, joined, done, evPeople, spotlight, surveyOf, partners, corp, corpAll, soc, survey, upcoming, notes, wins, isDxb, isBig };
 }
 
 // =====================================================================================================  HTML pages
