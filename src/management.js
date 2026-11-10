@@ -10,7 +10,7 @@ const E = require("./engine");
 const { reportData, periodOf } = require("./report");
 const { fmtPct } = require("./social");
 const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
-const { columns, hbars, hbars2, spark, lines: lineChart } = require("./charts");
+const { spark } = require("./charts");
 
 const cut = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 /** Shorten at a sentence end when possible, so nothing reads as cut off. */
@@ -198,7 +198,7 @@ function tilesOf(M) {
       detail: { title: `Ride participation · ${M.per.label}`, html: `<h3>By city</h3>${byCity}<h3>By ride</h3>${bySeries}<h3>${M.per.type === "month" ? "Last six months" : "By month"}</h3>${byMonth}` } },
     { label: "Rides held", value: nf(k.rides), note: k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : "", detail: { title: `Every ride · ${M.per.label}`, html: rideList } },
     { label: "New joiners", value: nf(k.newMembers), note: `new members joined · ${nf(k.fresh)} first rides with WMF`,
-      detail: { title: "New joiners and first rides", html: `${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
+      detail: { title: `New joiners · ${M.per.label}`, html: `${joinDetail(D, M.per)}<h3>By city</h3>${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
         ${D.newManual ? `<p class="hint"><b>New members: ${nf(k.newMembers)}</b>, set by the team for ${D.newManual.months.map((m) => monLabel(m, true)).join(", ")} (the records show ${nf(D.newManual.app)}). The city split above is from the records.</p>` : ""}
         <p class="hint">A new rider is someone whose first WMF ride was in this period. Dubai rides counted by headcount don't record names, so their new riders aren't counted.</p>` } },
     { label: "Active members", value: nf(k.active), note: `${k.prevActive != null ? `${ch(k.active, k.prevActive)} vs before · ` : ""}${k.members ? Math.round((k.active / k.members) * 100) + "% of the community" : ""}`,
@@ -218,15 +218,19 @@ function tilesOf(M) {
   return tiles;
 }
 
-/** The graphs: ride participation and new joiners by month, rides by type, event participation. */
-function graphsHtml(M) {
-  const mo = M.D.monthly || [], short = (m) => monLabel(m);
-  const span = mo.length ? `${monLabel(mo[0].m, true)} – ${monLabel(mo[mo.length - 1].m, true)}` : "";
-  return `<section class="card c6 md-g"><h2>Ride participation by month</h2><p class="hint">${h(span)}</p>
-      ${lineChart({ categories: mo.map((x) => x.m), series: [{ name: "Abu Dhabi", color: "#2a78d6", values: mo.map((x) => x.auh) }, { name: "Dubai", color: "#eb6834", values: mo.map((x) => x.dxb), dash: true }], height: 200, label: "Ride participation by month, Abu Dhabi and Dubai", short })}</section>
-    <section class="card c6 md-g"><h2>New joiners by month</h2><p class="hint">The community is now ${nf(M.kpi.members)} members</p>
-      ${columns({ categories: mo.map((x) => x.m), series: [{ name: "New joiners", color: "#1baf7a", values: mo.map((x) => x.joiners) }], height: 190, label: "New joiners by month", short })}</section>`;
+/** New joiners by month (quarter and year), then first rides per month per ride. */
+function joinDetail(D, per) {
+  const jm = D.joinByMonth || [];
+  if (!jm.length) return "";
+  const rides = [...new Set(jm.flatMap((x) => Object.keys(x.bySeries)))].sort((a, b) => { const o = (n) => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].findIndex((w) => n.startsWith(w)); return (o(a) < 0 ? 9 : o(a)) - (o(b) < 0 ? 9 : o(b)); });
+  const months = per.type === "month" ? "" : `<h3>By month</h3>${mini(["Month", "New members joined", "First rides with WMF"], [...jm.map((x) => [h(monLabel(x.m, true)), nf(x.joined) + (x.manualSet ? ' <span class="muted">(set by hand)</span>' : ""), nf(x.fresh)]),
+    ["<b>Total</b>", `<b>${nf(jm.reduce((s, x) => s + x.joined, 0))}</b>`, `<b>${nf(jm.reduce((s, x) => s + x.fresh, 0))}</b>`]], { num: [1, 2] })}`;
+  const perRide = rides.length ? `<h3>First rides ${per.type === "month" ? "by ride" : "by month and ride"}</h3>${per.type === "month"
+    ? mini(["Ride", "First rides"], rides.map((r) => [h(r), nf(jm[0].bySeries[r] || 0)]), { num: [1] })
+    : mini(["Month", ...rides, "Total"], jm.map((x) => [h(monLabel(x.m, true)), ...rides.map((r) => (x.bySeries[r] ? nf(x.bySeries[r]) : "—")), `<b>${nf(x.fresh)}</b>`]), { num: rides.map((_, i) => i + 1).concat(rides.length + 1), scroll: true })}` : "";
+  return months + perRide;
 }
+
 
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
 /** "Edit the words" for a period: the team's box, and a manager's link that may edit. */
@@ -316,7 +320,7 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed, corpHref }) {
       <section class="card md-k next"><h2>Forward view (next ${unit.toLowerCase()})</h2>${li(M.T.forward, 200, "fwd")}</section>
     </div>
     ${scorecard(M)}
-    <div class="grid md-graphs">${graphsHtml(M)}</div>
+
     <div class="grid">
       <section class="card c7"><h2>Rides</h2><div class="tw"><table class="md-rides"><thead><tr><th>Ride type</th><th class="n">No. of rides</th><th>Avg. number of riders</th><th class="n">New riders</th><th>Comment</th></tr></thead><tbody>
         ${M.rides.map((r) => `<tr><td><span class="md-dot" style="background:${color[r.city]}"></span>${h(r.type)}</td><td class="n">${r.n ? nf(r.n) : "—"}</td>
