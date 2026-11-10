@@ -791,6 +791,22 @@ test("cycling development hub", async (t) => {
     await pool.query("DELETE FROM marketing_actions WHERE id > (SELECT max(id) - 3 FROM marketing_actions)");
   });
 
+  await t.test("Department team calendar: WMF and corporate rides, leave, and the team's own entries", async () => {
+    const m = today.slice(0, 7), d = m + "-05";
+    const r = await admin("/department/calendar/new", { method: "POST", form: { title: "Team meeting", category: "Meeting", start_date: d, start_time: "10:00", end_time: "11:00", repeat: "weekly", who: "Whole team" } });
+    assert.equal(r.status, 302);
+    const e = (await pool.query("SELECT * FROM dept_calendar WHERE title = 'Team meeting'")).rows[0];
+    assert.equal(e.who, "Whole team"); assert.equal(e.repeat, "weekly");
+    const items = await require("../src/teamcal").load(d, E.helpers.addDays(d, 20));
+    assert.equal(items.filter((x) => x.title === "Team meeting").length, 3, "repeats every week");
+    const pg = ok200(await admin(`/department/calendar?m=${m}`), "month").text;
+    for (const x of ["WMF rides &(amp;)? events", "Corporate rides", "Leave &(amp;)? days off", "Team entries", "Team meeting"]) assert.match(pg, new RegExp(x));
+    assert.match(ok200(await admin(`/department/calendar?view=week&d=${d}`), "week").text, /Whole team/, "week view shows who");
+    assert.doesNotMatch(ok200(await admin(`/department/calendar?m=${m}&show=wmf,corp`), "filtered").text, /Team meeting/, "filters hide team entries");
+    await admin(`/department/calendar/entry/${e.id}/delete`, { method: "POST", form: {} });
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM dept_calendar")).rows[0].n, 0);
+  });
+
   await t.test("Dashboards: every number box opens its details", async () => {
     for (const u of ["/report/management?period=year", "/wmf/rides?city=auh&period=year", "/corporate/rides?period=year", "/corporate?period=ytd", "/overview"]) {
       const pg = ok200(await admin(u), u).text;

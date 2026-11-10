@@ -391,6 +391,7 @@ CREATE TABLE IF NOT EXISTS dept_calendar (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS dept_calendar_day ON dept_calendar (start_date);
+ALTER TABLE dept_calendar ADD COLUMN IF NOT EXISTS who TEXT;
 -- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
 ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
 ALTER TABLE dept_leave ADD CONSTRAINT dept_leave_status_check CHECK (status IN ('Pending','Approved','Rejected','Cancelled','Tentative'));
