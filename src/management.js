@@ -10,6 +10,7 @@ const E = require("./engine");
 const { reportData, periodOf } = require("./report");
 const { fmtPct } = require("./social");
 const { h, fmtDate, monLabel, nf, detailTiles, mini } = require("./views");
+const { columns, hbars, hbars2, spark } = require("./charts");
 
 const cut = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 /** Shorten at a sentence end when possible, so nothing reads as cut off. */
@@ -192,7 +193,7 @@ function tilesOf(M) {
   const community = `<div class="grid"><div class="c6">${mini(["City", "Members", "Joined this period"], [["Abu Dhabi", nf(db.city.auh), nf(j.city.auh)], ["Dubai", nf(db.city.dxb), nf(j.city.dxb)], ["<b>Total</b>", `<b>${nf(db.total)}</b>`, `<b>${nf(j.total)}</b>`]], { num: [1, 2] })}</div>
     <div class="c6">${mini(["", "Members"], [["Women", nf(db.gender.women)], ["Men", nf(db.gender.men)], ["Not recorded", nf(db.gender.unknown)]], { num: [1] })}</div></div>
     <p class="hint">City is the home city given at registration, otherwise where the person rides most.</p>`;
-  return [
+  const tiles = [
     { label: "Ride participation", value: nf(k.participation), note: `${k.change != null ? `<span class="${k.change >= 0 ? "rp-up" : "rp-down"}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change)}%</span> vs before · ` : ""}AUH ${nf(k.auh)} · DXB ${nf(k.dxb)}`,
       detail: { title: `Ride participation · ${M.per.label}`, html: `<h3>By city</h3>${byCity}<h3>By ride</h3>${bySeries}<h3>${M.per.type === "month" ? "Last six months" : "By month"}</h3>${byMonth}` } },
     { label: "Rides held", value: nf(k.rides), note: k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : "", detail: { title: `Every ride · ${M.per.label}`, html: rideList } },
@@ -206,6 +207,26 @@ function tilesOf(M) {
     { label: "Community activations", value: nf(k.acts), note: `${nf(k.actPeople)} participants · ${k.partners} partner${k.partners === 1 ? "" : "s"}`, detail: { title: `Community activations · ${M.per.label}`, html: actList } },
     { label: "Community", value: nf(k.members), note: "members in Abu Dhabi and Dubai", detail: { title: "The community", html: community } },
   ];
+  // a small trend line under the numbers that have one (the months shown in the graphs)
+  const mo = D.monthly || [], SP = { "Ride participation": ["ride", "#5b7cf0"], "Rides held": ["sessions", "#5b7cf0"], "New joiners": ["joiners", "#1baf7a"], "Community activations": ["events", "#e8833a"] };
+  if (mo.length > 1) for (const t of tiles) if (SP[t.label]) t.note += spark(mo.map((x) => x[SP[t.label][0]]), SP[t.label][1]);
+  return tiles;
+}
+
+/** The graphs: ride participation and new joiners by month, rides by type, event participation. */
+function graphsHtml(M) {
+  const mo = M.D.monthly || [], short = (m) => monLabel(m);
+  const span = mo.length ? `${monLabel(mo[0].m, true)} – ${monLabel(mo[mo.length - 1].m, true)}` : "";
+  const rides = M.rides.filter((r) => r.n || r.city !== "corp" || /L.IMAD/i.test(r.type));
+  const acts = M.acts.filter((a) => a.raw.participants != null || a.raw.registrants).slice(0, 8);
+  return `<section class="card c6 md-g"><h2>Ride participation by month</h2><p class="hint">${h(span)}</p>
+      ${columns({ categories: mo.map((x) => x.m), series: [{ name: "Abu Dhabi", color: "#5b7cf0", values: mo.map((x) => x.auh) }, { name: "Dubai", color: "#e8833a", values: mo.map((x) => x.dxb) }], height: 190, label: "Ride participation by month", short })}</section>
+    <section class="card c6 md-g"><h2>New joiners by month</h2><p class="hint">The community is now ${nf(M.kpi.members)} members</p>
+      ${columns({ categories: mo.map((x) => x.m), series: [{ name: "New joiners", color: "#1baf7a", values: mo.map((x) => x.joiners) }], height: 190, label: "New joiners by month", short })}</section>
+    <section class="card c6 md-g"><h2>Rides by type</h2><p class="hint">Average riders per ride · ${h(M.per.label)}</p>
+      ${hbars(rides.map((r) => ({ name: r.type.replace(" Community Rides", " community"), value: r.avg ? Math.round(r.avg) : 0, color: r.city === "dxb" ? "#e8833a" : r.city === "corp" ? "#9b7be0" : "#5b7cf0" })), { empty: "No rides in this period." })}</section>
+    <section class="card c6 md-g"><h2>Event participation</h2><p class="hint">Came against registered · ${h(M.per.label)}</p>
+      ${hbars2(acts.map((a) => ({ name: a.name, a: a.raw.participants, b: a.raw.registrants })), { colorA: "#2f5fb3", colorB: "#c6d6f5", labelA: "Came", labelB: "Registered", empty: "No activations in this period." })}</section>`;
 }
 
 // ---------------------------------------------------------------- the dashboard (what the management link shows)
@@ -250,6 +271,7 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed }) {
       <div class="mk-actions">${nav}${pdf}${ed && ed.excelHref ? `<a class="btn" href="${h(ed.excelHref)}">Excel</a>` : ""}<a class="btn primary" href="${h(pptxHref)}">PowerPoint</a></div></section>
     ${ed && ed.banner ? `<div class="md-editnote noprint"><b>You can edit this report:</b> feedback, marketing strategy and numbers under <a href="#acts">Community activations</a>, and posts under <a href="#log">Marketing &amp; impact</a>. Management sees your changes straight away.</div>` : ""}
     ${detailTiles(tilesOf(M), { cls: "tiles ov-tiles mk-tiles md-tiles" })}
+    <div class="grid md-graphs">${graphsHtml(M)}</div>
     <div class="md-keys">
       <section class="card md-k"><h2>Key developments</h2>${li(M.T.developments)}</section>
       <section class="card md-k win"><h2>Key execution wins</h2>${li(M.T.wins)}</section>

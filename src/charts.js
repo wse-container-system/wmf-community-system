@@ -45,4 +45,23 @@ function hbars(items, { color = "var(--s1)", empty = "Nothing in this period." }
   return `<div role="list">${items.map((i) => `<div class="hbar" role="listitem"><span>${h(i.name)}</span><span><span class="bar" style="display:block;width:${((i.value / max) * 100).toFixed(1)}%;background:${i.color || color}"></span></span><b>${nf(i.value)}</b></div>`).join("")}</div>`;
 }
 
-module.exports = { columns, hbars };
+/** A small trend line for a number box; the last point is marked. */
+function spark(values, color = "var(--s1)") {
+  const v = values.map((x) => +x || 0); if (v.length < 2) return "";
+  const max = Math.max(1, ...v), min = Math.min(...v), W = 100, H = 24, P = 3;
+  const pt = (x, i) => [(i / (v.length - 1)) * (W - 2 * P) + P, H - P - ((x - min) / Math.max(1, max - min)) * (H - 2 * P)];
+  const pts = v.map(pt), last = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" points="${pts.map((p) => p.map((n) => n.toFixed(1)).join(",")).join(" ")}"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
+}
+
+/** Two bars per item (e.g. came vs registered), the second drawn behind as a lighter track. items: [{ name, a, b }]. */
+function hbars2(items, { colorA, colorB, labelA, labelB, empty = "Nothing in this period." } = {}) {
+  if (!items.length) return `<p class="muted">${h(empty)}</p>`;
+  const max = Math.max(1, ...items.map((i) => Math.max(i.a || 0, i.b || 0)));
+  return `<div class="legend"><span><i style="background:${colorA}"></i>${h(labelA)}</span><span><i style="background:${colorB}"></i>${h(labelB)}</span></div>
+    <div role="list">${items.map((i) => `<div class="hbar hbar2" role="listitem"><span title="${h(i.name)}">${h(i.name)}</span><span class="hb2">
+      ${i.b ? `<span class="bar" style="width:${((i.b / max) * 100).toFixed(1)}%;background:${colorB}"></span>` : ""}<span class="bar" style="width:${(((i.a || 0) / max) * 100).toFixed(1)}%;background:${colorA}"></span></span>
+      <b>${i.a != null ? nf(i.a) : "—"}${i.b ? `<small> / ${nf(i.b)}</small>` : ""}</b></div>`).join("")}</div>`;
+}
+
+module.exports = { columns, hbars, spark, hbars2 };
