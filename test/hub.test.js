@@ -492,7 +492,7 @@ test("cycling development hub", async (t) => {
     const m = today.slice(0, 7);
     assert.equal((await admin(`/report/marketing?period=month&p=${m}`)).status, 302, "one report: marketing lives in the management report");
     const pg = ok200(await admin(`/report/management?period=month&p=${m}`), "management page").text;
-    for (const x of ["Community activations", "Add a post or campaign", "id=\"mklinks\"", ">Excel<"]) assert.match(pg, new RegExp(x));
+    for (const x of ["Community activations", "id=\"social-in\"", "id=\"mklinks\"", ">Excel<"]) assert.match(pg, new RegExp(x));
     const x = await admin(`/report/marketing.xlsx?period=month&p=${m}`, { raw: true });
     assert.equal(x.status, 200);
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.text);
@@ -665,9 +665,9 @@ test("cycling development hub", async (t) => {
     const l = (await pool.query("SELECT * FROM report_links WHERE kind = 'marketing' ORDER BY id DESC")).rows[0];
     const pub = client(), base = `/m/${l.token}`;
     const form = ok200(await pub(base), "marketing link").text;
-    assert.match(form, /Add marketing/); assert.match(form, /Community activations/); assert.match(form, /Key execution misses/, "same view as management");
+    assert.doesNotMatch(form, /Marketing &amp; impact|Add a post|Add marketing/, "marketing & impact removed"); assert.match(form, /Community activations/); assert.match(form, /id="social-in"/); assert.match(form, /Key execution misses/, "same view as management");
     assert.doesNotMatch(form, /Department<\/a>|Corporate<\/a>|Sign out|@test\.local/, "no hub menus or emails");
-    const ev = /value="(a:\d+|e:[^"]+)"/.exec(form);
+    const a0 = (await pool.query("SELECT id FROM activations ORDER BY id LIMIT 1")).rows[0], ev = a0 ? [null, "a:" + a0.id] : null;
     const d = today, y = `?period=year&p=${today.slice(0, 4)}`;
     assert.equal((await pub(base + y, { method: "POST", form: { target: "", channel: "Instagram", kind: "Reel / video", posted_on: d, title: "Teaser reel", reach: "4,200", engagements: "310" } })).status, 303);
     await pub(base + y, { method: "POST", form: { target: "o", other_event: "City fun ride", other_date: d, other_people: "80", channel: "WhatsApp", kind: "Post", posted_on: d, reach: "500", engagements: "40" } });
@@ -685,21 +685,16 @@ test("cycling development hub", async (t) => {
       assert.equal((await pool.query("SELECT strategy FROM marketing_strategies WHERE target = $1", ["a:" + act.id])).rows[0].strategy, "Partner reveal then reminders.");
     }
     const after = ok200(await pub(base + "?period=year"), "after entries").text;
-    assert.match(after, /4,200/); assert.match(after, /City fun ride/); assert.match(after, /Not counted in the report/);
     assert.match(after, /Great energy, 5 asked about the next ride/, "edited feedback shows in the report");
-    assert.match(ok200(await admin("/report/management?period=year"), "team page").text, /Teaser reel/);
     if (ev) { // a strategy alone (no post numbers) is saved for the event and shows on the report
       const n0 = (await pool.query("SELECT count(*)::int AS n FROM marketing_actions")).rows[0].n;
       await pub(base + y, { method: "POST", form: { target: ev[1], strategy: "Teaser, partner reveal, reminders", channel: "Instagram", kind: "Post", posted_on: d } });
       assert.equal((await pool.query("SELECT count(*)::int AS n FROM marketing_actions")).rows[0].n, n0, "no empty post");
       assert.equal((await pool.query("SELECT strategy FROM marketing_strategies WHERE target = $1", [ev[1]])).rows[0].strategy, "Teaser, partner reveal, reminders");
     }
-    const ev1 = new RegExp(`href="${base.replace(/[-/]/g, "\\$&")}\\?[^"]*target=(a%3A\\d+)[^"]*#log"`).exec(after);
-    assert.ok(ev1, "each activation has + Add a post");
-    if (ev1) assert.match(ok200(await pub(`${base}?period=year&target=${ev1[1]}`), "event clicked").text, /Add marketing · /, "clicking an event opens its form");
     assert.equal((await admin("/report/marketing/log")).status, 302, "old log address goes to the Marketing page");
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
-    assert.match(mg, /Marketing &amp; impact/); assert.match(mg, /4,200/); await admin("/report/management/links", { method: "POST", form: { label: "Mgmt view" } });
+    assert.doesNotMatch(mg, /Marketing &amp; impact/); await admin("/report/management/links", { method: "POST", form: { label: "Mgmt view" } });
     const gt = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND label = 'Mgmt view'")).rows[0].token;
     const gv = ok200(await pub(`/g/${gt}?period=year`), "management link").text;
     assert.doesNotMatch(gv, /City fun ride/, "other events stay out of the management report"); assert.doesNotMatch(gv, /Add a post|Edit feedback/, "management's link is view-only");
@@ -772,7 +767,6 @@ test("cycling development hub", async (t) => {
     const l = (await pool.query("SELECT token FROM report_links WHERE kind = 'marketing' AND label = 'Channels test'")).rows[0];
     const pub = client(), base = `/m/${l.token}`, y = `?period=year&p=${today.slice(0, 4)}`;
     const form = ok200(await pub(base + y), "marketing link").text;
-    assert.match(form, /Add a channel/); assert.match(form, /Add a metric/); assert.match(form, /Add another type/);
     const before = (await pool.query("SELECT count(*)::int AS n FROM marketing_actions")).rows[0].n;
     // two Instagram types and one TikTok post, in one save (as the page sends them)
     const body = new URLSearchParams([["target", ""],
