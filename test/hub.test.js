@@ -714,7 +714,7 @@ test("cycling development hub", async (t) => {
     const mg = ok200(await admin("/report/management?period=year"), "management").text;
     assert.match(mg, /Community voice · End of Summer Season Survey 2026/);
     assert.match(mg, /Active members/); assert.match(mg, /sv-ring/, "survey shown with score rings");
-    for (const x of ["Community scorecard", "Corporate programme", "sr-sp", "First rides"]) assert.match(mg, new RegExp(x), x);
+    for (const x of ["Community rides", "Community activations &amp; partners", "What&#39;s next|What.s next", "Corporate programme", "sr-sp", "First rides"]) assert.match(mg, new RegExp(x), x);
     assert.doesNotMatch(mg, /Ride participation by month|New joiners by month/, "graphs removed");
     assert.match(mg, /class="spark"/, "trend lines under the numbers");
     assert.match(mg, /id="mklinks"/, "marketing link made from the management report"); assert.match(mg, /Community Survey<\/th>/);
@@ -863,8 +863,8 @@ test("cycling development hub", async (t) => {
     assert.doesNotMatch(g, /id="social-in"|social\/save/, "management can't edit the figures");
     const kv = /Marketing Highlights<\/th><td>([\s\S]*?)<\/td>/.exec(g)[1];
     assert.match(kv, /2,270 followers \(\+270, \+13\.5%\) on Instagram and TikTok/, "one-page marketing highlights come from the upload"); assert.match(/Social Media Campaigns<\/th><td>([\s\S]*?)<\/td>/.exec(g)[1], /Ride-out reel/);
-    assert.match(g, /AUH ride participation/); assert.match(g, /DXB ride participation/);
-    assert.doesNotMatch(g, /Rides held|Marketing &amp; impact/, "removed from management's view");
+    assert.match(g, /Rides held/); assert.match(g, /AUH \d+ · DXB \d+/, "rides held split by city"); assert.match(g, /Social followers/);
+    assert.doesNotMatch(g, /Marketing &amp; impact|Corporate rides &amp; marketing|Community scorecard/, "no repeats in management's view");
     assert.match(ok200(await admin(`/report/management${q}`), "team view").text, /Social media/);
     assert.equal((await client()(`/m/nope/social/template`)).status, 404);
     await pool.query("DELETE FROM social_insights WHERE month = $1", [m + "-01"]);
