@@ -847,9 +847,14 @@ test("cycling development hub", async (t) => {
     assert.equal((await pub(`${base}/social/upload${q}`, { method: "POST", multipart: fd })).status, 303);
     const row = (await pool.query("SELECT data FROM social_insights WHERE month = $1", [m + "-01"])).rows[0];
     assert.ok(row, "month saved");
-    // typed in: replaces the month
-    const form = { month: m, p_0: "Instagram", p_1: "TikTok", m_0_followers_start: "2,000", m_0_followers_end: "2200", m_0_reach: "5000", m_0_views: "10000", m_0_likes: "300", m_1_followers_end: "70", n_top_theme: "Ride-out reel" };
-    assert.equal((await pub(`${base}/social/save${q}`, { method: "POST", form })).status, 303);
+    // uploading the month again replaces it (with a theme this time)
+    ws.eachRow((row) => { const l = String(row.getCell(1).value || ""); if (l.startsWith("Followers at start")) { row.getCell(2).value = 2000; row.getCell(3).value = null; }
+      if (l.startsWith("Followers at end")) { row.getCell(2).value = 2200; row.getCell(3).value = 70; } if (l.startsWith("Accounts reached")) { row.getCell(2).value = 5000; row.getCell(3).value = null; }
+      if (l.startsWith("Total content views")) { row.getCell(2).value = 10000; row.getCell(3).value = null; } if (l.startsWith("Likes")) { row.getCell(2).value = 300; row.getCell(3).value = null; }
+      if (l.startsWith("Shares")) { row.getCell(2).value = null; row.getCell(3).value = null; } if (l.startsWith("Top-performing content theme")) row.getCell(2).value = "Ride-out reel"; });
+    const fd2 = new FormData(); fd2.append("file", new Blob([await wb.xlsx.writeBuffer()]), "insights.xlsx"); fd2.append("month", m);
+    assert.equal((await pub(`${base}/social/upload${q}`, { method: "POST", multipart: fd2 })).status, 303);
+    assert.doesNotMatch(ok200(await pub(base + q), "after upload").text, /social\/save|name="m_0_/, "no typing table, upload only");
     const I = await require("../src/socialinsights").insightsFor({ start: m + "-01", end: E.helpers.addDays(E.helpers.addMonths(m, 1) + "-01", -1), key: `month:${m}` });
     assert.ok(I, "insights for the month");
     const viewTok = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND active LIMIT 1")).rows[0].token;
@@ -861,7 +866,7 @@ test("cycling development hub", async (t) => {
     assert.match(g, /AUH ride participation/); assert.match(g, /DXB ride participation/);
     assert.doesNotMatch(g, /Rides held|Marketing &amp; impact/, "removed from management's view");
     assert.match(ok200(await admin(`/report/management${q}`), "team view").text, /Social media/);
-    assert.equal((await client()(`/m/nope/social/save`, { method: "POST", form })).status, 404);
+    assert.equal((await client()(`/m/nope/social/template`)).status, 404);
     await pool.query("DELETE FROM social_insights WHERE month = $1", [m + "-01"]);
   });
 

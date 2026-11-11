@@ -182,26 +182,13 @@ function insightsHtml(I) {
 
 /** Marketing's part: upload the month's Excel or type the figures in. */
 function inputHtml({ post, month, existing }) {
-  const plats = existing ? Object.keys(existing.platforms) : ["Instagram", "TikTok"];
-  while (plats.length < 3) plats.push("");
-  const val = (p, k) => (existing && existing.platforms[p] && existing.platforms[p][k] != null ? existing.platforms[p][k] : "");
-  const nv = (k) => (existing && existing.notes[k] != null ? existing.notes[k] : "");
-  let sec = "";
-  const rows = METRICS.map(([k, l, s]) => { const headRow = s !== sec ? `<tr class="si-sec"><td colspan="${plats.length + 1}">${h((sec = s))}</td></tr>` : "";
-    return headRow + `<tr><td>${h(l)}</td>${plats.map((p, i) => `<td><input name="m_${i}_${k}" inputmode="decimal" value="${h(val(p, k))}" aria-label="${h(l)} ${h(p || "other platform")}"></td>`).join("")}</tr>`; }).join("");
   return `<section class="card c12 noprint" id="social-in"><h2>Social media insights</h2>
-    <p class="lead">Each month, upload the insights Excel or type the figures in. Calculated figures (growth, interactions, rates) are worked out for you. Management sees a short summary; every figure is kept here.</p>
-    <div class="grid">
-      <form class="c5 si-up" method="post" action="${h(post)}/social/upload" enctype="multipart/form-data">
-        <label>Month <span class="hint">(leave empty to use the month in the file's title)</span><input type="month" name="month"></label>
-        <label>Insights Excel<input type="file" name="file" accept=".xlsx" required></label>
-        <div class="toolbar" style="margin:0"><button class="btn primary">Upload</button><a class="btn" href="${h(post)}/social/template?month=${h(month)}">Download template</a></div></form>
-      <form class="c7 form si-form" method="post" action="${h(post)}/social/save">
-        <label style="max-width:220px">Month<input type="month" name="month" value="${h(month)}" required></label>
-        <div class="tw"><table class="dt-t si-t"><thead><tr><th>Metric</th>${plats.map((p, i) => `<th><input name="p_${i}" value="${h(p)}" placeholder="Other platform" maxlength="30" aria-label="Platform ${i + 1}"></th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
-        ${NOTES.map(([k, l]) => `<label>${h(l)}${k === "learning" ? `<textarea name="n_${k}" rows="2" maxlength="600">${h(nv(k))}</textarea>` : `<input name="n_${k}" ${/views|shares/.test(k) ? 'inputmode="numeric"' : ""} maxlength="${k === "top_url" ? 400 : 160}" value="${h(nv(k))}">`}</label>`).join("")}
-        <div class="toolbar" style="margin:0"><button class="btn primary">Save ${existing ? "changes" : "the month"}</button>${existing ? '<span class="hint">Saving replaces this month\'s figures.</span>' : ""}</div></form>
-    </div></section>`;
+    <p class="lead">Upload the month's insights Excel. The report updates straight away; growth, interactions and rates are worked out for you.</p>
+    <form class="si-up" method="post" action="${h(post)}/social/upload" enctype="multipart/form-data">
+      <label>Insights Excel<input type="file" name="file" accept=".xlsx" required></label>
+      <label>Month <span class="hint">(optional: the month in the file's title is used)</span><input type="month" name="month"></label>
+      <div class="toolbar" style="margin:0"><button class="btn primary">Upload</button><a class="btn" href="${h(post)}/social/template?month=${h(month)}">Download template</a></div>
+      ${existing ? `<p class="hint" style="margin:0">${h(monLabel(month, true))} is uploaded (${h(Object.keys(existing.platforms).join(", "))}). Uploading that month again replaces it.</p>` : ""}</form></section>`;
 }
 
 /** The template marketing can fill in. */
@@ -232,17 +219,6 @@ function routes(app, { base, guard, by, back, wrap, setFlash, limitPost }) {
       setFlash(req, "ok", `${monLabel(m, true)}: ${Object.keys(r.platforms).join(" and ")} figures saved.`);
       res.redirect(303, back(req, g, m) + "#social");
     } catch (e) { setFlash(req, "err", e.message); res.redirect(303, back(req, g) + "#social-in"); }
-  }));
-  app.post(`${base}/social/save`, ...limitPost, wrap(async (req, res) => {
-    const g = await guard(req, res); if (!g) return;
-    const b = req.body || {}, m = String(b.month || "");
-    if (!/^\d{4}-\d{2}$/.test(m)) { setFlash(req, "err", "Choose the month."); return res.redirect(303, back(req, g) + "#social-in"); }
-    const platforms = {};
-    for (let i = 0; i < 6; i++) { const p = R.clean(b["p_" + i]).slice(0, 30); if (!p) continue; const v = {}; for (const [k] of METRICS) { const x = num(b[`m_${i}_${k}`]); if (x != null) v[k] = x; } if (Object.keys(v).length) platforms[p] = v; }
-    const notes = {}; for (const [k] of NOTES) { const raw = b["n_" + k]; if (raw == null || String(raw).trim() === "") continue; notes[k] = /views|shares/.test(k) ? num(raw) : R.clean(String(raw).replace(/\r/g, "")).slice(0, 600); }
-    if (!Object.keys(platforms).length) { setFlash(req, "err", "Enter at least one figure."); return res.redirect(303, back(req, g) + "#social-in"); }
-    await saveMonth(m, { platforms, notes }, by(req, g));
-    setFlash(req, "ok", `${monLabel(m, true)} saved.`); res.redirect(303, back(req, g, m) + "#social");
   }));
   app.get(`${base}/social/template`, wrap(async (req, res) => {
     const g = await guard(req, res); if (!g) return;
