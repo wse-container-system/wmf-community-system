@@ -666,3 +666,8 @@ a.tc-chip:hover { background: color-mix(in srgb, var(--c) 24%, transparent); }
 
 .md-keys3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .md-sub { font-size: 14px; margin: 0 0 8px; }
+.tc-panel { border: 2px solid var(--accent, #5b7cf0); margin: 12px 0; scroll-margin-top: 12px; }
+.tc-panel .grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.tc-panel .grid > label { grid-column: auto !important; min-width: 0; }
+.tc-panel .grid > label.c8 { grid-column: span 2 !important; }
+.tc-panel input, .tc-panel select { min-width: 0; width: 100%; }

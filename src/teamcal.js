@@ -107,7 +107,7 @@ const chip = (x, full) => {
   return x.href ? `<a class="tc-chip ${x.cancel ? "off" : ""}" style="--c:${x.color}" href="${h(x.href)}" title="${h(tip)}">${inner}</a>` : `<span class="tc-chip ${x.cancel ? "off" : ""}" style="--c:${x.color}" title="${h(tip)}">${inner}</span>`;
 };
 
-function monthGrid(m, items, show) {
+function monthGrid(m, items, show, addHref = (d) => `/department/calendar/new?date=${d}`) {
   const first = m + "-01", last = monthEnd(m), today = R.todayLocal();
   const start = addDays(first, -((dow(first) + 6) % 7)), end = addDays(last, (7 - dow(last)) % 7);
   const by = new Map(); for (const x of items) if (show.has(x.src)) (by.get(x.date) || by.set(x.date, []).get(x.date)).push(x);
@@ -115,29 +115,29 @@ function monthGrid(m, items, show) {
   for (let d = start; d <= end; d = addDays(d, 1)) {
     const list = by.get(d) || [], out = d.slice(0, 7) !== m;
     cells += `<div class="tc-day ${out ? "out" : ""} ${d === today ? "today" : ""} ${dow(d) === 0 || dow(d) === 6 ? "we" : ""} ${list.some((x) => x.hol) ? "hol" : ""}"><div class="tc-dn">${+d.slice(8)}
-      <a class="tc-add noprint" href="/department/calendar/new?date=${d}" aria-label="Add on ${fmtDate(d)}">+</a></div>${list.map(chip).join("")}</div>`;
+      <a class="tc-add noprint" href="${h(addHref(d))}" aria-label="Add on ${fmtDate(d)}">+</a></div>${list.map((x) => chip(x)).join("")}</div>`;
   }
   // on phones: a simple list of the days that have something
-  const agenda = [...by.entries()].filter(([d]) => d.slice(0, 7) === m).sort().map(([d, list]) => `<div class="tc-ag ${d === today ? "today" : ""}"><div class="tc-agd">${DOW[dow(d)]} ${+d.slice(8)}</div><div>${list.map(chip).join("")}</div></div>`).join("")
+  const agenda = [...by.entries()].filter(([d]) => d.slice(0, 7) === m).sort().map(([d, list]) => `<div class="tc-ag ${d === today ? "today" : ""}"><div class="tc-agd">${DOW[dow(d)]} ${+d.slice(8)}</div><div>${list.map((x) => chip(x)).join("")}</div></div>`).join("")
     || '<p class="muted">Nothing on the calendar this month.</p>';
   return `<div class="tc-grid"><div class="tc-dow">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => `<div>${x}</div>`).join("")}</div><div class="tc-days">${cells}</div></div><div class="tc-agenda">${agenda}</div>`;
 }
 
 /** One week, Monday to Sunday, with every entry written out in full. */
-function weekGrid(d0, items, show) {
+function weekGrid(d0, items, show, addHref = (d) => `/department/calendar/new?date=${d}`) {
   const start = addDays(d0, -((dow(d0) + 6) % 7)), today = R.todayLocal();
   const by = new Map(); for (const x of items) if (show.has(x.src)) (by.get(x.date) || by.set(x.date, []).get(x.date)).push(x);
   let cols = "";
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i), list = by.get(d) || [];
-    cols += `<div class="tc-wd ${d === today ? "today" : ""} ${list.some((x) => x.hol) ? "hol" : ""}"><div class="tc-wh">${DOW[dow(d)]} <b>${+d.slice(8)}</b><a class="tc-add noprint" href="/department/calendar/new?date=${d}" aria-label="Add on ${fmtDate(d)}">+</a></div>
+    cols += `<div class="tc-wd ${d === today ? "today" : ""} ${list.some((x) => x.hol) ? "hol" : ""}"><div class="tc-wh">${DOW[dow(d)]} <b>${+d.slice(8)}</b><a class="tc-add noprint" href="${h(addHref(d))}" aria-label="Add on ${fmtDate(d)}">+</a></div>
       ${list.map((x) => chip(x, true)).join("") || '<span class="muted" style="font-size:12px">—</span>'}</div>`;
   }
   return `<div class="tc-week">${cols}</div>`;
 }
 
-function entryForm(e, cats, action, people = []) {
-  return `<form class="form" method="post" action="${action}">
+function entryForm(e, cats, action, people = [], back = "") {
+  return `<form class="form" method="post" action="${action}">${back ? `<input type="hidden" name="back" value="${h(back)}">` : ""}
     <div class="grid"><label class="c8">What<input name="title" required maxlength="120" value="${h(e.title || "")}" placeholder="e.g. Team meeting"></label>
       <label class="c4">Category <span class="hint">(pick or type a new one)</span><input name="category" required maxlength="40" list="tc-cats" value="${h(e.category || "")}" placeholder="Meeting"></label></div>
     <datalist id="tc-cats">${cats.map((c) => `<option value="${h(c)}">`).join("")}</datalist>
@@ -148,7 +148,7 @@ function entryForm(e, cats, action, people = []) {
     <div class="grid"><label class="c4">Who <span class="hint">(optional)</span><input name="who" maxlength="80" list="tc-who" value="${h(e.who || "")}" placeholder="Whole team"></label>
       <label class="c8">Notes <span class="hint">(optional)</span><input name="notes" maxlength="300" value="${h(e.notes || "")}"></label></div>
     <datalist id="tc-who">${["Whole team", ...people].map((c) => `<option value="${h(c)}">`).join("")}</datalist>
-    <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><a class="btn ghost" href="/department/calendar${e.s ? "?m=" + e.s.slice(0, 7) : ""}">Cancel</a></div></form>`;
+    <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><a class="btn ghost" href="${h(back || `/department/calendar${e.s ? "?m=" + e.s.slice(0, 7) : ""}`)}">Cancel</a></div></form>`;
 }
 
 function clean(b) {
@@ -158,6 +158,8 @@ function clean(b) {
     repeat: ["weekly", "monthly"].includes(b.repeat) ? b.repeat : null, until: okDate(b.until) && s && b.until >= s && ["weekly", "monthly"].includes(b.repeat) ? b.until : null,
     location: R.clean(b.location).slice(0, 120) || null, who: R.clean(b.who).slice(0, 80) || null, notes: R.clean(b.notes).slice(0, 300) || null };
 }
+
+const backTo = (b, fallback) => (/^\/department\/calendar(\?[^#\s]*)?$/.test(String(b || "")) ? String(b).replace(/([?&])(edit|add)=[^&]*&?/g, "$1").replace(/[?&]$/, "") : fallback);
 
 module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap }) {
   const S = need("admin", "coordinator");
@@ -173,6 +175,21 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
     const wkStart = addDays(d0, -((dow(d0) + 6) % 7));
     const toggle = (k) => { const s = new Set(show); if (s.has(k)) s.delete(k); else s.add(k); return `/department/calendar${q({ show: [...s].join(",") })}`; };
     const teamCats = [...new Set(items.filter((x) => x.src === "team").map((x) => x.cat))];
+    // edit right here: a team entry opens in a panel above the calendar, and + on a day opens a new one
+    const here = `/department/calendar${q({})}`;
+    for (const x of items) if (x.src === "team" && x.href) x.href = `${q({ edit: x.href.split("/").pop() })}#tc-edit`;
+    const addHref = (d) => `${q({ add: d })}#tc-edit`;
+    let panel = "";
+    const ed = +req.query.edit || 0, ad = okDate(req.query.add) ? req.query.add : null;
+    if (ed) {
+      const e = (await pool.query("SELECT *, start_date::text AS s, end_date::text AS e, until::text AS u FROM dept_calendar WHERE id = $1", [ed])).rows[0];
+      if (e) panel = `<section class="card tc-panel" id="tc-edit"><div class="si-top"><h2>Edit: ${h(e.title)}</h2><a class="btn tblbtn" href="${h(here)}" aria-label="Close">✕</a></div>
+        ${entryForm(e, await categories(), `/department/calendar/entry/${e.id}`, await people(), here)}
+        <form method="post" action="/department/calendar/entry/${e.id}/delete" style="margin-top:10px"><input type="hidden" name="back" value="${h(here)}"><button class="btn danger" data-confirm="Delete this entry${e.repeat ? " and all its repeats" : ""}?">Delete</button></form></section>`;
+    } else if (ad) {
+      panel = `<section class="card tc-panel" id="tc-edit"><div class="si-top"><h2>Add on ${h(fmtDate(ad))}</h2><a class="btn tblbtn" href="${h(here)}" aria-label="Close">✕</a></div>
+        ${entryForm({ s: ad }, await categories(), "/department/calendar/new", await people(), here)}</section>`;
+    }
     res.send(page(req, "Team calendar", `<section class="card"><div class="tc-head">
         <div><div class="wc-eyebrow">Cycling Development · team calendar</div><div class="tc-nav">${week
           ? `<a class="btn tblbtn" href="/department/calendar${q({ d: addDays(wkStart, -7) })}" aria-label="Previous week">‹</a><h2 style="margin:0">${h(fmtDate(wkStart))} – ${h(fmtDate(addDays(wkStart, 6)))}</h2><a class="btn tblbtn" href="/department/calendar${q({ d: addDays(wkStart, 7) })}" aria-label="Next week">›</a>
@@ -180,11 +197,12 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
           : `<a class="btn tblbtn" href="/department/calendar${q({ m: addMonths(m, -1) })}" aria-label="Previous month">‹</a><h2 style="margin:0">${h(monLabel(m, true))}</h2><a class="btn tblbtn" href="/department/calendar${q({ m: addMonths(m, 1) })}" aria-label="Next month">›</a>
              ${m !== R.todayLocal().slice(0, 7) ? `<a class="btn tblbtn" href="/department/calendar${q({ m: R.todayLocal().slice(0, 7) })}">This month</a>` : ""}`}
           <span class="seg tc-seg"><a class="${week ? "" : "on"}" href="/department/calendar?${new URLSearchParams({ m: week ? d0.slice(0, 7) : m, show: [...show].join(",") })}">Month</a><a class="${week ? "on" : ""}" href="/department/calendar?${new URLSearchParams({ view: "week", d: week ? d0 : m === R.todayLocal().slice(0, 7) ? R.todayLocal() : m + "-01", show: [...show].join(",") })}">Week</a></span></div></div>
-        <a class="btn primary" href="/department/calendar/new">+ Add to the calendar</a></div>
+        <a class="btn primary" href="${h(addHref(week ? d0 : m === R.todayLocal().slice(0, 7) ? R.todayLocal() : m + "-01"))}">+ Add to the calendar</a></div>
       <div class="tc-filters">${Object.entries(SOURCES).map(([k, l]) => `<a class="tc-f ${show.has(k) ? "on" : ""}" href="${toggle(k)}" aria-pressed="${show.has(k)}"><i style="background:${SRC_COLOR[k]}"></i>${l}</a>`).join("")}
         ${show.has("team") && teamCats.length ? `<span class="tc-cats">${teamCats.map((c) => `<span><i style="background:${catColor(c)}"></i>${h(c)}</span>`).join("")}</span>` : ""}</div>
-      ${week ? weekGrid(d0, items, show) : monthGrid(m, items, show)}
-      <p class="muted" style="font-size:12.5px;margin:10px 0 0">WMF rides and events come from the <a href="/calendar">WMF calendar</a>; corporate rides from each company's <a href="/corporate/schedule">schedule</a> and recorded sessions; leave and days off from <a href="/department/leave">Leave</a> and the <a href="/department/schedule">Schedule</a>; UAE public holidays from the list under <a href="/department/staff">Team</a> (Islamic holidays are expected dates until announced). Click an entry to open it · + on a day adds an entry · struck through = cancelled.</p></section>`, PAGE));
+      ${panel}
+      ${week ? weekGrid(d0, items, show, addHref) : monthGrid(m, items, show, addHref)}
+      <p class="muted" style="font-size:12.5px;margin:10px 0 0">WMF rides and events come from the <a href="/calendar">WMF calendar</a>; corporate rides from each company's <a href="/corporate/schedule">schedule</a> and recorded sessions; leave and days off from <a href="/department/leave">Leave</a> and the <a href="/department/schedule">Schedule</a>; UAE public holidays from the list under <a href="/department/staff">Team</a> (Islamic holidays are expected dates until announced). Click a team entry to edit it here · + on a day adds one · other entries open where they're kept · struck through = cancelled.</p></section>`, PAGE));
   }));
 
   app.get("/department/calendar/new", S, wrap(async (req, res) => {
@@ -194,11 +212,11 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
   }));
   app.post("/department/calendar/new", S, wrap(async (req, res) => {
     const f = clean(req.body || {});
-    if (!f.title || !f.start_date) { setFlash(req, "err", "Add what it is and the date."); return res.redirect("/department/calendar/new"); }
+    if (!f.title || !f.start_date) { setFlash(req, "err", "Add what it is and the date."); return res.redirect(backTo(req.body.back, "/department/calendar/new")); }
     const k = Object.keys(f);
     const r = await pool.query(`INSERT INTO dept_calendar (${k}, created_by) VALUES (${k.map((_, i) => "$" + (i + 1))}, $${k.length + 1}) RETURNING id`, [...k.map((x) => f[x]), actor(req)]);
     await audit(pool, actor(req), "teamcal.create", "dept_calendar", String(r.rows[0].id), null, f);
-    setFlash(req, "ok", `Added: ${f.title}, ${fmtDate(f.start_date)}.`); res.redirect(`/department/calendar?m=${f.start_date.slice(0, 7)}`);
+    setFlash(req, "ok", `Added: ${f.title}, ${fmtDate(f.start_date)}.`); res.redirect(backTo(req.body.back, `/department/calendar?m=${f.start_date.slice(0, 7)}`));
   }));
   app.get("/department/calendar/entry/:id", S, wrap(async (req, res) => {
     const e = (await pool.query("SELECT *, start_date::text AS s, end_date::text AS e, until::text AS u FROM dept_calendar WHERE id = $1", [+req.params.id || 0])).rows[0];
@@ -212,12 +230,12 @@ module.exports = function teamCalendar(app, { need, page, setFlash, actor, wrap 
     const k = Object.keys(f);
     await pool.query(`UPDATE dept_calendar SET ${k.map((x, i) => `${x} = $${i + 2}`).join(", ")}, updated_at = now() WHERE id = $1`, [id, ...k.map((x) => f[x])]);
     await audit(pool, actor(req), "teamcal.update", "dept_calendar", String(id), null, f);
-    setFlash(req, "ok", "Saved."); res.redirect(`/department/calendar?m=${f.start_date.slice(0, 7)}`);
+    setFlash(req, "ok", "Saved."); res.redirect(backTo(req.body.back, `/department/calendar?m=${f.start_date.slice(0, 7)}`));
   }));
   app.post("/department/calendar/entry/:id/delete", S, wrap(async (req, res) => {
     const r = await pool.query("DELETE FROM dept_calendar WHERE id = $1 RETURNING *", [+req.params.id || 0]);
     if (r.rows[0]) await audit(pool, actor(req), "teamcal.delete", "dept_calendar", String(r.rows[0].id), r.rows[0], null);
-    setFlash(req, "ok", "Deleted."); res.redirect("/department/calendar");
+    setFlash(req, "ok", "Deleted."); res.redirect(backTo((req.body || {}).back, "/department/calendar"));
   }));
 };
 module.exports.load = load;
