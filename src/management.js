@@ -107,7 +107,7 @@ async function mgmtData(per) {
     members: D.db.total, newMembers: D.k.newMembers, active: D.k.activeMembers, prevActive: D.prev.activeMembers, auh: A.att, dxb: X.att, partners: D.partners.length };
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
-    community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
+    community: [...D.done].sort((a, b) => String(a.event_date || a.month).localeCompare(String(b.event_date || b.month))).map((a) => String(a.title || "").trim()).filter(Boolean).join("\n"),
     survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp, si, fromSI: [...(siLines ? ["social", "marketing"].filter((f) => siLines[f]) : []), ...(sp.sponsors.length ? ["sponsor"] : [])] };
 }
 
@@ -134,7 +134,7 @@ function sheet(M) {
         <div class="mg-bar">CORPORATE RIDES &amp; MARKETING</div>
         <table class="mg-kv">
           <tr><th>Social Media Campaigns</th><td>${bullets(M.T.social, 200)}</td></tr><tr><th>Marketing Highlights</th><td>${bullets(M.T.marketing, 200)}</td></tr>
-          <tr><th>Sponsor Activations</th><td>${bullets(M.T.sponsor, 200)}</td></tr><tr><th>Community Activations</th><td>${h(M.community)}</td></tr>
+          <tr><th>Sponsor Activations</th><td>${bullets(M.T.sponsor, 200)}</td></tr><tr><th>Community Activations</th><td>${bullets(M.community, 120)}</td></tr>
           <tr><th>Strava Followers</th><td><b>AUH Strava:</b> ${h(M.social.strava[0])} <span class="mg-sep">|</span> <b>DXB Strava:</b> ${h(M.social.strava[1])}</td></tr>
           <tr><th>WhatsApp Members</th><td><b>AUH WhatsApp:</b> ${h(M.social.whatsapp[0])} <span class="mg-sep">|</span> <b>DXB WhatsApp:</b> ${h(M.social.whatsapp[1])}</td></tr>
           <tr><th>Community Survey</th><td>${h(M.surveyLine)}</td></tr></table>
@@ -172,7 +172,7 @@ async function pptx(M) {
   s.addTable([["Event / Activation", "Participants", "Feedback / Notes"].map(head), ...(M.acts.length ? M.acts.slice(0, 4).map((a) => [cell(a.name), cell(a.people), cell(brief(a.note, 230), { fontSize: 7 })]) : [[cell("No activations recorded."), cell(""), cell("")]])],
     { x: 6.75, y: 0.95, w: 6.5, colW: [1.9, 1.5, 3.1] });
   s.addText("CORPORATE RIDES & MARKETING", { x: 6.75, y: 3.05, w: 6.5, h: 0.3, fill: { color: BLUE }, color: "FFFFFF", bold: true, fontFace: F, fontSize: 9 });
-  s.addTable([["Social Media Campaigns", txt(M.T.social, 200)], ["Marketing Highlights", txt(M.T.marketing, 200)], ["Sponsor Activations", txt(M.T.sponsor, 200)], ["Community Activations", M.community],
+  s.addTable([["Social Media Campaigns", txt(M.T.social, 200)], ["Marketing Highlights", txt(M.T.marketing, 200)], ["Sponsor Activations", txt(M.T.sponsor, 200)], ["Community Activations", txt(M.community, 120)],
     ["Strava Followers", `AUH Strava: ${M.social.strava[0]}   |   DXB Strava: ${M.social.strava[1]}`], ["WhatsApp Members", `AUH WhatsApp: ${M.social.whatsapp[0]}   |   DXB WhatsApp: ${M.social.whatsapp[1]}`], ["Community Survey", M.surveyLine]]
     .map(([a, b]) => [cell(a, { bold: true, fill: { color: LIGHT } }), cell(b)]), { x: 6.75, y: 3.38, w: 6.5, colW: [1.7, 4.8] });
   s.addTable([["Cross collaborations", "Event", "Comment"].map(head), ...(M.collab.length ? M.collab.slice(0, 4).map((c) => [cell(c.name), cell(c.event), cell(brief(c.note, 170), { fontSize: 7 })]) : [[cell("None this period."), cell(""), cell("")]])],
@@ -380,7 +380,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     return { siMonth, siExisting, view, post, excelHref, banner, qs: q, openAct: +req.query.act || 0, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
       pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${view}?${q({})}#log` };
   };
-  const onePage = (M) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><p class="lead">The same report in management's template. <b>Download PDF</b> saves this page; PowerPoint gives an editable copy.</p></section>
+  const onePage = (M, pptx) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><div class="si-top"><p class="lead" style="margin:0">The same report in management's template.</p><div class="toolbar" style="margin:0"><button class="btn primary" data-print>Download one-page PDF</button>${pptx ? `<a class="btn" href="${h(pptx)}">PowerPoint</a>` : ""}</div></div></section>
     <div class="mg-wrap">${sheet(M)}</div>`;
 
   app.get("/report/management", READ, wrap(async (req, res) => {
@@ -399,7 +399,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
           <form method="post" action="/report/management/links/${l.id}" style="margin:0"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div></div>`;
     }).join("");
     res.send(page(req, "Management report", `
-      ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}`,
+      ${dashboard(M, { nav: periodNav(per, "/report/management"), pdf: `<button class="btn" data-print>One-page PDF</button>`, pptxHref: `/report/management.pptx?${qs(per)}`,
         edit: canEdit ? await editOf(req, per, { view: "/report/management", post: "/report/marketing", excelHref: `/report/marketing.xlsx?${qs(per)}` }) : null, corpHref: `/corporate/management?${qs(per)}` })}
       ${canEdit ? `<section class="card noprint"><h2>For the team</h2>
         ${wordsEditor(M, per, { action: "/report/management/notes", back: `/report/management?${qs(per)}`, open: req.query.edit })}
@@ -427,7 +427,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
               <a class="btn tblbtn" href="https://wa.me/?text=${encodeURIComponent(`Your WMF marketing link: add feedback, strategy and posts for each activation. It shows in the management report: ${url}`)}" target="_blank" rel="noopener">WhatsApp</a></div>` : ""}</div>
             <form method="post" action="/report/marketing/links/${l.id}"><input type="hidden" name="back" value="/report/management"><button class="btn tblbtn ${l.active ? "danger" : ""}" name="active" value="${l.active ? "0" : "1"}">${l.active ? "Switch off" : "Switch on"}</button></form></div>`; }).join("")}
           <form class="inline-form" method="post" action="/report/marketing/links" style="margin-top:10px"><input type="hidden" name="back" value="/report/management"><input class="inp" name="label" required maxlength="60" placeholder="Who is it for? e.g. Marketing" style="flex:1 1 200px"><button class="btn ${mkLinks.length ? "" : "primary"}">Make a link</button></form></details></section>` : ""}
-      ${onePage(M)}`, { active: "/report/management" }));
+      ${onePage(M, `/report/management.pptx?${qs(per)}`)}`, { active: "/report/management" }));
   }));
   app.post("/report/management/links", STAFF, wrap(async (req, res) => {
     const label = require("./rules").clean(req.body.label).slice(0, 60);
@@ -452,7 +452,7 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
     const words = l.can_edit ? `<section class="card noprint">${wordsEditor(M, per, { action: `${b}/notes`, back: `${b}?${qs(per)}`, open: req.query.edit,
       intro: "Adjust any wording for this period. Your changes show in the report and the one-page version straight away; “Back to the suggested text” undoes them." })}</section>` : "";
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`, corpHref: `${b}/corporate?${qs(per)}` })}${words}${onePage(M)}`, { active: "/wmf" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>One-page PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`, corpHref: `${b}/corporate?${qs(per)}` })}${words}${onePage(M, `${b}/pptx?${qs(per)}`)}`, { active: "/wmf" }));
   }));
   app.post("/g/:token/notes", limit("mgmtlinkpost", 60, 60 * 60e3), wrap(async (req, res) => {
     const l = await linkOf(req.params.token); if (!l || !l.can_edit) return closed(req, res);
@@ -467,8 +467,8 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const l = await mkLinkOf(req.params.token); if (!l) return closed(req, res);
     const per = periodOf(req.query), M = await mgmtData(per), b = `/m/${encodeURIComponent(l.token)}`;
     await pool.query("UPDATE report_links SET last_used = now() WHERE id = $1", [l.id]);
-    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>Download PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`,
-      edit: await editOf(req, per, { view: b, post: b, excelHref: `${b}/excel?${qs(per)}`, banner: true }), corpHref: `${b}/corporate?${qs(per)}` })}${onePage(M)}`, { active: "/wmf" }));
+    res.set("X-Robots-Tag", "noindex").send(page(req, "WMF performance", `${dashboard(M, { nav: periodNav(per, b), pdf: `<button class="btn" data-print>One-page PDF</button>`, pptxHref: `${b}/pptx?${qs(per)}`,
+      edit: await editOf(req, per, { view: b, post: b, excelHref: `${b}/excel?${qs(per)}`, banner: true }), corpHref: `${b}/corporate?${qs(per)}` })}${onePage(M, `${b}/pptx?${qs(per)}`)}`, { active: "/wmf" }));
   }));
   app.get("/m/:token/pptx", limit("reportlink", 150, 60 * 60e3), wrap(async (req, res) => {
     const l = await mkLinkOf(req.params.token); if (!l) return closed(req, res);
