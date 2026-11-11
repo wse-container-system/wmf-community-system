@@ -392,6 +392,8 @@ CREATE TABLE IF NOT EXISTS dept_calendar (
 );
 CREATE INDEX IF NOT EXISTS dept_calendar_day ON dept_calendar (start_date);
 ALTER TABLE dept_calendar ADD COLUMN IF NOT EXISTS who TEXT;
+-- social media insights per month (marketing's monthly Excel): { platforms: { Instagram: {...}, TikTok: {...} }, notes: {...} }
+CREATE TABLE IF NOT EXISTS social_insights (month DATE PRIMARY KEY, data JSONB NOT NULL, updated_by TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 -- leave plans: Tentative (planning) as well as Pending / Approved (= confirmed)
 ALTER TABLE dept_leave DROP CONSTRAINT IF EXISTS dept_leave_status_check;
 ALTER TABLE dept_leave ADD CONSTRAINT dept_leave_status_check CHECK (status IN ('Pending','Approved','Rejected','Cancelled','Tentative'));
