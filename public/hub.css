@@ -647,3 +647,19 @@ a.tc-chip:hover { background: color-mix(in srgb, var(--c) 24%, transparent); }
 .md-ac .md-n { color: var(--muted); font-size: 13px; } .md-acd { padding-top: 6px; } .md-acd p { margin: 4px 0; font-size: 14px; }
 @media print { .md-pt .md-ptd, .md-ac .md-acd { display: block; } }
 .md-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important; }
+/* social media insights */
+.si-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; } .si-top h2 { margin: 0; }
+.si-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; margin-bottom: 14px; }
+.si-plat { display: grid; gap: 8px 12px; align-items: center; font-size: 13.5px; }
+.si-ph { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); } .si-ph i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.si-l { color: var(--ink-2); }
+.si-b { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; } .si-b i { display: block; height: 12px; border-radius: 3px; min-width: 0; } .si-b em { font-style: normal; font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.si-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 14px 0 10px; }
+.si-card { text-align: left; border: 1px solid var(--line); background: color-mix(in srgb, var(--line) 30%, transparent); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: grid; gap: 2px; font: inherit; color: inherit; }
+.si-card:hover, .si-card:focus-visible { border-color: var(--s1, #5b7cf0); outline: none; }
+.si-cl { font-size: 12px; color: var(--muted); } .si-card b { font-size: 15px; } .si-cs { font-size: 13px; color: var(--ink-2); }
+.si-full { margin-top: 4px; }
+.si-up { display: grid; gap: 10px; align-content: start; align-self: start; border: 1px dashed var(--line); border-radius: 12px; padding: 12px; }
+.si-t input { width: 100%; min-width: 80px; padding: 4px 6px; font-size: 13px; height: 30px; } .si-t th input { font-weight: 600; }
+.si-t td:first-child { font-size: 13px; white-space: nowrap; } .si-sec td { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-top: 10px; }
+.si-form { display: grid; gap: 10px; }

@@ -100,7 +100,7 @@ async function mgmtData(per) {
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
-    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp: await require("./sponsorreport").sponsorData(per) };
+    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp: await require("./sponsorreport").sponsorData(per), si: await require("./socialinsights").insightsFor(per) };
 }
 
 // ---------------------------------------------------------------- the page (16:9, prints as one page)
@@ -339,6 +339,8 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed, corpHref }) {
         <p class="hint" style="margin:2px 0 8px">Click a partner for details</p>
         ${M.collab.length ? `<div class="md-acts md-fold-list">${M.collab.map((c) => `<details class="md-ac"><summary><b>${h(c.name)}</b><span class="md-n">${h(cut(c.event, 60))}</span></summary><div class="md-acd"><p><b>Events:</b> ${h(c.event)}</p>${c.note ? `<p>${h(c.note)}</p>` : ""}</div></details>`).join("")}</div>` : '<p class="muted">No collaborations in this period.</p>'}</section>
       <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
+      ${require("./socialinsights").insightsHtml(M.si)}
+      ${ed ? require("./socialinsights").inputHtml({ post: ed.post, month: ed.siMonth, existing: ed.siExisting }) : ""}
       <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
       ${ed ? (() => { const MK = require("./mkinputs");
         const others = M.D.mk.others.length ? `<section class="card c12 noprint"><h2>Other events &amp; activities</h2><p class="lead">Marketing for events WMF didn't run. Not counted in the report.</p>
@@ -370,7 +372,9 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     const MK = require("./mkinputs");
     const q = (o) => new URLSearchParams({ period: per.type, p: per.p, ...o }).toString();
     const pre = String(req.query.target || "").slice(0, 90);
-    return { view, post, excelHref, banner, qs: q, openAct: +req.query.act || 0, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
+    const siMonth = per.type === "month" ? per.p : per.end.slice(0, 7) > new Date().toISOString().slice(0, 7) ? E.helpers.addMonths(new Date().toISOString().slice(0, 7), -1) : per.end.slice(0, 7);
+    const siExisting = (await require("./socialinsights").loadMonths(siMonth, siMonth))[0] || null;
+    return { siMonth, siExisting, view, post, excelHref, banner, qs: q, openAct: +req.query.act || 0, tg: await MK.targets(), strategies: await MK.loadStrategies(), editing: await MK.editRow(req.query.edit),
       pre: /^(a:\d+|e:.+|o)$/.test(pre) ? pre : "", cancelHref: `${view}?${q({})}#log` };
   };
   const onePage = (M) => `<section class="card noprint md-onepage-h"><h2>One-page version</h2><p class="lead">The same report in management's template. <b>Download PDF</b> saves this page; PowerPoint gives an editable copy.</p></section>
@@ -469,6 +473,14 @@ module.exports = function management(app, { need, page, setFlash, actor, user, w
     res.type("application/vnd.openxmlformats-officedocument.presentationml.presentation")
       .set("Content-Disposition", `attachment; filename="WMF-${M.W.kind}-Report-${per.p}.pptx"`).send(await pptx(M));
   }));
+  // ----- social media insights: the team (on the management page) and marketing (their link)
+  const SI = require("./socialinsights");
+  SI.routes(app, { base: "/report/marketing", wrap, setFlash, limitPost: [STAFF],
+    guard: async (req, res) => { const u = req.session.user; if (!u || u.role === "viewer" || u.company) { res.status(403).send("Not allowed"); return null; } return u; }, by: (req) => actor(req), back: (req, g, m) => `/report/management?${m ? `period=month&p=${m}` : ""}` });
+  SI.routes(app, { base: "/m/:token", wrap, setFlash, limitPost: [limit("reportlinkpost", 200, 60 * 60e3)],
+    guard: async (req, res) => { const l = await mkLinkOf(req.params.token); if (!l) { closed(req, res); return null; } return l; },
+    by: (req, l) => "Marketing link: " + l.label, back: (req, l, m) => `/m/${encodeURIComponent(l.token)}?${m ? `period=month&p=${m}` : ""}` });
+
   // ----- the full corporate sponsor report: for the team, and through the management and marketing links
   const SP = require("./sponsorreport");
   const corpPage = (req, S, base, extra = {}) => SP.sponsorHtml(S, { nav: periodNav(S.per, base), pdf: '<button class="btn" data-print>Download PDF</button>', ...extra });

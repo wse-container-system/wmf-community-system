@@ -545,8 +545,7 @@ test("cycling development hub", async (t) => {
     await pool.query(`INSERT INTO participation (record_id, record_date, record_type, activity_id, activity_name, activity_type, status, member_id, source, dedupe_key)
       VALUES ('IMP-W1', $1, 'Attendance', 'FORM-WED', 'Wednesday Ride', 'Community Ride', 'Attended', $2, 'Imported form', 'imp-w1')`, [wed + " 18:00:00", m1.member_id]);
     const listPage = ok200(await admin("/rides?days=30"), "rides list").text;
-    const link = new RegExp(`/rides/${wed}/([^"]+)"`).exec(listPage);
-    assert.ok(link, "the Wednesday ride is listed"); assert.equal(decodeURIComponent(link[1]), "RIDE-WEDNESDAY-SOCIAL");
+    assert.match(listPage, new RegExp(`/rides/${wed}/RIDE-WEDNESDAY-SOCIAL"`), "the Wednesday ride is listed");
     await admin("/rides/checkin", { method: "POST", form: { memberId: m2.member_id, date: wed, activityId: "RIDE-WEDNESDAY-SOCIAL", back: `/rides/${wed}/RIDE-WEDNESDAY-SOCIAL` } });
     const pg = ok200(await admin(`/rides/${wed}/RIDE-WEDNESDAY-SOCIAL`), "ride page").text;
     assert.match(pg, /Imported Rider/); assert.match(pg, /Late Rider/);
@@ -829,6 +828,37 @@ test("cycling development hub", async (t) => {
     if (mk) assert.match(ok200(await pub(`/m/${mk.token}/corporate${q}`), "corporate via marketing link").text, /Sponsor scorecard/);
     assert.equal((await pub(`/g/nope/corporate${q}`)).status, 404);
     await pool.query("DELETE FROM report_notes WHERE period = $1", [`corp:month:${m}`]);
+  });
+
+  await t.test("Social media insights: marketing uploads or types them in; management sees the summary", async () => {
+    const m = E.helpers.addMonths(today.slice(0, 7), -1), q = `?period=month&p=${m}`;
+    await admin("/report/marketing/links", { method: "POST", form: { label: "Social test" } });
+    const mk = (await pool.query("SELECT token FROM report_links WHERE kind = 'marketing' AND label = 'Social test'")).rows[0].token;
+    const pub = client(), base = `/m/${mk}`;
+    assert.match(ok200(await pub(base + q), "marketing link").text, /id="social-in"/, "marketing sees the input");
+    // template → fill → upload
+    const tpl = await pub(`${base}/social/template?month=${m}`, { raw: true });
+    assert.equal(tpl.status, 200); assert.match(tpl.type, /spreadsheetml/);
+    const ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(); await wb.xlsx.load(tpl.text);
+    const ws = wb.worksheets[0], fill = { "Followers at start": [1000, 50], "Followers at end": [1100, 60], "Accounts reached": [9000, 300], "Total content views": [20000, 800], "Likes": [400, 20], "Shares": [50, 2] };
+    ws.eachRow((row) => { const l = String(row.getCell(1).value || ""); for (const [k, v] of Object.entries(fill)) if (l.startsWith(k)) { row.getCell(2).value = v[0]; row.getCell(3).value = v[1]; } });
+    const fd = new FormData(); fd.append("month", m);
+    fd.append("file", new Blob([await wb.xlsx.writeBuffer()]), "insights.xlsx");
+    assert.equal((await pub(`${base}/social/upload${q}`, { method: "POST", multipart: fd })).status, 303);
+    const row = (await pool.query("SELECT data FROM social_insights WHERE month = $1", [m + "-01"])).rows[0];
+    assert.ok(row, "month saved");
+    // typed in: replaces the month
+    const form = { month: m, p_0: "Instagram", p_1: "TikTok", m_0_followers_start: "2,000", m_0_followers_end: "2200", m_0_reach: "5000", m_0_views: "10000", m_0_likes: "300", m_1_followers_end: "70", n_top_theme: "Ride-out reel" };
+    assert.equal((await pub(`${base}/social/save${q}`, { method: "POST", form })).status, 303);
+    const I = await require("../src/socialinsights").insightsFor({ start: m + "-01", end: E.helpers.addDays(E.helpers.addMonths(m, 1) + "-01", -1), key: `month:${m}` });
+    assert.ok(I, "insights for the month");
+    const viewTok = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND active LIMIT 1")).rows[0].token;
+    const g = ok200(await client()(`/g/${viewTok}${q}`), "management link").text;
+    for (const x of ["Social media", "Followers", "Accounts reached", "Engagement rate", "Ride-out reel", "Every metric"]) assert.match(g, new RegExp(x), x);
+    assert.doesNotMatch(g, /id="social-in"|social\/save/, "management can't edit the figures");
+    assert.match(ok200(await admin(`/report/management${q}`), "team view").text, /Social media/);
+    assert.equal((await client()(`/m/nope/social/save`, { method: "POST", form })).status, 404);
+    await pool.query("DELETE FROM social_insights WHERE month = $1", [m + "-01"]);
   });
 
   await t.test("Dashboards: every number box opens its details", async () => {
