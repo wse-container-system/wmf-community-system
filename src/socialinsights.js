@@ -105,6 +105,7 @@ async function insightsFor(per) {
     const fe = (lastP.platforms || {})[p] ? lastP.platforms[p].followers_end : null, fs = (firstP.platforms || {})[p] ? firstP.platforms[p].followers_start : null;
     const v = { followers: fe, start: fs, views: s("views"), reach: s("reach"), interactions: s("interactions"), published: s("published"), stories: s("stories"), video_views: s("video_views") };
     v.eng = v.interactions != null && v.views ? v.interactions / v.views : null; v.net = fe != null && fs != null ? fe - fs : null; return [p, v]; }));
+  platforms.sort((a, b) => (byP[b].followers || 0) - (byP[a].followers || 0)); // biggest audience first
   const followers = platforms.reduce((s, p) => s + (byP[p].followers || 0), 0), start = platforms.reduce((s, p) => s + (byP[p].start || 0), 0);
   const T = { followers, net: followers && start ? followers - start : null, growth: start ? (followers - start) / start : null,
     reach: sum("reach"), nonfollower: sum("nonfollower_reach"), views: sum("views"), video_views: sum("video_views"), interactions: sum("interactions"),
@@ -116,6 +117,20 @@ async function insightsFor(per) {
 
 const pctTxt = (v, d = 1) => (v == null ? "—" : (v * 100).toFixed(d) + "%");
 const kfmt = (v) => (v == null ? "—" : v >= 100000 ? (v / 1000).toFixed(0) + "k" : v >= 10000 ? (v / 1000).toFixed(1) + "k" : nf(v));
+
+/** Short lines for the one-page report ("Social media campaigns" and "Marketing highlights"), from marketing's latest upload. */
+function summaryLines(I) {
+  if (!I) return null;
+  const T = I.T, n = I.notes, one = (t, k = 200) => String(t || "").replace(/\s+/g, " ").trim().slice(0, k);
+  const social = [n.campaign ? `${one(n.campaign, 80)}${[n.campaign_views != null ? `${kfmt(n.campaign_views)} views` : "", n.campaign_shares != null ? `${nf(n.campaign_shares)} shares` : ""].filter(Boolean).map((x, i) => (i ? " · " : ": ") + x).join("")}` : "",
+    n.top_theme ? `Best content: ${one(n.top_theme, 80)}` : ""].filter(Boolean);
+  const grow = T.net != null ? ` (${T.net >= 0 ? "+" : "−"}${nf(Math.abs(T.net))}${T.growth != null ? `, ${T.growth >= 0 ? "+" : ""}${(T.growth * 100).toFixed(1)}%` : ""})` : "";
+  const marketing = [T.followers ? `${nf(T.followers)} followers${grow} on ${I.platforms.join(" and ")}` : "",
+    [T.reach != null ? `${kfmt(T.reach)} accounts reached` : "", T.views != null ? `${kfmt(T.views)} content views` : "", T.eng != null ? `${pctTxt(T.eng)} engagement rate` : ""].filter(Boolean).join(" · "),
+    T.published != null ? `${nf(T.published)} posts${T.stories ? ` and ${nf(T.stories)} stories` : ""} published` : "",
+    n.learning ? `Learning: ${one(n.learning)}` : ""].filter(Boolean);
+  return { social: social.join("\n"), marketing: marketing.join("\n") };
+}
 
 /** Every metric for the period, by platform (a month: one column per platform; a quarter or year: also per month). */
 function fullTable(I) {
@@ -236,4 +251,4 @@ function routes(app, { base, guard, by, back, wrap, setFlash, limitPost }) {
   }));
 }
 
-module.exports = { insightsFor, insightsHtml, inputHtml, parseInsights, saveMonth, loadMonths, routes, calc, METRICS };
+module.exports = { summaryLines, insightsFor, insightsHtml, inputHtml, parseInsights, saveMonth, loadMonths, routes, calc, METRICS };

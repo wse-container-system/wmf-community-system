@@ -854,8 +854,12 @@ test("cycling development hub", async (t) => {
     assert.ok(I, "insights for the month");
     const viewTok = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND active LIMIT 1")).rows[0].token;
     const g = ok200(await client()(`/g/${viewTok}${q}`), "management link").text;
-    for (const x of ["Social media", "Followers", "Accounts reached", "Engagement rate", "Ride-out reel", "Every metric"]) assert.match(g, new RegExp(x), x);
+    for (const x of ["Social media", "Followers", "Accounts reached", "Engagement rate", "Every metric"]) assert.match(g, new RegExp(x), x);
     assert.doesNotMatch(g, /id="social-in"|social\/save/, "management can't edit the figures");
+    const kv = /Marketing Highlights<\/th><td>([\s\S]*?)<\/td>/.exec(g)[1];
+    assert.match(kv, /2,270 followers \(\+270, \+13\.5%\) on Instagram and TikTok/, "one-page marketing highlights come from the upload"); assert.match(/Social Media Campaigns<\/th><td>([\s\S]*?)<\/td>/.exec(g)[1], /Ride-out reel/);
+    assert.match(g, /AUH ride participation/); assert.match(g, /DXB ride participation/);
+    assert.doesNotMatch(g, /Rides held|Marketing &amp; impact/, "removed from management's view");
     assert.match(ok200(await admin(`/report/management${q}`), "team view").text, /Social media/);
     assert.equal((await client()(`/m/nope/social/save`, { method: "POST", form })).status, 404);
     await pool.query("DELETE FROM social_insights WHERE month = $1", [m + "-01"]);

@@ -77,8 +77,11 @@ async function mgmtData(per) {
   const D = await reportData(per);
   D.mk = await require("./mkinputs").loadInputs({ start: D.start, end: D.end });
   const W = words(per), draft = drafts(D), saved = D.notes.mgmt || {};
+  const SIm = require("./socialinsights"), si = await SIm.insightsFor(per), siLines = SIm.summaryLines(si);
   // a box left empty uses the suggestion, so marketing's logged posts still show up after the words were saved once
   const T = Object.fromEntries(FIELDS.map(([f]) => [f, saved[f] != null && String(saved[f]).trim() !== "" ? saved[f] : draft[f]]));
+  // marketing's social media upload fills these two, and they follow every new upload
+  if (siLines) { if (siLines.social) T.social = siLines.social; if (siLines.marketing) T.marketing = siLines.marketing; }
   const A = D.city["Abu Dhabi"], X = D.city.Dubai;
   const comment = (c) => (c.top ? `Most attended: ${c.top.name} (${Math.round(c.top.perSession)} avg)` : c.sess ? "" : "No rides recorded");
   const rides = [
@@ -100,7 +103,7 @@ async function mgmtData(per) {
   const soc = s ? { strava: ["Abu Dhabi", "Dubai"].map((c) => s.strava[c]), whatsapp: ["Abu Dhabi", "Dubai"].map((c) => s.whatsapp[c]) } : null;
   return { D, per, W, T, draft, saved, rides, acts, collab, kpi, soc, social: { strava: [sc("strava", "Abu Dhabi"), sc("strava", "Dubai")], whatsapp: [sc("whatsapp", "Abu Dhabi"), sc("whatsapp", "Dubai")] },
     community: D.done.length ? `${D.done.length} activation${D.done.length === 1 ? "" : "s"} · ${nf(D.evPeople)} participants` : "—",
-    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp: await require("./sponsorreport").sponsorData(per), si: await require("./socialinsights").insightsFor(per) };
+    survey: D.season, surveyLine: require("./seasonsurvey").surveyLine(D.season), sp: await require("./sponsorreport").sponsorData(per), si, fromSI: siLines ? ["social", "marketing"].filter((f) => siLines[f]) : [] };
 }
 
 // ---------------------------------------------------------------- the page (16:9, prints as one page)
@@ -179,13 +182,10 @@ async function pptx(M) {
 function tilesOf(M) {
   const k = M.kpi, D = M.D, A = D.city["Abu Dhabi"], X = D.city.Dubai;
   const ch = (a, b) => (!b ? "—" : a === b ? '<span class="muted">no change</span>' : `<span class="${a > b ? "rp-up" : "rp-down"}">${a > b ? "▲" : "▼"} ${Math.abs(Math.round(((a - b) / b) * 100))}%</span>`);
-  const byCity = mini(["City", "Participation", "Rides", "Avg. per ride", "Period before", "Change"], [["Abu Dhabi", A], ["Dubai", X]].map(([n, c]) =>
-    [h(n), nf(c.att), nf(c.sess), c.avg ? nf(Math.round(c.avg)) : "—", nf(c.prevAtt), ch(c.att, c.prevAtt)]), { num: [1, 2, 3, 4] });
   const series = [...A.rides.map((r) => ({ ...r, city: "AUH" })), ...X.rides.map((r) => ({ ...r, city: "DXB" }))].sort((a, b) => b.attendance - a.attendance);
   const bySeries = mini(["Ride", "City", "Rides", "Participation", "Avg. per ride"], series.map((r) => [h(r.name), r.city, nf(r.sessions), nf(r.attendance), nf(Math.round(r.avg))]), { num: [2, 3, 4] });
   const months = D.months.map((m) => { const a = (A.trend.find((t) => t.m === m) || {}).v || 0, x = (X.trend.find((t) => t.m === m) || {}).v || 0; return [monLabel(m, true), nf(a), nf(x), `<b>${nf(a + x)}</b>`]; });
   const byMonth = mini(["Month", "Abu Dhabi", "Dubai", "Total"], months, { num: [1, 2, 3] });
-  const rideList = mini(["Date", "City", "Ride", "Riders"], D.sessionsList.map((s) => [fmtDate(s.d), s.city === "Dubai" ? "DXB" : "AUH", h(s.series), nf(s.n)]), { num: [3], scroll: true });
   const acts = [...D.done].sort((a, b) => String(b.event_date || b.month).localeCompare(String(a.event_date || a.month)));
   const actList = mini(["Date", "Activation", "City", "Participants", "Registered", "Partners"], acts.map((a) => [a.event_date ? fmtDate(a.event_date) : monLabel(String(a.month).slice(0, 7), true),
     `${h(a.title)}${D.isBig(a) ? ' <span class="muted">(big event, counted separately)</span>' : ""}`, D.isDxb(a) ? "DXB" : "AUH", a.participants != null ? nf(a.participants) : "—", a.registrants ? nf(a.registrants) : "—", h(a.partners.join(", ") || "—")]), { num: [3, 4], scroll: true });
@@ -194,9 +194,11 @@ function tilesOf(M) {
     <div class="c6">${mini(["", "Members"], [["Women", nf(db.gender.women)], ["Men", nf(db.gender.men)], ["Not recorded", nf(db.gender.unknown)]], { num: [1] })}</div></div>
     <p class="hint">City is the home city given at registration, otherwise where the person rides most.</p>`;
   const tiles = [
-    { label: "Ride participation", value: nf(k.participation), note: `${k.change != null ? `<span class="${k.change >= 0 ? "rp-up" : "rp-down"}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change)}%</span> vs before · ` : ""}AUH ${nf(k.auh)} · DXB ${nf(k.dxb)}`,
-      detail: { title: `Ride participation · ${M.per.label}`, html: `<h3>By city</h3>${byCity}<h3>By ride</h3>${bySeries}<h3>${M.per.type === "month" ? "Last six months" : "By month"}</h3>${byMonth}` } },
-    { label: "Rides held", value: nf(k.rides), note: k.rides ? `${Math.round(k.participation / k.rides)} riders per ride on average` : "", detail: { title: `Every ride · ${M.per.label}`, html: rideList } },
+    ...[["AUH", "Abu Dhabi", A, "auh", "#5b7cf0"], ["DXB", "Dubai", X, "dxb", "#e8833a"]].map(([code, name, c, key, col]) => ({ label: `${code} ride participation`, value: nf(c.att),
+      note: `${c.prevAtt ? `${ch(c.att, c.prevAtt)} vs before · ` : ""}${nf(c.sess)} rides${c.avg ? ` · ${nf(Math.round(c.avg))} per ride` : ""}${(D.monthly || []).length > 1 ? spark(D.monthly.map((x) => x[key]), col) : ""}`,
+      detail: { title: `${name} rides · ${M.per.label}`, html: `<h3>By ride</h3>${mini(["Ride", "Rides", "Participation", "Avg. per ride"], series.filter((r) => r.city === code).map((r) => [h(r.name), nf(r.sessions), nf(r.attendance), nf(Math.round(r.avg))]), { num: [1, 2, 3] })}
+        <h3>Every ride</h3>${mini(["Date", "Ride", "Riders"], D.sessionsList.filter((x) => (x.city === "Dubai") === (code === "DXB")).map((x) => [fmtDate(x.d), h(x.series), nf(x.n)]), { num: [2], scroll: true })}
+        <h3>${M.per.type === "month" ? "Last six months" : "By month"}</h3>${byMonth}` } })),
     { label: "New joiners", value: nf(k.newMembers), note: `new members joined · ${nf(k.fresh)} first rides with WMF`,
       detail: { title: `New joiners · ${M.per.label}`, html: `${joinDetail(D, M.per)}<h3>By city</h3>${mini(["City", "First ride with WMF", "New members joined"], [["Abu Dhabi", nf(A.fresh), nf(j.city.auh)], ["Dubai", nf(X.fresh), nf(j.city.dxb)]], { num: [1, 2] })}
         ${D.newManual ? `<p class="hint"><b>New members: ${nf(k.newMembers)}</b>, set by the team for ${D.newManual.months.map((m) => monLabel(m, true)).join(", ")} (the records show ${nf(D.newManual.app)}). The city split above is from the records.</p>` : ""}
@@ -238,7 +240,7 @@ function wordsEditor(M, per, { action, back, open, intro }) {
   return `<details class="mg-edit" ${open ? "open" : ""}><summary><b>Edit the words</b> <span class="muted">(${h(per.label)} · one point per line)</span></summary>
     ${intro ? `<p class="hint" style="margin:8px 0">${intro}</p>` : ""}
     <form class="form" method="post" action="${h(action)}"><input type="hidden" name="period" value="${h(per.key)}"><input type="hidden" name="back" value="${h(back)}">
-      <div class="mg-fields">${FIELDS.map(([f, l]) => `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
+      <div class="mg-fields">${FIELDS.map(([f, l]) => (M.fromSI || []).includes(f) ? `<div class="mg-auto"><b>${h(l)}</b> <span class="badge">From marketing's upload</span><p class="hint" style="white-space:pre-line;margin:4px 0 0">${h(M.T[f])}</p></div>` : `<label>${h(l === "Priorities" ? `${M.W.next} priorities` : l)}${M.saved[f] == null || !String(M.saved[f]).trim() ? ' <span class="badge">Suggested</span>' : ""}<textarea name="${f}" rows="${f === "closing" ? 3 : 4}" maxlength="1200">${h(M.T[f])}</textarea></label>`).join("")}</div>
       <div class="toolbar" style="margin:0"><button class="btn primary">Save</button><button class="btn" name="reset" value="1" data-confirm="Go back to the suggested text for every box?">Back to the suggested text</button></div></form></details>`;
 }
 /** Save the words for a period (from the team or a manager's link). */
@@ -341,7 +343,7 @@ function dashboard(M, { nav, pdf, pptxHref, edit: ed, corpHref }) {
       <section class="card c12"><h2>Community voice${M.survey ? ` · ${h(M.survey.title)}` : ""}</h2><p class="lead">What members told us in the latest end-of-season survey.</p>${require("./seasonsurvey").surveyHtml(M.survey)}</section>
       ${require("./socialinsights").insightsHtml(M.si)}
       ${ed ? require("./socialinsights").inputHtml({ post: ed.post, month: ed.siMonth, existing: ed.siExisting }) : ""}
-      <section class="card c12"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>
+      ${ed ? `<section class="card c12 noprint" id="log"><h2>Marketing &amp; impact</h2><p class="lead">What marketing posted for each event, how far it reached, and how many people signed up and came.</p>${require("./mkinputs").impactHtml(M.D.mk)}</section>` : ""}
       ${ed ? (() => { const MK = require("./mkinputs");
         const others = M.D.mk.others.length ? `<section class="card c12 noprint"><h2>Other events &amp; activities</h2><p class="lead">Marketing for events WMF didn't run. Not counted in the report.</p>
           ${mini(["Event", "Date", "Posts", "Reach", "Engagements", "People there"], M.D.mk.others.map((g) => [h(g.title), g.date ? fmtDate(g.date) : "—", nf(g.actions.length), nf(g.reach), nf(g.eng), g.participants != null ? nf(g.participants) : "—"]), { num: [2, 3, 4, 5] })}</section>` : "";
