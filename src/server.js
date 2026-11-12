@@ -82,7 +82,7 @@ const STAFF = ["admin", "coordinator"];
 const takeFlash = (req) => { const f = req.session.flash; delete req.session.flash; return f; };
 const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
 // shared links (management, marketing, Dubai lead, surveys) always look the way their audience sees them: no hub menus, even for someone signed in
-const SHARED = /^\/(g|m|mk|l|f|fs)\//;
+const SHARED = /^\/(g|m|mk|l|f|fs|ride)\//;
 const page = (req, title, body, opts = {}) => SHARED.test(req.path)
   ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
   : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
@@ -682,6 +682,7 @@ app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./corpsignup")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar"), qrSend, qrDataUrl });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });

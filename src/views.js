@@ -18,7 +18,7 @@ const SECTIONS = [
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
     ["/corporate", "Dashboard", ALL], ["/corporate/rides", "Rides", STAFF], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/events", "Events", STAFF],
-    ["/corporate/participants", "Participants", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/management", "Management report", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Reports", ALL]] },
+    ["/corporate/participants", "Participants", STAFF], ["/corporate/signups", "Sign-ups", STAFF], ["/corporate/qr", "QR codes", STAFF], ["/corporate/scan", "Scan", STAFF], ["/corporate/management", "Management report", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Reports", ALL]] },
   { key: "department", label: "Department", home: "/department/schedule", roles: STAFF, scoped: false, match: /^\/department(\/|$)/, links: [
     ["/department/schedule", "Schedule", STAFF], ["/department/calendar", "Team calendar", STAFF], ["/department/leave", "Leave", STAFF], ["/department/staff", "Team", ["admin"]], ["/department/share", "Share", ["admin"]]] },
 ];
