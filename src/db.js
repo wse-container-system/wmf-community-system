@@ -258,6 +258,32 @@ CREATE TABLE IF NOT EXISTS corp_participants (
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS employee_no TEXT;
 CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (company, name_key);
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS qr_sent_at TIMESTAMPTZ;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS mobile TEXT;
+ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS signup_token TEXT UNIQUE;
+CREATE TABLE IF NOT EXISTS corp_signups (
+  id SERIAL PRIMARY KEY,
+  company TEXT NOT NULL,
+  ride_key TEXT NOT NULL,
+  ride_date DATE NOT NULL,
+  participant_id INTEGER NOT NULL REFERENCES corp_participants(id) ON DELETE CASCADE,
+  rent BOOLEAN NOT NULL DEFAULT FALSE,
+  height_cm INTEGER,
+  ref TEXT,
+  status TEXT NOT NULL DEFAULT 'Coming',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ,
+  UNIQUE (ride_key, participant_id)
+);
+CREATE INDEX IF NOT EXISTS corp_signups_ride ON corp_signups (company, ride_key);
+CREATE TABLE IF NOT EXISTS corp_ride_rental (
+  company TEXT NOT NULL,
+  ride_key TEXT NOT NULL,
+  ride_date DATE NOT NULL,
+  bikes INTEGER NOT NULL DEFAULT 0,
+  price NUMERIC,
+  closes_at TEXT,
+  PRIMARY KEY (company, ride_key)
+);
 CREATE TABLE IF NOT EXISTS corp_sessions (
   id SERIAL PRIMARY KEY,
   company TEXT NOT NULL REFERENCES corp_companies(code),

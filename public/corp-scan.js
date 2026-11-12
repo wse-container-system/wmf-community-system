@@ -44,4 +44,27 @@
       .then(function () { $("#start").hidden = true; $("#stop").hidden = false; }, function (e) { show({ status: "error", message: window.cameraHelp ? window.cameraHelp(e) : "Camera unavailable. Allow camera access for this site." }); });
   });
   $("#stop").addEventListener("click", function () { (scanner ? scanner.stop() : Promise.resolve()).catch(function () {}).then(function () { $("#start").hidden = false; $("#stop").hidden = true; }); });
+
+  // ---------- new rider: register, check in, then send their personal QR code (WhatsApp, email or link)
+  var walk = $("#corpWalkin"), sess = $("#corpSession");
+  function syncCompany() { // the company of the chosen session
+    if (!walk || !sess) return; var o = sess.options[sess.selectedIndex], co = o && o.getAttribute("data-co");
+    if (co) walk.querySelector("[name=company]").value = co;
+  }
+  if (sess) sess.addEventListener("change", syncCompany); syncCompany();
+  if (walk) walk.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = Object.fromEntries(new FormData(walk).entries()); body.session = sess ? sess.value : "";
+    var btn = walk.querySelector("button"); btn.disabled = true;
+    fetch("/api/corp/walkin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) })
+      .then(function (r) { if (r.status === 401) { location.href = "/login?next=/corporate/scan"; throw new Error("signed out"); } return r.json(); })
+      .then(function (r) {
+        show(r);
+        if (r.status === "error") return;
+        window.corpQrKit($("#newDone"), r);
+        walk.reset(); syncCompany();
+      }, function () { show({ status: "error", message: "No connection. Try again." }); })
+      .finally(function () { btn.disabled = false; });
+  });
 })();
+

@@ -676,3 +676,28 @@ a.tc-chip:hover { background: color-mix(in srgb, var(--c) 24%, transparent); }
 #qr-note { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; font-size: 14px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.35); }
 #qr-note.ok { background: #e8f6ee; color: #14532d; border: 1px solid #a7dcbc; } #qr-note.warn { background: #fff4e5; color: #7a4100; border: 1px solid #f3c98b; }
 a.btn.done { opacity: .7; }
+/* corporate ride sign-up */
+.rs-top { text-align: center; }
+.rs-grid { display: grid; gap: 14px; }
+@media (min-width: 900px) { .rs-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.rs-mh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rs-dow, .rs-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
+.rs-dow span { font-size: 11px; color: var(--muted); font-weight: 600; }
+.rs-d { padding: 8px 0; border-radius: 10px; font-size: 14px; color: var(--ink-2, #555); text-decoration: none; }
+.rs-d.out, .rs-d.past { opacity: .35; }
+.rs-d.on { background: var(--accent-soft, #e8ecff); color: var(--accent, #4d5ac2); font-weight: 700; }
+.rs-d.on.off { text-decoration: line-through; opacity: .6; }
+.rs-d.sel { outline: 2px solid var(--accent, #4d5ac2); }
+.rs-list { display: grid; gap: 6px; margin-top: 12px; }
+.rs-ride { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: inherit; font-size: 14px; }
+.rs-ride.sel { border-color: var(--accent, #4d5ac2); background: var(--accent-soft, #f1f3ff); }
+.rs-ride.off { opacity: .55; }
+.rs-ride .muted { font-size: 12.5px; }
+.rs-bike { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
+.rs-bike legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+.rs-who { margin: 14px 0 0; line-height: 1.6; }
+.rs-ref { background: #e8f6ee; color: #14532d; border-radius: 10px; padding: 10px 12px; }
+.rs-msg { white-space: pre-wrap; font-size: 13px; background: var(--surface-2, #f7f6fb); padding: 10px; border-radius: 10px; }
+.rs-bike:has(input[name=rent][value="0"]:checked) .rs-h { display: none; }
+.rs-bike label.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
+.rs-bike input[type=radio] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4d5ac2); }

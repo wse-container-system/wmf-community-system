@@ -256,6 +256,27 @@ async function corpScan(c, { code, session, by, codes, method = "Scanned by staf
   return { ...r, name: p.full_name, pid: p.pid, company: p.company };
 }
 
+/** A personal QR link that can't be guessed: /cq/NMDC-0012.<signature> shows only that person's code. */
+const cqSig = (pid) => require("crypto").createHmac("sha256", process.env.SESSION_SECRET || "dev-only-secret").update("cq|" + pid).digest("base64url").slice(0, 12);
+const cqPath = (pid) => `/cq/${encodeURIComponent(pid)}.${cqSig(pid)}`;
+
+/**
+ * New rider at a corporate session: find them (work email, then name) or add them to the company's list,
+ * then check them in to the chosen session. Mobile is kept so their QR code can be sent on WhatsApp.
+ */
+async function walkIn(c, { company, session, full_name, email, mobile, by, codes, method = "Registered at the ride" }) {
+  const name = R.clean(full_name), mail = R.normEmail(email), phone = R.normPhone(mobile);
+  if (!codes.includes(company)) return { status: "error", message: "Choose the company." };
+  if (name.length < 3) return { status: "error", message: "Enter their full name." };
+  if (mail && !R.EMAIL_RE.test(mail)) return { status: "error", message: "That email doesn't look right." };
+  let p = await findParticipant(c, company, { email: mail, name }), created = false;
+  if (!p) { p = await createParticipant(c, { company, full_name: name, email: mail }, by, "Registered at the ride"); created = true; }
+  else if (mail && !p.email) p = (await c.query("UPDATE corp_participants SET email = $2, updated_at = now() WHERE id = $1 RETURNING *", [p.id, mail])).rows[0];
+  if (phone && phone !== p.mobile) p = (await c.query("UPDATE corp_participants SET mobile = $2 WHERE id = $1 RETURNING *", [p.id, phone])).rows[0];
+  const r = await corpScan(c, { code: p.pid, session, by, codes, method });
+  return { ...r, created, participant: p };
+}
+
 /** Period helpers shared by the dashboard and reports: ?period=month|quarter|year|ytd|custom&p=2026-10 */
 function periodFromQuery(q, today = R.todayLocal()) {
   const type = ["month", "quarter", "year", "ytd", "all", "custom"].includes(q.period) ? q.period : "ytd";
@@ -279,5 +300,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };
