@@ -347,9 +347,20 @@ test("cycling development hub", async (t) => {
     const staffRide = ok200(await admin(`/corporate/signups/AURORA/${rd.key}`), "staff ride").text;
     assert.match(staffRide, /Who's coming \(3\)/); assert.match(staffRide, /wa\.me\/[^"]*\?text=[^"]*165%20cm/, "WhatsApp draft with height");
     const xl = await admin(`/corporate/signups/AURORA/${rd.key}/rentals.xlsx`, { raw: true }); assert.equal(xl.status, 200);
+    // someone already coming on her own bike can switch to a rental from her confirmation
+    await admin(`/corporate/signups/AURORA/${rd.key}/rental`, { method: "POST", form: { bikes: "3" } });
+    assert.match(ok200(await other(`/ride/${tokS}?k=${rd.key}`), "own bike page").text, /Book a rental bike/);
+    // with the shop's booking link set, the ladies book their own bike there (description "<Company> Corporate Ride")
+    await admin("/corporate/signups/shop", { method: "POST", form: { company: "AURORA", name: "Wolfi's", link: "https://wolfis.example/book", phone: "" } });
+    const lp2 = client(), f2 = ok200(await lp2(`/ride/${tokS}?k=${rd.key}`), "link mode").text;
+    assert.match(f2, /I need a rental bike \(I(&#39;|')ll book it with Wolfi(&#39;|')s\)/); assert.doesNotMatch(f2, /name="height_cm"/);
+    await lp2(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "fresh.rider@aurora.example", rent: "1" } });
+    const conf = ok200(await lp2(`/ride/${tokS}?k=${rd.key}`), "booking box").text;
+    assert.match(conf, /href="https:\/\/wolfis\.example\/book"/); assert.match(conf, /Aurora Corporate Ride/);
+    await admin("/corporate/signups/shop", { method: "POST", form: { company: "AURORA", name: "Wolfi's", link: "", phone: "" } });
     // cancel frees the bike
     await anon(`/ride/${tokS}/cancel`, { method: "POST", form: { k: rd.key } });
-    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_signups WHERE ride_key = $1 AND status = 'Coming' AND rent", [rd.key])).rows[0].n, 0);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_signups su JOIN corp_participants p ON p.id = su.participant_id WHERE su.ride_key = $1 AND su.status = 'Coming' AND p.pid = $2", [rd.key, wi.pid])).rows[0].n, 0, "her place and bike are freed");
     assert.equal((await client()("/ride/nope")).status, 404);
     // delete a mistaken entry (admin): gone, with its attendance
     assert.match(ok200(await admin(`/corporate/participants/${lw.pid}`), "participant page").text, /Delete this person/);
