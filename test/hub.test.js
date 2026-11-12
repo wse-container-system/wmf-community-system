@@ -257,10 +257,12 @@ test("cycling development hub", async (t) => {
     const lp = ok200(await admin("/corporate/participants?company=NMDC"), "participants").text;
     assert.match(lp, /Draft emails to everyone not sent yet/); assert.match(lp, /Draft email</);
     assert.match(lp, /Email sending/); assert.equal((await admin("/corporate/participants/test-email", { method: "POST", form: { to: "a@b.co" } })).status, 302);
-    const one = await admin(`/corporate/participants/${ns.pid}/emailqr`);
-    assert.equal(one.status, 302); assert.match(one.location, /^https:\/\/outlook\.office\.com\/mail\/deeplink\/compose\?to=starter\.new%40nmdc\.ae&subject=/);
+    const one = await admin(`/corporate/participants/${ns.pid}/emailqr`, { raw: true });
+    assert.equal(one.status, 200); assert.match(one.type, /message\/rfc822/);
+    const eml = Buffer.from(one.text).toString("latin1");
+    assert.match(eml, /^X-Unsent: 1/m, "opens as a draft"); assert.match(eml, /^To: starter\.new@nmdc\.ae/m); assert.match(eml, /Content-Type: image\/png/); assert.match(eml, /cid:qr/);
     assert.ok((await pool.query("SELECT qr_sent_at FROM corp_participants WHERE id = $1", [ns.id])).rows[0].qr_sent_at, "marked sent");
-    const link = /\/cq\/[A-Z0-9-]+\.[A-Za-z0-9_-]{12}/.exec(decodeURIComponent(one.location))[0];
+    const link = /\/cq\/[A-Z0-9-]+\.[A-Za-z0-9_-]{12}/.exec(eml.replace(/=\r?\n/g, ""))[0];
     const png = await admin(`/corporate/participants/${ns.pid}/qr.png`, { raw: true }); assert.equal(png.status, 200); assert.match(png.type, /png/);
     assert.match(ok200(await client()(link), "personal QR page").text, new RegExp(ns.pid));
     assert.equal((await client()(`/cq/${ns.pid}.AAAAAAAAAAAA`)).status, 404, "a guessed link doesn't work");
