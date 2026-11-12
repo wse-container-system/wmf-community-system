@@ -118,8 +118,8 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       if (sel.cancelled) panel = `<h2>${h(dayLabel(sel.date))}</h2><p class="lead">This session is cancelled.</p>`;
       else if (mine) {
         panel = `<h2>You're in, ${h(String(mine.full_name).split(" ")[0])}!</h2><p class="lead">${h(dayLabel(sel.date))}${sel.time ? " · " + h(t12(sel.time)) : ""}${sel.where ? " · " + h(sel.where) : ""}</p>
-          ${mine.rent && viaLink ? `${bookBox}<form method="post" action="${base}/signup" style="margin:8px 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">I'll bring my own bike instead</button></form>`
-          : !mine.rent && viaLink ? `<p>Riding your own bike.</p><form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1"><button class="btn">I need a rental bike</button></form>`
+          ${mine.rent && viaLink ? `${bookBox}${mine.height_cm ? `<p class="hint" style="margin:6px 0 0">Your height: ${nf(mine.height_cm)} cm</p>` : ""}<form method="post" action="${base}/signup" style="margin:8px 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">I'll bring my own bike instead</button></form>`
+          : !mine.rent && viaLink ? `<p>Riding your own bike.</p><form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1"><label class="rs-h">Your height (cm)<input name="height_cm" type="number" min="120" max="210" inputmode="numeric" required placeholder="165"></label><button class="btn">I need a rental bike</button></form>`
           : mine.rent ? `<p class="rs-ref">Rental bike booked · ref <b>${h(mine.ref)}</b> · height ${nf(mine.height_cm)} cm</p>
             <form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">Switch to my own bike</button></form>`
           : `<p>Riding your own bike.</p>${rentalOpen(rt, taken) ? `<form class="rs-bike" method="post" action="${base}/signup" style="margin-bottom:10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1">
@@ -138,6 +138,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
             ${viaLink ? `<fieldset class="rs-bike"><legend>Bike</legend>
               <label class="check"><input type="radio" name="rent" value="0" ${v.rent === "1" ? "" : "checked"}> <span>I'll bring my own bike</span></label>
               <label class="check"><input type="radio" name="rent" value="1" ${v.rent === "1" ? "checked" : ""}> <span>I need a rental bike (I'll book it with ${h(shop.name || "the shop")})</span></label>
+              <label class="rs-h">Your height (cm) <span class="hint">so the bike fits you</span><input name="height_cm" type="number" min="120" max="210" inputmode="numeric" value="${h(v.height_cm || "")}" placeholder="165"></label>
               <p class="hint rs-h" style="margin:0">After you sign up you'll get the ${h(shop.name || "shop")} booking link. In the booking description, write <b>${h(note)}</b>.</p></fieldset>`
             : canRent ? `<fieldset class="rs-bike"><legend>Bike</legend>
               <label class="check"><input type="radio" name="rent" value="0" ${v.rent === "1" ? "" : "checked"}> <span>I'll bring my own bike</span></label>
@@ -196,7 +197,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       });
     }
     const rent = b.rent === "1", height = Math.round(+b.height_cm || 0), viaLink = !!(await shopOf()).link;
-    if (rent && !viaLink && (height < 120 || height > 210)) return again("Add your height in cm (for example 165) so the bike fits you.");
+    if (rent && (height < 120 || height > 210)) return again("Add your height in cm (for example 165) so the bike fits you.");
     const out = await tx(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [co.code + key]); // one booking at a time per ride
       const rt = (await c.query("SELECT * FROM corp_ride_rental WHERE company = $1 AND ride_key = $2", [co.code, key])).rows[0];
@@ -274,7 +275,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     const L = await loadRide(req); if (!L) return res.redirect("/corporate/signups");
     const { co, ride } = L, rt = await rental(co, ride.key), who = await signups(co, ride.key), bikes = who.filter((x) => x.rent), shop = await shopOf();
     const base = `/corporate/signups/${encodeURIComponent(co.code)}/${encodeURIComponent(ride.key)}`;
-    const msg = (shop.link ? `Hi ${shop.name || "Wolfi's"} team,\nThese ladies from the ${co.name} ride on ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""} are booking rental bikes on your link (description "${co.name} Corporate Ride"):\n${bikes.map((x, i) => `${i + 1}. ${x.full_name}`).join("\n")}\nThank you!` : wolfiMsg(co, ride, bikes).replace("{shop}", shop.name || "Wolfi's")) + `\n${(user(req).name || "").split(" ")[0] || "Cycling Development"} · Cycling Development`;
+    const msg = (shop.link ? `Hi ${shop.name || "Wolfi's"} team,\nThese ladies from the ${co.name} ride on ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""} are booking rental bikes on your link (description "${co.name} Corporate Ride"):\n${bikes.map((x, i) => `${i + 1}. ${x.full_name}${x.height_cm ? ` · ${x.height_cm} cm` : ""}`).join("\n")}\nThank you!` : wolfiMsg(co, ride, bikes).replace("{shop}", shop.name || "Wolfi's")) + `\n${(user(req).name || "").split(" ")[0] || "Cycling Development"} · Cycling Development`;
     res.send(page(req, "Ride sign-ups", `<p class="muted" style="margin:0 0 6px"><a href="/corporate/signups?company=${h(co.code)}">‹ All rides</a></p>
       <div class="card-head"><div><h2 style="font-size:22px">${h(co.name)} · ${h(dayLabel(ride.date))}</h2><p class="muted" style="margin:2px 0 0">${h(ride.title)}${ride.time ? " · " + h(t12(ride.time)) : ""}${ride.where ? " · " + h(ride.where) : ""} · ${nf(who.length)} coming · ${nf(bikes.length)} rental bike${bikes.length === 1 ? "" : "s"}</p></div></div>
       <div class="grid">${shop.link ? `<section class="card c4"><h2>Bike rental for this ride</h2><p class="lead">The ladies book their own bike on the ${h(shop.name || "shop")} booking link, writing <b>${h(co.name)} Corporate Ride</b> in the description. This list shows who said she needs a rental bike, to check against ${h(shop.name || "the shop")}'s bookings.</p>
@@ -288,7 +289,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
         ${table(["Ref", "Name", "ID", "Height"], bikes.map((x) => [x.ref || "—", x.full_name, x.pid, x.height_cm ? `${nf(x.height_cm)} cm` : "—"]), { empty: "No rental bikes booked yet." })}
         ${bikes.length ? `<details style="margin-top:10px"><summary class="hint">See the WhatsApp message</summary><pre class="rs-msg">${h(msg)}</pre></details>` : ""}${shop.phone ? "" : `<p class="hint">Add the shop's WhatsApp number on <a href="/corporate/signups?company=${h(co.code)}">Ride sign-ups</a> so the message opens in their chat.</p>`}</section>
       <section class="card c12"><h2>Who's coming (${nf(who.length)})</h2>
-        ${table(["Name", "ID", "Bike", "Signed up", ""], who.map((x) => [x.full_name, x.pid, x.rent ? (x.ref ? `Rental · ${x.ref} · ${nf(x.height_cm)} cm` : `Rental (books with ${shop.name || "the shop"})`) : "Own bike", require("./views").fmtTs(x.created_at),
+        ${table(["Name", "ID", "Bike", "Signed up", ""], who.map((x) => [x.full_name, x.pid, x.rent ? (x.ref ? `Rental · ${x.ref} · ${nf(x.height_cm)} cm` : `Rental (books with ${shop.name || "the shop"})${x.height_cm ? ` · ${nf(x.height_cm)} cm` : ""}`) : "Own bike", require("./views").fmtTs(x.created_at),
           raw(`<form method="post" action="${base}/remove" style="display:inline"><input type="hidden" name="id" value="${x.id}"><button class="btn tblbtn" data-confirm="Remove ${h(x.full_name)} from this ride?">Remove</button></form>`)]), { empty: "Nobody has signed up yet. Share the link from Ride sign-ups." })}</section></div>`, { active: "/corporate/signups" }));
   }));
   app.post("/corporate/signups/:code/:key/rental", S, wrap(async (req, res) => {

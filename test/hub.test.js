@@ -352,8 +352,9 @@ test("cycling development hub", async (t) => {
     // with the shop's booking link set, the ladies book their own bike there (description "<Company> Corporate Ride")
     await admin("/corporate/signups/shop", { method: "POST", form: { company: "AURORA", name: "Wolfi's", link: "https://wolfis.example/book", phone: "" } });
     const lp2 = client(), f2 = ok200(await lp2(`/ride/${tokS}?k=${rd.key}`), "link mode").text;
-    assert.match(f2, /I need a rental bike \(I(&#39;|')ll book it with Wolfi(&#39;|')s\)/); assert.doesNotMatch(f2, /name="height_cm"/);
-    await lp2(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "fresh.rider@aurora.example", rent: "1" } });
+    assert.match(f2, /I need a rental bike \(I(&#39;|')ll book it with Wolfi(&#39;|')s\)/); assert.match(f2, /name="height_cm"/, "asks her height");
+    assert.match(ok200(await lp2(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "fresh.rider@aurora.example", rent: "1" } }), "no height").text, /Add your height/);
+    await lp2(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "fresh.rider@aurora.example", rent: "1", height_cm: "162" } });
     const conf = ok200(await lp2(`/ride/${tokS}?k=${rd.key}`), "booking box").text;
     assert.match(conf, /href="https:\/\/wolfis\.example\/book"/); assert.match(conf, /Aurora Corporate Ride/);
     await admin("/corporate/signups/shop", { method: "POST", form: { company: "AURORA", name: "Wolfi's", link: "", phone: "" } });
