@@ -22,6 +22,48 @@ const sessLink = (s, co) => `<a href="/corporate/session/${s.id}">${h(C.sessionN
 module.exports = function corporate(app, { need, page, setFlash, actor, user, wrap, limit }) {
   const S = need(...STAFF), A = need("admin"), V = need(...ALL);
   const qrUrl = (req, co) => `${req.protocol}://${req.get("host")}/c/${co.checkin_token}`;
+  const MAIL = require("./mailer");
+
+  // ----- personal QR link for a participant: /cq/AURORA-0012.<signature> (can't be guessed, shows only that person's code)
+  const SECRET = process.env.SESSION_SECRET || "dev-only-secret";
+  const cqSig = (pid) => crypto.createHmac("sha256", SECRET).update("cq|" + pid).digest("base64url").slice(0, 12);
+  const cqLink = (req, pid) => `${req.protocol}://${req.get("host")}/cq/${encodeURIComponent(pid)}.${cqSig(pid)}`;
+  app.get("/cq/:code", wrap(async (req, res) => {
+    const m = /^([A-Z0-9]{2,12}-\d{4})\.([A-Za-z0-9_-]{12})$/.exec(req.params.code || "");
+    const ok = m && crypto.timingSafeEqual(Buffer.from(m[2]), Buffer.from(cqSig(m[1])));
+    const p = ok ? (await pool.query("SELECT pid, full_name, company FROM corp_participants WHERE pid = $1", [m[1]])).rows[0] : null;
+    if (!p) return res.status(404).send(page(req, "QR code", `<section class="card"><h2>This link doesn't work</h2><p class="lead">Ask the programme team to send it again.</p></section>`, { wide: false }));
+    const co = (await C.companies(pool, { all: true })).find((x) => x.code === p.company) || { name: p.company };
+    const img = await QRCode.toDataURL(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 480 });
+    res.set("Cache-Control", "no-store").send(page(req, "My QR code", `<section class="card" style="display:grid;gap:12px;text-align:center">
+      <h2>Hi ${h(String(p.full_name || "").split(" ")[0])}!</h2><p class="lead" style="margin:0 auto">This is your personal QR code for the ${h(co.name)} cycling programme. Show it to the ride lead at every session.</p>
+      <div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(p.pid)}</span></div>
+      <a class="btn primary big" href="${img}" download="${h(p.pid)}-QR.png" style="justify-content:center">Download my QR code</a>
+      <p class="muted" style="margin:0">Tip: take a screenshot too. Your ID is ${h(p.pid)}.</p></section>`, { wide: false }));
+  }));
+  /** The email with someone's personal QR code. */
+  function qrMail(req, p, co) {
+    const first = String(p.full_name || "").split(" ")[0], link = cqLink(req, p.pid);
+    const subject = `Your personal QR code: ${co.name} cycling programme`;
+    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code:\n${link}\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nSee you on the ride!\nCycling Development team`;
+    return { subject, text, link };
+  }
+  /** Send by email when sending is set up; returns false when it isn't (the caller opens an email draft instead). */
+  async function sendQr(req, p, co, c = pool) {
+    if (!MAIL.configured() || !p.email) return false;
+    const m = qrMail(req, p, co), png = await QRCode.toBuffer(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 480 });
+    const html = `<p>${h(m.text.split("\n\n")[0])}</p><p>Welcome to the ${h(co.name)} cycling programme. Here is your personal QR code:</p>
+      <p><img src="cid:qr" alt="Your QR code" width="240" height="240"><br><b>${h(p.pid)}</b></p><p><a href="${h(m.link)}">Open it on your phone</a></p>
+      <p>Please save it (a screenshot works) and show it to the ride lead at every session.</p><p>See you on the ride!<br>Cycling Development team</p>`;
+    await MAIL.send({ to: p.email, subject: m.subject, text: m.text, html, attachments: [{ filename: `${p.pid}-QR.png`, content: png, cid: "qr" }] });
+    await c.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [p.id]);
+    return true;
+  }
+  const mailto = (req, p, co) => { const m = qrMail(req, p, co); return `mailto:${encodeURIComponent(p.email)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.text)}`; };
+  /** The send button for one person (list and participant page). */
+  const qrBtn = (p, back) => !p.email ? '<span class="muted">add email first</span>'
+    : MAIL.configured() ? `<form method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/sendqr" style="display:inline"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn">${p.qr_sent_at ? "Send again" : "Send QR"}</button></form>`
+    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr">${p.qr_sent_at ? "Email again" : "Email QR"}</a>`;
 
   // company in the query, limited to what this user may see
   async function scope(req) {
@@ -369,14 +411,23 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <form class="toolbar" method="get">${companySelect(sc)}<label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "Active and inactive", status)}${opt("Active", "Active", status)}${opt("Inactive", "Inactive", status)}</select></label>
         <label class="f"><span>Search</span><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email or ID"></label><button class="btn">Search</button></form>
       ${dups.length ? `<div class="alert warn"><span class="ic">!</span><span><b>Possible duplicates:</b> ${dups.map((d) => `${h(d.names.join(" / "))} (<a href="/corporate/participants/${encodeURIComponent(d.pids[0])}">${h(d.pids.join(", "))}</a>)`).join(" · ")}. Open the first record to merge.</span></div>` : ""}
-      <div class="grid"><section class="card c8">${table(["ID", "Name", "Company", "Work email", "Community", "Status", "Sessions", "Last attended"], rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), sc.byCode[p.company].name, p.email || raw('<span class="muted">none yet</span>'), p.community || "—", raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last)]), { num: [6] })}</section>
-      <section class="card c4"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b> (employee number, gender and Emirati/Expat are optional). Uploading adds new people and fills in emails for people already here. You'll see a preview first.</p>
+      ${(() => { const withMail = rows.filter((p) => p.email && p.status === "Active"), unsent = withMail.filter((p) => !p.qr_sent_at);
+        return withMail.length ? `<div class="qr-send noprint"><div><b>Personal QR codes</b> · ${nf(withMail.length - unsent.length)} of ${nf(withMail.length)} sent${sc.sel ? "" : " (all companies shown)"}</div>
+          <form method="post" action="/corporate/participants/sendqr-all" class="toolbar" style="margin:0"><input type="hidden" name="company" value="${h(sc.sel ? sc.sel.code : "")}"><input type="hidden" name="back" value="${h(req.originalUrl)}">
+            <button class="btn primary" name="which" value="unsent" ${unsent.length ? "" : "disabled"} data-confirm="Send the QR code to ${nf(unsent.length)} people who haven't had it yet?">Send to everyone not sent yet (${nf(unsent.length)})</button>
+            <button class="btn" name="which" value="all" data-confirm="Send the QR code to all ${nf(withMail.length)} people with an email, including those who already have it?">Send to all (${nf(withMail.length)})</button></form></div>` : ""; })()}
+      <div class="grid"><section class="card c12 cp-list">${(() => { const one = !!sc.sel;
+        const head = ["ID", "Name", ...(one ? [] : ["Company"]), "Work email", "Status", "Sessions", "Last attended", "QR code"];
+        return table(head, rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), ...(one ? [] : [sc.byCode[p.company].name]), p.email || raw('<span class="muted">none yet</span>'),
+          raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last),
+          raw(`<span class="cp-qr">${p.qr_sent_at ? `<span class="badge good">Sent ${h(fmtDate(new Date(p.qr_sent_at).toISOString().slice(0, 10)))}</span>` : ""}${qrBtn(p, req.originalUrl)}</span>`)]), { num: [one ? 4 : 5] }); })()}</section>
+      <section class="card c6"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b> (employee number, gender and Emirati/Expat are optional). Uploading adds new people and updates people already here (email and details), with no duplicates. You'll see a preview first, then you can send everyone their QR code.</p>
         <form class="form" method="post" action="/corporate/participants/upload" enctype="multipart/form-data">
           <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
           <input type="file" name="file" accept=".xlsx,.csv" required>
           <button class="btn primary">Read list and preview</button></form>
         <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
-      <section class="card c4"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
+      <section class="card c6"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
         <label>Full name<input name="full_name" required maxlength="120"></label><label>Work email<input type="email" name="email" maxlength="160"></label>
         <div class="row2"><label>Community<select name="community"><option value="">Not recorded</option>${C.COMMUNITIES.map((x) => opt(x, x, "")).join("")}<option>Other</option></select></label>
@@ -384,6 +435,45 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <label>Bike size<input name="bike_size" maxlength="30" placeholder="Own bike, XS, S, M, L"></label>
         <button class="btn primary">Add participant</button></form></section></div>`, { active: "/corporate/participants" }));
   }));
+  // ----- send personal QR codes
+  const sentBack = (b) => (/^\/corporate\/participants(\/[A-Z0-9-]+)?(\?[^#\s]*)?$/.test(String(b || "")) ? String(b) : "/corporate/participants");
+  app.post("/corporate/participants/sendqr-all", S, wrap(async (req, res) => {
+    const list = await C.companiesFor(user(req)), b = req.body || {}, back = sentBack(b.back);
+    const codes = b.company ? list.filter((x) => x.code === b.company).map((x) => x.code) : list.map((x) => x.code);
+    const byCode = Object.fromEntries(list.map((x) => [x.code, x]));
+    const ps = (await pool.query(`SELECT * FROM corp_participants WHERE company = ANY($1) AND status = 'Active' AND email IS NOT NULL AND email <> ''${b.which === "all" ? "" : " AND qr_sent_at IS NULL"} ORDER BY company, full_name`, [codes])).rows;
+    if (!ps.length) { setFlash(req, "ok", "Everyone with an email already has their QR code."); return res.redirect(back); }
+    if (MAIL.configured()) {
+      let sent = 0; const failed = [];
+      for (const p of ps) { try { if (await sendQr(req, p, byCode[p.company])) sent++; } catch (e) { failed.push(p.full_name); } }
+      await audit(pool, actor(req), "corp.qr.sendAll", "corp_company", b.company || "all", null, { sent, failed: failed.length });
+      setFlash(req, failed.length ? "err" : "ok", `QR codes sent to ${sent} ${sent === 1 ? "person" : "people"}.${failed.length ? ` Not sent: ${failed.slice(0, 5).join(", ")}${failed.length > 5 ? "…" : ""}. Try again in a moment.` : ""}`);
+      return res.redirect(back);
+    }
+    // email sending isn't switched on yet: one ready-written email per person, sent from your own mail app
+    res.send(page(req, "Send QR codes", `<section class="card"><h2>Send QR codes (${nf(ps.length)})</h2>
+      <p class="lead">Click each button: your email app opens with the message and their personal QR link ready. Each one is marked as sent.</p>
+      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-sent>Email QR</a>`)]))}
+      <p class="muted" style="margin-top:12px">To send them all in one click, switch on email sending: add SMTP_HOST, SMTP_USER and SMTP_PASS in Render (for example your Outlook account: smtp.office365.com).</p>
+      <p><a class="btn" href="${h(back)}">Back to participants</a></p></section>`, { active: "/corporate/participants" }));
+  }));
+  app.post("/corporate/participants/:pid/sendqr", S, wrap(async (req, res) => {
+    const L = await loadParticipant(req), back = sentBack((req.body || {}).back);
+    if (!L || !L.p.email) { setFlash(req, "err", "Add a work email first."); return res.redirect(back); }
+    if (!MAIL.configured()) return res.redirect(`/corporate/participants/${encodeURIComponent(L.p.pid)}/emailqr`);
+    try { await sendQr(req, L.p, L.co); await audit(pool, actor(req), "corp.qr.send", "corp_participant", L.p.pid, null, { to: L.p.email }); setFlash(req, "ok", `QR code sent to ${L.p.full_name} (${L.p.email}).`); }
+    catch (e) { setFlash(req, "err", `Couldn't send to ${L.p.email}: ${e.message}`); }
+    res.redirect(back);
+  }));
+  // without email sending: mark as sent and open a ready-written email in your own mail app
+  app.get("/corporate/participants/:pid/emailqr", S, wrap(async (req, res) => {
+    const L = await loadParticipant(req);
+    if (!L || !L.p.email) { setFlash(req, "err", "Add a work email first."); return res.redirect("/corporate/participants"); }
+    await pool.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [L.p.id]);
+    await audit(pool, actor(req), "corp.qr.email", "corp_participant", L.p.pid, null, { to: L.p.email });
+    res.redirect(mailto(req, L.p, L.co));
+  }));
+
   // ----- staff list upload (from each company's HR): name + work email, optional employee no, gender, community
   app.get("/corporate/participants/template.xlsx", S, wrap(async (req, res) => {
     const ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Staff list");
@@ -421,11 +511,12 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       if (!domainOk(co, r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} isn't a ${co.name} work email (${domains(co).join(", ")})`]); continue; }
       if (seen.has(r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} is in the list twice`]); continue; }
       seen.add(r.email);
+      const diff = (x) => [r.employee_no && x.employee_no !== r.employee_no ? "employee no" : "", r.gender && x.gender !== r.gender ? "gender" : "", r.community && x.community !== r.community ? "Emirati / Expat" : ""].filter(Boolean);
       const byMail = await C.findParticipant(pool, co.code, { email: r.email });
-      if (byMail) { (r.employee_no && byMail.employee_no !== r.employee_no ? plan.update : plan.same).push({ ...r, pid: byMail.pid, id: byMail.id, was: byMail.full_name }); continue; }
+      if (byMail) { const d = diff(byMail); (d.length ? plan.update : plan.same).push({ ...r, pid: byMail.pid, id: byMail.id, was: byMail.full_name, changes: d.join(", ") }); continue; }
       const byName = await C.findParticipant(pool, co.code, { name: r.full_name });
-      if (byName && byName.email) { plan.problems.push([r.line, r.full_name, `Already listed as ${byName.pid} with a different email (${byName.email})`]); continue; }
-      if (byName) plan.update.push({ ...r, pid: byName.pid, id: byName.id, was: byName.full_name, addEmail: true });
+      if (byName) { const d = [byName.email ? `email (was ${byName.email})` : "email added", ...diff(byName)];
+        plan.update.push({ ...r, pid: byName.pid, id: byName.id, was: byName.full_name, changes: d.join(", ") }); }
       else plan.add.push(r);
     }
     return plan;
@@ -440,8 +531,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const t = crypto.randomBytes(16).toString("hex");
     previews.set(t, { kind: "list", co: co.code, plan, at: Date.now(), name: req.file.originalname });
     res.send(page(req, "Staff list preview", `<section class="card"><h2>${coChip(co)} staff list: ${h(req.file.originalname)}</h2><p class="lead">Nothing has been saved yet. ${list.length} rows read.</p>
-      <div class="tiles" style="margin-bottom:12px">${tile("New people", nf(plan.add.length), "Get a new ID")}${tile("Email added / updated", nf(plan.update.length), "Already on the list")}${tile("Already up to date", nf(plan.same.length), "")}${tile("Need checking", nf(plan.problems.length), "Not saved")}</div>
-      ${plan.update.length ? `<h3 style="font-size:15px">Matched to people already here</h3>${table(["ID", "On the programme as", "From the list", "Work email"], plan.update.map((r) => [r.pid, r.was, r.full_name, r.email]))}` : ""}
+      <div class="tiles" style="margin-bottom:12px">${tile("New people", nf(plan.add.length), "Get a new ID")}${tile("Updated", nf(plan.update.length), "Already on the list: details updated")}${tile("Already up to date", nf(plan.same.length), "")}${tile("Need checking", nf(plan.problems.length), "Not saved")}</div>
+      ${plan.update.length ? `<h3 style="font-size:15px">Matched to people already here</h3>${table(["ID", "On the programme as", "From the list", "Work email", "What changes"], plan.update.map((r) => [r.pid, r.was, r.full_name, r.email, r.changes]))}` : ""}
       ${plan.add.length ? `<h3 style="font-size:15px;margin-top:12px">New people</h3>${table(["Name", "Work email", "Employee no", "Gender", "Emirati / Expat"], plan.add.map((r) => [r.full_name, r.email, r.employee_no, r.gender, r.community]))}` : ""}
       ${plan.problems.length ? `<h3 style="font-size:15px;margin-top:12px">Need checking (not saved)</h3>${table(["Row", "Name", "Problem"], plan.problems)}` : ""}
       <form method="post" action="/corporate/participants/upload/commit" style="margin-top:14px"><input type="hidden" name="token" value="${t}"><button class="btn primary big" ${plan.add.length + plan.update.length ? "" : "disabled"}>Save ${plan.add.length + plan.update.length} people</button> <a class="btn" href="/corporate/participants?company=${h(co.code)}">Cancel</a></form></section>`, { active: "/corporate/participants" }));
@@ -459,7 +550,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         added++;
       }
       for (const r of pv.plan.update) {
-        await c.query(`UPDATE corp_participants SET email = coalesce(email, $2), employee_no = coalesce(nullif($3, ''), employee_no), gender = coalesce(gender, nullif($4, '')), community = coalesce(community, nullif($5, '')), updated_at = now() WHERE id = $1`,
+        await c.query(`UPDATE corp_participants SET email = $2, employee_no = coalesce(nullif($3, ''), employee_no), gender = coalesce(nullif($4, ''), gender), community = coalesce(nullif($5, ''), community), updated_at = now() WHERE id = $1`,
           [r.id, r.email, r.employee_no, r.gender, r.community]);
         updated++;
       }
@@ -467,7 +558,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       return { added, updated };
     });
     previews.delete(String(req.body.token));
-    setFlash(req, "ok", `${co.name}: ${n.added} people added, ${n.updated} updated. They can now collect their personal QR codes with their work email.`);
+    setFlash(req, "ok", `${co.name}: ${n.added} people added, ${n.updated} updated. Send their QR codes with "Send to everyone not sent yet".`);
     res.redirect("/corporate/participants?company=" + co.code);
   }));
   app.post("/corporate/participants", S, wrap(async (req, res) => {
@@ -508,7 +599,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <button class="btn primary">Save</button></form></section>
       <section class="card c4"><h2>Personal QR code</h2><p class="lead">A ride lead scans this at <a href="/corporate/scan">Corporate → Scan</a>. It holds ${h(C.pidQr(p.pid))}.</p>
         <div class="qrbox"><img src="${img}" alt="QR code for ${h(p.pid)}"><span class="id">${h(p.pid)}</span></div>
-        <p style="margin-top:10px"><a class="btn" href="${img}" download="${h(p.pid)}.png">Download PNG</a></p>
+        <div class="toolbar" style="margin:10px 0 0">${qrBtn(p, req.originalUrl)}<a class="btn" href="${img}" download="${h(p.pid)}.png">Download PNG</a></div>
+        ${p.qr_sent_at ? `<p class="hint" style="margin:6px 0 0">QR code sent ${h(fmtDate(new Date(p.qr_sent_at).toISOString().slice(0, 10)))}.</p>` : ""}
         ${user(req).role === "admin" ? `<h2 style="margin-top:16px">Merge a duplicate</h2><p class="lead">Moves the other record's sessions here and removes it.</p>
           <form class="form" method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/merge" data-confirm="Merge the other record into ${h(p.full_name)}? This can't be undone."><label>Other ID<input name="other" required placeholder="${h(co.code)}-0000"></label><button class="btn danger">Merge into this person</button></form>` : ""}</section>
       <section class="card c12"><h2>Sessions attended</h2>${table(["Date", "Session", "Activity", "How"], hist.map((s) => [fmtDate(s.session_date), raw(sessLink(s, co)), s.kind, s.method]), { empty: "No sessions yet." })}</section>
