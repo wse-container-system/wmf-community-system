@@ -276,7 +276,7 @@ test("cycling development hub", async (t) => {
     const r = await admin(`/corporate/schedule/${yoga.id}`, { method: "POST", form: { kind: "Yoga", title: "Aurora Yoga", week: String(wk > 4 ? -1 : wk), weekday: String(dow), start_time: "17:30", starts: today, active: "1" } });
     assert.equal(r.status, 302);
     // on the first Thursday of a month Aurora Ride is on today as well: switch it off so AUTO has one choice
-    await pool.query("UPDATE corp_schedules SET active = false WHERE title = 'Aurora Ride'");
+    await pool.query("UPDATE corp_schedules SET active = false WHERE title IN ('Aurora Ride', 'Aurora Running')"); // (and Running on the second Thursday)
     const C = require("../src/corpdata");
     const aur = (await pool.query("SELECT * FROM corp_companies WHERE code = 'AURORA'")).rows[0];
     const ts = await C.todaysSessions(pool, aur);
@@ -783,6 +783,27 @@ test("cycling development hub", async (t) => {
     const g = mk.byEvent.find((x) => x.key === "general");
     assert.ok(g.byChannel.get("TikTok") && g.metrics.get("Plays") === 5200, "channel split and metric totals");
     await pool.query("DELETE FROM marketing_actions WHERE id > (SELECT max(id) - 3 FROM marketing_actions)");
+  });
+
+  await t.test("WMF calendar: staff add, edit, cancel a date and delete right on the calendar", async () => {
+    const m = today.slice(0, 7), back = `/calendar?m=${m}`;
+    assert.match(ok200(await admin("/calendar"), "calendar").text, /data-staff="1"/);
+    assert.doesNotMatch(ok200(await client()("/calendar"), "public calendar").text, /data-staff/, "the community can't edit");
+    const nf = ok200(await admin(`/calendar/items/new?embed=1&date=${today}&back=${encodeURIComponent(back)}`), "add form").text;
+    assert.doesNotMatch(nf, /<html|<nav/i, "just the form for the pop-up"); assert.match(nf, new RegExp(`value="${today}"`)); assert.match(nf, /name="back"/);
+    const add = await admin("/calendar/items/new", { method: "POST", form: { title: "Test sunrise ride", category: "wmf_ride", status: "Confirmed", start_date: today, start_time: "06:00", weekdays: String(new Date(today + "T12:00Z").getUTCDay()), back } });
+    assert.equal(add.location, back, "back to the same month");
+    const x = (await pool.query("SELECT id FROM calendar_items WHERE title = 'Test sunrise ride'")).rows[0];
+    const api = JSON.parse((await admin("/api/calendar.json")).text); assert.ok(api.items.some((i) => i.id === x.id), "staff get ids");
+    assert.ok(!JSON.parse((await client()("/api/calendar.json")).text).items.some((i) => "id" in i), "public gets no ids");
+    assert.match(ok200(await admin(`/calendar/items/${x.id}?embed=1&back=${encodeURIComponent(back)}`), "edit form").text, /Delete this entry/);
+    assert.equal((await admin(`/calendar/items/${x.id}/date`, { method: "POST", form: { date: today, back } })).location, back);
+    assert.equal((await pool.query("SELECT exceptions FROM calendar_items WHERE id = $1", [x.id])).rows[0].exceptions[today], "cancelled", "that date is skipped");
+    await admin(`/calendar/items/${x.id}/date`, { method: "POST", form: { date: today, undo: "1", back } });
+    assert.equal((await pool.query("SELECT exceptions FROM calendar_items WHERE id = $1", [x.id])).rows[0].exceptions, null, "and brought back");
+    assert.equal((await client()(`/calendar/items/${x.id}/date`, { method: "POST", form: { date: today } })).status, 302, "public can't change it");
+    assert.equal((await admin(`/calendar/items/${x.id}/delete`, { method: "POST", form: { back } })).location, back);
+    assert.equal((await pool.query("SELECT 1 FROM calendar_items WHERE id = $1", [x.id])).rows.length, 0);
   });
 
   await t.test("Department team calendar: WMF and corporate rides, leave, and the team's own entries", async () => {
