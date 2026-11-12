@@ -244,6 +244,26 @@ test("cycling development hub", async (t) => {
     const shaza = (await pool.query("SELECT * FROM corp_participants WHERE company = 'NMDC' AND email = 'shaza@nmdc.ae'")).rows[0];
     assert.ok(shaza && shaza.pid === "NMDC-0004" && shaza.employee_no === "N77" && shaza.community === "Emirati", "existing person got email, employee no and community");
     assert.equal((await pool.query("SELECT community FROM corp_participants WHERE email = 'new.starter@nmdc.ae'")).rows[0].community, "Expat");
+    // uploading again with a changed email updates the same person (no duplicate)
+    const n0 = (await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n;
+    const fd2 = new FormData(); fd2.append("company", "NMDC"); fd2.append("file", new Blob(["Name,Email,Gender\nNew Starter,starter.new@nmdc.ae,Female\n"], { type: "text/csv" }), "nmdc2.csv");
+    const pv2 = ok200(await admin("/corporate/participants/upload", { method: "POST", multipart: fd2 }), "second preview");
+    assert.match(pv2.text, /email \(was new\.starter@nmdc\.ae\)/, "shows the email change");
+    await admin("/corporate/participants/upload/commit", { method: "POST", form: { token: /name="token" value="([a-f0-9]+)"/.exec(pv2.text)[1] } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n, n0, "no duplicate");
+    const ns = (await pool.query("SELECT * FROM corp_participants WHERE email = 'starter.new@nmdc.ae'")).rows[0];
+    assert.ok(ns && ns.gender === "Female", "email and details updated");
+    // personal QR codes: send one, then everyone not sent yet
+    const lp = ok200(await admin("/corporate/participants?company=NMDC"), "participants").text;
+    assert.match(lp, /Send to everyone not sent yet/); assert.match(lp, /Email QR/);
+    const one = await admin(`/corporate/participants/${ns.pid}/emailqr`);
+    assert.equal(one.status, 302); assert.match(one.location, /^mailto:starter\.new%40nmdc\.ae\?subject=/);
+    assert.ok((await pool.query("SELECT qr_sent_at FROM corp_participants WHERE id = $1", [ns.id])).rows[0].qr_sent_at, "marked sent");
+    const link = /(\/cq\/[^\s%]+?)(%0A|$)/.exec(decodeURIComponent(one.location).replace(/\n/g, "%0A"))[1];
+    assert.match(ok200(await client()(link), "personal QR page").text, new RegExp(ns.pid));
+    assert.equal((await client()(`/cq/${ns.pid}.AAAAAAAAAAAA`)).status, 404, "a guessed link doesn't work");
+    const all = ok200(await admin("/corporate/participants/sendqr-all", { method: "POST", form: { company: "NMDC", which: "unsent", back: "/corporate/participants?company=NMDC" } }), "send all").text;
+    assert.match(all, /Send QR codes/); assert.doesNotMatch(all, new RegExp(`${ns.pid}/emailqr`), "already-sent people left out");
     const before = (await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n;
     ok200(await admin("/corporate/participants/template.xlsx", { raw: true }), "template");
     await pool.query("UPDATE corp_companies SET email_domain = 'nmdc.ae', qr_access = 'list' WHERE code = 'NMDC'");

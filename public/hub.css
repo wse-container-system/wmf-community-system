@@ -671,3 +671,5 @@ a.tc-chip:hover { background: color-mix(in srgb, var(--c) 24%, transparent); }
 .tc-panel .grid > label { grid-column: auto !important; min-width: 0; }
 .tc-panel .grid > label.c8 { grid-column: span 2 !important; }
 .tc-panel input, .tc-panel select { min-width: 0; width: 100%; }
+.qr-send { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: var(--surface, #fff); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 0 0 12px; }
+.cp-list td:first-child, .cp-list .badge { white-space: nowrap; } .cp-qr { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
