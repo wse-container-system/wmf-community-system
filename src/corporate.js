@@ -25,9 +25,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   const MAIL = require("./mailer");
 
   // ----- personal QR link for a participant: /cq/AURORA-0012.<signature> (can't be guessed, shows only that person's code)
-  const SECRET = process.env.SESSION_SECRET || "dev-only-secret";
-  const cqSig = (pid) => crypto.createHmac("sha256", SECRET).update("cq|" + pid).digest("base64url").slice(0, 12);
-  const cqLink = (req, pid) => `${req.protocol}://${req.get("host")}/cq/${encodeURIComponent(pid)}.${cqSig(pid)}`;
+  const cqSig = C.cqSig;
+  const cqLink = (req, pid) => `${req.protocol}://${req.get("host")}${C.cqPath(pid)}`;
   app.get("/cq/:code", wrap(async (req, res) => {
     const m = /^([A-Z0-9]{2,12}-\d{4})\.([A-Za-z0-9_-]{12})$/.exec(req.params.code || "");
     const ok = m && crypto.timingSafeEqual(Buffer.from(m[2]), Buffer.from(cqSig(m[1])));
@@ -819,18 +818,40 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const list = await C.companiesFor(user(req));
     const today = R.todayLocal();
     const options = [];
-    for (const co of list) for (const s of await C.todaysSessions(pool, co)) options.push({ v: C.sessionValue(s), label: `${co.name} · ${label(s, co)}` });
+    for (const co of list) for (const s of await C.todaysSessions(pool, co)) options.push({ v: C.sessionValue(s), co: co.code, label: `${co.name} · ${label(s, co)}` });
     res.send(page(req, "Scan corporate QR", `
       <section class="card narrow"><h2>Scan personal QR codes</h2><p class="lead">Scan each staff member's personal code (it starts with CORP-) to record their attendance. For the WMF community, use <a href="/scan">WMF → Scan QR</a>.</p>
-        ${options.length ? `<label class="f" style="display:grid;gap:4px"><span>Session today</span><select id="corpSession" class="inp">${options.map((o) => opt(o.v, o.label, "")).join("")}</select></label>`
+        ${options.length ? `<label class="f" style="display:grid;gap:4px"><span>Session today</span><select id="corpSession" class="inp">${options.map((o) => `<option value="${h(o.v)}" data-co="${h(o.co)}">${h(o.label)}</option>`).join("")}</select></label>`
     : `<div class="alert info"><span class="ic">i</span><span>No corporate session today (${fmtDate(today)}). <a href="/corporate/attendance">Create one</a> to scan into it.</span></div>`}</section>
       ${options.length ? `<section class="card narrow" style="display:grid;gap:12px"><div id="reader" aria-label="Camera"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="btn primary big" id="start">Start camera</button><button class="btn big" id="stop" hidden>Stop camera</button></div>
         <div id="result" class="scan-result" hidden aria-live="assertive"></div></section>
       <section class="card narrow"><h2>Forgot their QR code?</h2><p class="lead">Type their ID number (e.g. NMDC-0012, or just "nmdc 12"). You can also tick names on the <a href="/corporate/attendance">session page</a>.</p>
         <form class="toolbar" id="byId" style="margin:0"><input class="inp" id="pidInput" placeholder="ID number" autocomplete="off" style="max-width:220px" aria-label="ID number"><button class="btn primary">Check in</button></form></section>
+      <section class="card narrow"><details id="newRider"><summary><h2 style="display:inline">New rider? Register</h2></summary>
+        <p class="lead" style="margin-top:8px">Adds them to the company's list, checks them in, and gives you their QR code to send.</p>
+        <form id="corpWalkin" class="form">
+          <label>Company<select name="company">${list.map((co) => opt(co.code, co.name, "")).join("")}</select></label>
+          <label>Full name<input name="full_name" required maxlength="120" autocomplete="off"></label>
+          <label>Mobile <span class="hint">(to send the QR code on WhatsApp)</span><input name="mobile" maxlength="30" inputmode="tel" autocomplete="off" placeholder="05x xxx xxxx"></label>
+          <label>Work email <span class="hint">(optional)</span><input name="email" type="email" maxlength="160" autocomplete="off"></label>
+          <button class="btn primary big">Register and check in</button></form>
+        <div id="newDone" hidden></div></details></section>
       <section class="card narrow"><h2>This session</h2><ul class="log" id="log"><li class="muted">No scans yet on this device.</li></ul></section>` : ""}`,
-    { active: "/corporate/scan", scripts: options.length ? `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/corp-scan.js"></script>` : "" }));
+    { active: "/corporate/scan", scripts: options.length ? `<script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/corpqr.js"></script><script src="/corp-scan.js"></script>` : "" }));
+  }));
+  /** What the phone needs to show and send a new rider's QR code. */
+  async function sendKit(req, p, co) {
+    const link = cqLink(req, p.pid);
+    return { qr: await QRCode.toDataURL(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 420 }), qrUrl: link, phone: p.mobile || "", email: p.email || "",
+      first: String(p.full_name || "").split(" ")[0], coName: co ? co.name : p.company };
+  }
+  app.post("/api/corp/walkin", S, wrap(async (req, res) => {
+    const b = req.body || {}, list = await C.companiesFor(user(req)), co = list.find((x) => x.code === b.company);
+    if (co && b.email && !domainOk(co, R.normEmail(b.email))) return res.json({ status: "error", message: `Use their ${co.name} work email (${domains(co).join(", ")}), or leave email empty.` });
+    const out = await tx((c) => C.walkIn(c, { ...b, by: actor(req), codes: list.map((x) => x.code) }));
+    if (out.status === "error") return res.json(out);
+    res.json({ status: out.status, name: out.name, pid: out.pid, total: out.total, created: out.created, ...(await sendKit(req, out.participant, co)) });
   }));
   app.post("/api/corp/scan", S, wrap(async (req, res) => {
     const { code, session } = req.body || {};

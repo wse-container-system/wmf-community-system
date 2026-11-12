@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS corp_participants (
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS employee_no TEXT;
 CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (company, name_key);
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS qr_sent_at TIMESTAMPTZ;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS mobile TEXT;
 CREATE TABLE IF NOT EXISTS corp_sessions (
   id SERIAL PRIMARY KEY,
   company TEXT NOT NULL REFERENCES corp_companies(code),

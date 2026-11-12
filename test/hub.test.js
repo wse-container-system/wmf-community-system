@@ -308,6 +308,20 @@ test("cycling development hub", async (t) => {
     assert.equal(out.status, "ok");
     const sess = (await pool.query("SELECT s.* FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = $1", [p.id])).rows[0];
     assert.equal(sess.title, "Aurora Yoga"); assert.equal(sess.start_time, "17:30");
+    // a new rider registered on the staff scanner: added, checked in, QR code ready to send on WhatsApp
+    assert.match(ok200(await admin("/corporate/scan"), "scanner").text, /New rider\? Register/);
+    const wi = (await admin("/api/corp/walkin", { method: "POST", json: { company: "AURORA", session: "ride:AUTO", full_name: "Walk In Rider", mobile: "050 111 2299" } })).json();
+    assert.equal(wi.status, "ok"); assert.ok(wi.created); assert.match(wi.qr, /^data:image\/png/); assert.match(wi.qrUrl, /\/cq\/AURORA-\d{4}\./); assert.equal(wi.phone, "971501112299");
+    assert.equal(ok200(await client()(new URL(wi.qrUrl).pathname), "their QR page").status, 200);
+    const again = (await admin("/api/corp/walkin", { method: "POST", json: { company: "AURORA", session: "ride:AUTO", full_name: "Rider Walk In" } })).json();
+    assert.equal(again.status, "duplicate"); assert.equal(again.pid, wi.pid, "same person, no duplicate");
+    assert.equal((await admin("/api/corp/walkin", { method: "POST", json: { company: "NOPE", full_name: "X Y Z" } })).json().status, "error");
+    // and on a scanner link
+    await admin("/admin/scanners", { method: "POST", form: { label: "Corp phone", scope: "corporate" } });
+    const sl = (await pool.query("SELECT token FROM scanner_links WHERE label = 'Corp phone' ORDER BY id DESC LIMIT 1")).rows[0];
+    assert.match(ok200(await client()("/s/" + sl.token), "scanner link").text, /id="corpWalkin"/);
+    const lw = (await client()(`/s/${sl.token}/corpwalkin`, { method: "POST", json: { company: "AURORA", session: "ride:AUTO", full_name: "Link Walk Rider", mobile: "0502223344" } })).json();
+    assert.equal(lw.status, "ok"); assert.match(lw.qrUrl, /\/cq\//);
     // cancel next week's LIMAD ride; it shows as cancelled and isn't offered
     const lim = (await pool.query("SELECT id FROM corp_schedules WHERE company = 'LIMAD'")).rows[0];
     let thu = today; while (new Date(thu + "T12:00:00Z").getUTCDay() !== 4 || thu === today) thu = E.helpers.addDays(thu, 1);

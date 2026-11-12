@@ -155,4 +155,21 @@
       }, function () { show({ status: "error", message: "No connection. Try again." }); })
       .finally(function () { btn.disabled = false; });
   });
+
+  // ---------- corporate new rider: register, check in to the chosen session, then send their personal QR code
+  var cw = $("#corpWalkin");
+  if (cw) cw.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = Object.fromEntries(new FormData(cw).entries()), cs = $("#corpSession"); body.session = cs ? cs.value : "ride:AUTO";
+    var btn = cw.querySelector("button"); btn.disabled = true;
+    fetch("/s/" + encodeURIComponent(token) + "/corpwalkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        show(r, body.full_name);
+        if (r.status === "error") return;
+        if (window.corpQrKit) window.corpQrKit($("#corpDone"), r);
+        cw.reset();
+      }, function () { show({ status: "error", message: "No connection. Try again." }); })
+      .finally(function () { btn.disabled = false; });
+  });
 })();

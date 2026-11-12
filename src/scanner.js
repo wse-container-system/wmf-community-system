@@ -92,9 +92,17 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
           <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>The rider accepts the WMF waiver (rides at own risk, follows the ride leader's instructions and road safety rules)</span></label>
           <button class="btn primary big">Register and check in</button></form>
         <div id="newDone" hidden></div></details></section>` : ""}
+      ${showC ? `<section class="card sc-card" data-panel="corp" ${showW ? "hidden" : ""}><details id="corpNew"><summary><h2 style="display:inline">New rider? Register</h2></summary>
+        <form id="corpWalkin" class="form" style="margin-top:10px">
+          <label>Company<select name="company">${(await C.companies(pool)).map((co) => `<option value="${h(co.code)}">${h(co.name)}</option>`).join("")}</select></label>
+          <label>Full name<input name="full_name" required maxlength="120" autocomplete="off"></label>
+          <label>Mobile <span class="hint">(to send the QR code on WhatsApp)</span><input name="mobile" maxlength="30" inputmode="tel" autocomplete="off" placeholder="05x xxx xxxx"></label>
+          <label>Work email <span class="hint">(optional)</span><input name="email" type="email" maxlength="160" autocomplete="off"></label>
+          <button class="btn primary big">Register and check in</button></form>
+        <div id="corpDone" hidden></div></details></section>` : ""}
       <section class="card sc-card"><div class="sc-count"><h2>Checked in on this phone</h2><b id="count">0</b></div><ul class="log" id="log"><li class="muted">Nobody yet.</li></ul></section>
       <p class="sc-foot">Tip: add this page to your home screen. Cycling Development · Powered by Aurora</p>`,
-    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/ui.js"></script><script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/scanner.js"></script>` }));
+    { manifest: `/s/${encodeURIComponent(l.token)}/manifest.webmanifest`, scripts: `<script src="/ui.js"></script><script src="/vendor/html5-qrcode.min.js"></script><script src="/camhelp.js"></script><script src="/corpqr.js"></script><script src="/scanner.js"></script>` }));
   }));
   app.get("/s/:token/manifest.webmanifest", wrap(async (req, res) => {
     const l = await linkByToken(req.params.token); if (!l) return res.status(404).end();
@@ -133,6 +141,22 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
     const x = scanReply(out.r);
     res.json({ status: out.r.status, name: x.name, id: x.memberId, detail: `${x.series || "WMF"}${out.created ? " · new member, welcome!" : " · already a member"}`, created: out.created,
       qr: await qrDataUrl(out.member.qr_value || out.member.member_id), ...qrSend(req, out.member) });
+  }));
+
+  // ----- corporate: register a new rider on the spot, check them in, and hand back their personal QR link to send
+  app.post("/s/:token/corpwalkin", limit("scanwalkin", 60, 60 * 60e3), wrap(async (req, res) => {
+    const l = await linkByToken(req.params.token);
+    if (!l || l.scope === "wmf") return res.status(403).json({ status: "error", message: "This scanner is for WMF only." });
+    const b = req.body || {}, list = await C.companies(pool), co = list.find((x) => x.code === b.company);
+    const doms = co ? String(co.email_domain || "").toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, "")).filter(Boolean) : [];
+    if (co && b.email && doms.length && !doms.some((d) => R.normEmail(b.email).endsWith("@" + d))) return res.json({ status: "error", message: `Use their ${co.name} work email (${doms.join(", ")}), or leave email empty.` });
+    const out = await tx((c) => C.walkIn(c, { ...b, by: "Scanner link: " + l.label, codes: list.map((x) => x.code), method: "Scanner link" }));
+    if (out.status === "error") return res.json(out);
+    await pool.query("UPDATE scanner_links SET last_used = now(), scans = scans + 1 WHERE id = $1", [l.id]);
+    const p = out.participant;
+    res.json({ status: out.status, name: out.name, id: out.pid, pid: out.pid, detail: `${out.company} · ${out.created ? "new, welcome!" : "already on the list"}`, created: out.created,
+      qr: await QRCode.toDataURL(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 420 }), qrUrl: `${req.protocol}://${req.get("host")}${C.cqPath(p.pid)}`,
+      phone: p.mobile || "", email: p.email || "", first: String(p.full_name || "").split(" ")[0], coName: co ? co.name : p.company });
   }));
 
   app.post("/s/:token/scan", limit("scanlink", 900, 60 * 60e3), wrap(async (req, res) => {
