@@ -800,6 +800,14 @@ test("cycling development hub", async (t) => {
     const jan = ok200(await admin("/department/calendar?m=2027-01"), "holidays").text;
     assert.match(jan, /New Year&#39;s Day|New Year's Day/, "UAE public holidays on the calendar"); assert.match(jan, /tc-day[^"]*hol/, "holiday days are highlighted");
     assert.ok((await pool.query("SELECT 1 FROM dept_holidays WHERE holiday = '2027-03-10'")).rows[0], "2027 holidays added");
+    // edit right in the calendar: the entry opens in a panel and saving comes back to the same view
+    const here = `/department/calendar?m=${m}&show=hol%2Cwmf%2Ccorp%2Caway%2Cteam`;
+    assert.match(pg, new RegExp(`edit=${e.id}#tc-edit`), "team entries open in the calendar");
+    const pn = ok200(await admin(`/department/calendar?m=${m}&edit=${e.id}`), "edit panel").text;
+    assert.match(pn, /id="tc-edit"/); assert.match(pn, /Edit: Team meeting/);
+    const sv = await admin(`/department/calendar/entry/${e.id}`, { method: "POST", form: { title: "Team meeting", category: "Meeting", start_date: d, start_time: "10:30", repeat: "weekly", who: "Whole team", back: here + `&edit=${e.id}` } });
+    assert.equal(sv.location, here, "back to the same calendar view");
+    assert.match(ok200(await admin(`/department/calendar?m=${m}&add=${d}`), "add panel").text, /Add on /);
     await admin(`/department/calendar/entry/${e.id}/delete`, { method: "POST", form: {} });
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM dept_calendar")).rows[0].n, 0);
   });
