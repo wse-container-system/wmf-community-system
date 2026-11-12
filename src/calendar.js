@@ -84,12 +84,13 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
 
   // ---------- public calendar ----------
   app.get("/api/calendar.json", wrap(async (req, res) => {
-    const items = (await loadItems()).map(({ id, slot, ...rest }) => rest); // eslint-disable-line no-unused-vars
-    res.set("Cache-Control", "public, max-age=60").json({ updated: R.nowLocal(), items });
+    const u = req.session && req.session.user, staff = !!(u && ["admin", "coordinator"].includes(u.role));
+    const items = (await loadItems()).map(({ id, slot, ...rest }) => (staff ? { id, ...rest } : rest)); // eslint-disable-line no-unused-vars
+    res.set("Cache-Control", staff ? "private, no-store" : "public, max-age=60").json({ updated: R.nowLocal(), items });
   }));
   app.get("/calendar", (req, res) => {
     res.send(page(req, "Calendar", `
-      <section class="wc" aria-label="WMF calendar">
+      <section class="wc" aria-label="WMF calendar"${req.session.user && ["admin", "coordinator"].includes(req.session.user.role) ? ' data-staff="1"' : ""}>
         <header class="wc-top">
           <div><div class="wc-eyebrow">Community ride calendar</div>
             <div class="wc-monthrow"><button class="wc-nav" id="wc-prev" aria-label="Previous month">‹</button><h2 class="wc-month" id="wc-month" aria-live="polite"></h2><button class="wc-nav" id="wc-next" aria-label="Next month">›</button><button class="wc-today" id="wc-today">This month</button></div></div>
@@ -97,7 +98,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
         </header>
         <div class="wc-cal"><div class="wc-dow"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
           <div class="wc-grid" id="wc-grid"></div><div class="wc-agenda" id="wc-agenda"></div></div>
-        <p class="muted" style="font-size:13px;margin:10px 0 0">Outlined = time or date to be confirmed. Plans can change, so check before you ride.${req.session.user && ["admin", "coordinator"].includes(req.session.user.role) ? ` · <a href="/calendar/manage">Edit the calendar</a>` : ""}</p>
+        <p class="muted" style="font-size:13px;margin:10px 0 0">Outlined = time or date to be confirmed. Plans can change, so check before you ride.${req.session.user && ["admin", "coordinator"].includes(req.session.user.role) ? ` · <b>Editing on:</b> click an entry to edit, cancel a date or delete it · + on a day adds one · <a href="/calendar/manage">List and share</a>` : ""}</p>
       </section>
       <div class="wc-pop" id="wc-pop" hidden role="dialog" aria-modal="true" aria-labelledby="wc-pop-title"><div class="wc-scrim" data-close></div>
         <div class="wc-card"><div class="wc-head" id="wc-pop-head"><button class="wc-x" data-close aria-label="Close">×</button><div class="wc-eyebrow" id="wc-pop-cat"></div><h2 id="wc-pop-title"></h2></div>
@@ -132,12 +133,13 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
       </tbody></table></div></section>`, { active: "/calendar" }));
   }));
 
-  function form(x, act) {
+  const backOk = (b) => (/^\/calendar(\?m=\d{4}-\d{2})?$/.test(String(b || "")) ? String(b) : null);
+  function form(x, act, back) {
     const r = x.recur || {};
     const wd = new Set(r.weekdays || []);
     const ex = Object.keys(x.exceptions || {}).filter((d) => x.exceptions[d] === "cancelled").join(", ");
     return `<section class="card"><h2>${x.id ? "Edit entry" : "Add a calendar entry"}</h2>
-      <form class="form" method="post" action="/calendar/items/${x.id || "new"}">
+      <form class="form" method="post" action="/calendar/items/${x.id || "new"}">${back ? `<input type="hidden" name="back" value="${h(back)}">` : ""}
         <label>Title<input name="title" required maxlength="140" value="${h(x.title)}"></label>
         <div class="row2"><label>Type<select name="category">${Object.entries(CATS).map(([k, l]) => `<option value="${k}" ${x.category === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
           <label>Status<select name="status">${STATUSES.map((s) => `<option ${x.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>
@@ -150,7 +152,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
             <label>Until <span class="hint">(blank = no end)</span><input type="date" name="until" value="${h(r.until || "")}"></label></div>
           <label style="margin-top:8px">Cancelled dates <span class="hint">(e.g. 2026-11-09, 2026-11-16)</span><input name="cancelled" value="${h(ex)}"></label>
           <p class="hint" style="margin:6px 0 0">Tick no days for a one-off entry.</p></fieldset>
-        <label>Scanner ride <span class="hint">(WMF rides: which ride ride leads check people in to)</span><select name="ride_slot"><option value="">None</option>${R.CORE_RIDES.map((s) => `<option value="${s.activity_id}" ${x.ride_slot === s.activity_id ? "selected" : ""}>${h(s.name)}</option>`).join("")}</select></label>
+        <label>Scanner ride <span class="hint">(WMF rides: which ride the leads check people in to)</span><select name="ride_slot"><option value="">None</option>${R.CORE_RIDES.map((s) => `<option value="${s.activity_id}" ${x.ride_slot === s.activity_id ? "selected" : ""}>${h(s.name)}</option>`).join("")}</select></label>
         <label>Join link <span class="hint">(optional, e.g. Strava)</span><input name="url" type="url" maxlength="300" value="${h(x.url)}"></label>
         <fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px"><legend style="font-weight:600;color:var(--ink-2);font-size:14px">WMF events: sign-up</legend>
           <label class="check"><input type="checkbox" name="open" value="1" ${act && act.registration_open ? "checked" : ""}> <span>Open public sign-up (shows a Sign up button on the calendar)</span></label>
@@ -158,16 +160,23 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
           <div class="row2"><label>Price in AED <span class="hint">(blank = free)</span><input type="number" min="0" step="0.01" name="price_aed" value="${h(act && act.price_aed ? act.price_aed : "")}"></label>
             <label>Payment link <span class="hint">(https://…)</span><input type="url" name="payment_url" maxlength="400" value="${h(act && act.payment_url ? act.payment_url : "")}"></label></div>
           ${act ? `<p class="hint" style="margin:6px 0 0">Linked event: <a href="/events/${encodeURIComponent(act.activity_id)}">${h(act.activity_id)}</a></p>` : ""}</fieldset>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save</button><a class="btn" href="/calendar/manage">Cancel</a></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save</button>${back ? `<button class="btn" type="button" data-close>Cancel</button>` : `<a class="btn" href="/calendar/manage">Cancel</a>`}</div>
       </form>
-      ${x.id ? `<form method="post" action="/calendar/items/${x.id}/delete" style="margin-top:14px"><button class="btn danger">Delete this entry</button></form>` : ""}</section>`;
+      ${x.id ? `<form method="post" action="/calendar/items/${x.id}/delete" style="margin-top:14px">${back ? `<input type="hidden" name="back" value="${h(back)}">` : ""}<button class="btn danger" data-confirm="Delete this entry${x.recur ? " and every date it repeats" : ""}?">Delete this entry</button></form>` : ""}</section>`;
   }
-  app.get("/calendar/items/new", STAFF, (req, res) => res.send(page(req, "Add entry", form({ title: "", category: "wmf_ride", status: "Confirmed", start_date: R.todayLocal(), end_date: R.todayLocal() }), { active: "/calendar", wide: false })));
+  app.get("/calendar/items/new", STAFF, (req, res) => {
+    const d = DATE_RE.test(req.query.date || "") ? req.query.date : R.todayLocal();
+    const html = form({ title: "", category: "wmf_ride", status: "Confirmed", start_date: d, end_date: d }, null, backOk(req.query.back));
+    if (req.query.embed) return res.set("Cache-Control", "no-store").send(html);
+    res.send(page(req, "Add entry", html, { active: "/calendar", wide: false }));
+  });
   app.get("/calendar/items/:id", STAFF, wrap(async (req, res) => {
     const x = (await pool.query("SELECT * FROM calendar_items WHERE id = $1", [+req.params.id || 0])).rows[0];
     if (!x) return res.redirect("/calendar/manage");
     const act = x.activity_id ? (await pool.query("SELECT * FROM activities WHERE activity_id = $1", [x.activity_id])).rows[0] : null;
-    res.send(page(req, "Edit entry", form(x, act), { active: "/calendar", wide: false }));
+    const html = form(x, act, backOk(req.query.back));
+    if (req.query.embed) return res.set("Cache-Control", "no-store").send(html);
+    res.send(page(req, "Edit entry", html, { active: "/calendar", wide: false }));
   }));
 
   function readForm(b) {
@@ -192,7 +201,8 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
   app.post("/calendar/items/:id", STAFF, wrap(async (req, res) => {
     const f = readForm(req.body);
     const isNew = req.params.id === "new";
-    if (f.err) { setFlash(req, "err", f.err); return res.redirect(isNew ? "/calendar/items/new" : "/calendar/items/" + (+req.params.id)); }
+    const back = backOk(req.body.back);
+    if (f.err) { setFlash(req, "err", f.err); return res.redirect(back || (isNew ? "/calendar/items/new" : "/calendar/items/" + (+req.params.id))); }
     const id = await tx(async (c) => {
       let before = null, row = { ...f.row };
       if (!isNew) { before = (await c.query("SELECT * FROM calendar_items WHERE id = $1 FOR UPDATE", [+req.params.id])).rows[0]; if (!before) return null; row.activity_id = before.activity_id; }
@@ -206,7 +216,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
       return newId;
     });
     setFlash(req, id ? "ok" : "err", id ? "Saved. The calendar and scanner show it straight away." : "Entry not found.");
-    res.redirect("/calendar/manage");
+    res.redirect(back || "/calendar/manage");
   }));
   app.post("/calendar/items/:id/delete", STAFF, wrap(async (req, res) => {
     await tx(async (c) => {
@@ -217,7 +227,22 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
       }
     });
     setFlash(req, "ok", "Deleted. Any sign-ups already made are kept.");
-    res.redirect("/calendar/manage");
+    res.redirect(backOk((req.body || {}).back) || "/calendar/manage");
+  }));
+  // cancel (or bring back) one date: a repeating ride skips that day; a one-off entry is marked Cancelled
+  app.post("/calendar/items/:id/date", STAFF, wrap(async (req, res) => {
+    const b = req.body || {}, d = b.date, undo = b.undo === "1", back = backOk(b.back) || "/calendar";
+    if (!DATE_RE.test(d || "")) { setFlash(req, "err", "Check the date."); return res.redirect(back); }
+    await tx(async (c) => {
+      const x = (await c.query("SELECT * FROM calendar_items WHERE id = $1 FOR UPDATE", [+req.params.id || 0])).rows[0]; if (!x) return;
+      if (x.recur) {
+        const ex = { ...(x.exceptions || {}) }; if (undo) delete ex[d]; else ex[d] = "cancelled";
+        await c.query("UPDATE calendar_items SET exceptions = $2, updated_at = now() WHERE id = $1", [x.id, Object.keys(ex).length ? JSON.stringify(ex) : null]);
+      } else await c.query("UPDATE calendar_items SET status = $2, updated_at = now() WHERE id = $1", [x.id, undo ? "Confirmed" : "Cancelled"]);
+      await audit(c, actor(req), undo ? "calendar.restoreDate" : "calendar.cancelDate", "calendar", String(x.id), null, { date: d });
+    });
+    setFlash(req, "ok", undo ? `Back on for ${fmtDate(d)}.` : `Cancelled for ${fmtDate(d)}. The calendar shows it struck through.`);
+    res.redirect(back);
   }));
 };
 module.exports.seed = seed;
