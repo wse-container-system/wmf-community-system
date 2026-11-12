@@ -347,6 +347,9 @@ test("cycling development hub", async (t) => {
     const staffRide = ok200(await admin(`/corporate/signups/AURORA/${rd.key}`), "staff ride").text;
     assert.match(staffRide, /Who's coming \(3\)/); assert.match(staffRide, /wa\.me\/[^"]*\?text=[^"]*165%20cm/, "WhatsApp draft with height");
     const xl = await admin(`/corporate/signups/AURORA/${rd.key}/rentals.xlsx`, { raw: true }); assert.equal(xl.status, 200);
+    // someone already coming on her own bike can switch to a rental from her confirmation
+    await admin(`/corporate/signups/AURORA/${rd.key}/rental`, { method: "POST", form: { bikes: "3" } });
+    assert.match(ok200(await other(`/ride/${tokS}?k=${rd.key}`), "own bike page").text, /Book a rental bike/);
     // cancel frees the bike
     await anon(`/ride/${tokS}/cancel`, { method: "POST", form: { k: rd.key } });
     assert.equal((await pool.query("SELECT count(*)::int n FROM corp_signups WHERE ride_key = $1 AND status = 'Coming' AND rent", [rd.key])).rows[0].n, 0);

@@ -114,7 +114,10 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       if (sel.cancelled) panel = `<h2>${h(dayLabel(sel.date))}</h2><p class="lead">This session is cancelled.</p>`;
       else if (mine) {
         panel = `<h2>You're in, ${h(String(mine.full_name).split(" ")[0])}!</h2><p class="lead">${h(dayLabel(sel.date))}${sel.time ? " · " + h(t12(sel.time)) : ""}${sel.where ? " · " + h(sel.where) : ""}</p>
-          ${mine.rent ? `<p class="rs-ref">Rental bike booked · ref <b>${h(mine.ref)}</b> · height ${nf(mine.height_cm)} cm</p>` : `<p>Riding your own bike.</p>`}
+          ${mine.rent ? `<p class="rs-ref">Rental bike booked · ref <b>${h(mine.ref)}</b> · height ${nf(mine.height_cm)} cm</p>
+            <form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">Switch to my own bike</button></form>`
+          : `<p>Riding your own bike.</p>${rentalOpen(rt, taken) ? `<form class="rs-bike" method="post" action="${base}/signup" style="margin-bottom:10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1">
+              <b>Need a bike? Rent one${rt.price ? ` (AED ${nf(+rt.price)})` : ""}</b><label>Your height (cm)<input name="height_cm" type="number" min="120" max="210" inputmode="numeric" required placeholder="165"></label>${rentLine}<button class="btn primary">Book a rental bike</button></form>` : ""}`}
           <p class="hint">Bring your personal QR code: <a href="${h(C.cqPath(me.pid))}">open my QR code</a>.</p>
           <form method="post" action="${base}/cancel"><input type="hidden" name="k" value="${h(sel.key)}"><button class="btn" data-confirm="Cancel your place${mine.rent ? " and your rental bike" : ""}?">Can't make it? Cancel my place</button></form>${whoList}`;
       } else {
