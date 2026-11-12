@@ -53,7 +53,7 @@ async function counts(co, keys) {
   const r = (await pool.query(`SELECT ride_key, count(*)::int n, count(*) FILTER (WHERE rent)::int bikes FROM corp_signups WHERE company = $1 AND ride_key = ANY($2) AND status = 'Coming' GROUP BY 1`, [co.code, keys])).rows;
   return Object.fromEntries(r.map((x) => [x.ride_key, x]));
 }
-const rentalOpen = (rt, taken) => !!(rt && rt.bikes > 0 && taken < rt.bikes && (!rt.closes_at || R.nowLocal().slice(0, 16) < rt.closes_at));
+const rentalOpen = (rt) => !(rt && rt.closes_at && R.nowLocal().slice(0, 16) >= rt.closes_at); // rental bikes: no limit, open unless booking has closed
 async function companyByToken(token) {
   return (await pool.query("SELECT * FROM corp_companies WHERE signup_token = $1 AND coalesce(active, true)", [String(token || "")])).rows[0] || null;
 }
@@ -114,7 +114,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       const bookBox = `<div class="rs-ref"><b>Book your rental bike with ${h(shop.name || "the shop")}</b><br>In the booking description, write: <b>${h(note)}</b>
         <div class="toolbar" style="margin:8px 0 0"><a class="btn primary" href="${h(shop.link)}" target="_blank" rel="noopener">Book a bike with ${h(shop.name || "the shop")} ↗</a><button class="btn" type="button" data-copy="${h(note)}">Copy "${h(note)}"</button></div></div>`;
       const whoList = who.length ? `<p class="rs-who"><b>Who's coming (${who.length})</b><br>${who.map((x) => h(short(x.full_name))).join(" · ")}</p>` : '<p class="muted">Nobody yet. Be the first!</p>';
-      const rentLine = rt && rt.bikes > 0 ? `<p class="hint" style="margin:0">Rental bikes: ${nf(Math.max(0, rt.bikes - taken))} of ${nf(rt.bikes)} left${rt.price ? ` · AED ${nf(+rt.price)}` : ""}${rt.closes_at ? ` · book by ${h(dayLabel(rt.closes_at.slice(0, 10)))} ${h(t12(rt.closes_at.slice(11, 16)))}` : ""}</p>` : "";
+      const rentLine = rt && (rt.price || rt.closes_at) ? `<p class="hint" style="margin:0">${[rt.price ? `AED ${nf(+rt.price)}` : "", rt.closes_at ? `book by ${h(dayLabel(rt.closes_at.slice(0, 10)))} ${h(t12(rt.closes_at.slice(11, 16)))}` : ""].filter(Boolean).join(" · ")}</p>` : "";
       if (sel.cancelled) panel = `<h2>${h(dayLabel(sel.date))}</h2><p class="lead">This session is cancelled.</p>`;
       else if (mine) {
         panel = `<h2>You're in, ${h(String(mine.full_name).split(" ")[0])}!</h2><p class="lead">${h(dayLabel(sel.date))}${sel.time ? " · " + h(t12(sel.time)) : ""}${sel.where ? " · " + h(sel.where) : ""}</p>
@@ -143,7 +143,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
               <label class="check"><input type="radio" name="rent" value="0" ${v.rent === "1" ? "" : "checked"}> <span>I'll bring my own bike</span></label>
               <label class="check"><input type="radio" name="rent" value="1" ${v.rent === "1" ? "checked" : ""}> <span>Rent a bike${rt.price ? ` (AED ${nf(+rt.price)})` : ""}</span></label>
               <label class="rs-h">Your height (cm) <span class="hint">needed for a rental bike</span><input name="height_cm" type="number" min="120" max="210" inputmode="numeric" value="${h(v.height_cm || "")}" placeholder="165"></label>${rentLine}</fieldset>`
-              : rt && rt.bikes > 0 ? `<p class="hint">Rental bikes are fully booked${rt.closes_at && R.nowLocal().slice(0, 16) >= rt.closes_at ? " (booking has closed)" : ""}.</p>` : ""}
+              : `<p class="hint">Booking for rental bikes has closed.</p>`}
             <button class="btn primary big">I'm coming</button></form>${whoList}`;
       }
     }
@@ -202,7 +202,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       const rt = (await c.query("SELECT * FROM corp_ride_rental WHERE company = $1 AND ride_key = $2", [co.code, key])).rows[0];
       const cur = (await c.query("SELECT * FROM corp_signups WHERE ride_key = $1 AND participant_id = $2", [key, p.id])).rows[0];
       const taken = (await c.query("SELECT count(*)::int n FROM corp_signups WHERE company = $1 AND ride_key = $2 AND status = 'Coming' AND rent AND participant_id <> $3", [co.code, key, p.id])).rows[0].n;
-      if (rent && !viaLink && !(cur && cur.rent && cur.status === "Coming") && !rentalOpen(rt, taken)) return { err: "Sorry, the rental bikes for this ride are fully booked. You can still come on your own bike." };
+      if (rent && !viaLink && !(cur && cur.rent && cur.status === "Coming") && !rentalOpen(rt, taken)) return { err: "Booking for rental bikes has closed for this ride. You can still come on your own bike." };
       let ref = cur && cur.ref;
       if (rent && !viaLink && !ref) { const n = (await c.query("SELECT count(*)::int n FROM corp_signups WHERE company = $1 AND ride_key = $2 AND ref IS NOT NULL", [co.code, key])).rows[0].n + 1; ref = `${co.code}-${ride.date.slice(5, 7)}${ride.date.slice(8)}-${String(n).padStart(2, "0")}`; }
       await c.query(`INSERT INTO corp_signups (company, ride_key, ride_date, participant_id, rent, height_cm, ref, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'Coming')
@@ -244,7 +244,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     res.send(page(req, "Ride sign-ups", `<div class="card-head"><div><h2 style="font-size:22px">Ride sign-ups</h2><p class="muted" style="margin:2px 0 0">Participants sign up for rides, book rental bikes and see who's coming.</p></div>${coSelect(sc)}</div>
       <div class="grid"><section class="card c8"><h2>${h(co.name)}: upcoming rides</h2>
         ${table(["Date", "Session", "Coming", "Rental bikes", ""], rides.map((x) => { const c = cnt[x.key] || {}, rt = rts[x.key];
-          return [dayLabel(x.date) + (x.time ? " · " + t12(x.time) : ""), raw(`${h(x.title)}${x.cancelled ? ' <span class="badge">Cancelled</span>' : ""}`), nf(c.n || 0), rt && rt.bikes ? `${nf(c.bikes || 0)} of ${nf(rt.bikes)}` : (c.bikes ? nf(c.bikes) : "—"),
+          return [dayLabel(x.date) + (x.time ? " · " + t12(x.time) : ""), raw(`${h(x.title)}${x.cancelled ? ' <span class="badge">Cancelled</span>' : ""}`), nf(c.n || 0), c.bikes ? nf(c.bikes) : "—",
             raw(`<a class="btn tblbtn" href="/corporate/signups/${encodeURIComponent(co.code)}/${encodeURIComponent(x.key)}">Open</a>`)]; }), { num: [2], empty: "No rides in the next 8 weeks. Add them on Corporate → Schedule." })}</section>
       <section class="card c4"><h2>Share with ${h(co.name)}</h2><p class="lead">One link for everyone at ${h(co.name)}. No sign-in: they use their work email or ID.</p>
         <div class="sc-row"><input class="inp" value="${h(link)}" readonly aria-label="Sign-up link"><button class="btn" type="button" data-copy="${h(link)}">Copy</button></div>
@@ -278,9 +278,8 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     res.send(page(req, "Ride sign-ups", `<p class="muted" style="margin:0 0 6px"><a href="/corporate/signups?company=${h(co.code)}">‹ All rides</a></p>
       <div class="card-head"><div><h2 style="font-size:22px">${h(co.name)} · ${h(dayLabel(ride.date))}</h2><p class="muted" style="margin:2px 0 0">${h(ride.title)}${ride.time ? " · " + h(t12(ride.time)) : ""}${ride.where ? " · " + h(ride.where) : ""} · ${nf(who.length)} coming · ${nf(bikes.length)} rental bike${bikes.length === 1 ? "" : "s"}</p></div></div>
       <div class="grid">${shop.link ? `<section class="card c4"><h2>Bike rental for this ride</h2><p class="lead">The ladies book their own bike on the ${h(shop.name || "shop")} booking link, writing <b>${h(co.name)} Corporate Ride</b> in the description. This list shows who said she needs a rental bike, to check against ${h(shop.name || "the shop")}'s bookings.</p>
-        <p><a class="btn" href="${h(shop.link)}" target="_blank" rel="noopener">Open the booking link ↗</a></p><p class="hint">Change the link on <a href="/corporate/signups?company=${h(co.code)}">Ride sign-ups</a>.</p></section>` : `<section class="card c4"><h2>Bike rental for this ride</h2><p class="lead">Set how many rental bikes are available. Participants can book until they're gone or booking closes.</p>
+        <p><a class="btn" href="${h(shop.link)}" target="_blank" rel="noopener">Open the booking link ↗</a></p><p class="hint">Change the link on <a href="/corporate/signups?company=${h(co.code)}">Ride sign-ups</a>.</p></section>` : `<section class="card c4"><h2>Bike rental for this ride</h2><p class="lead">Rental bikes are open for everyone, with no limit. Add a price or a closing time if you need to.</p>
         <form class="form" method="post" action="${base}/rental">
-          <label>Rental bikes available<input type="number" name="bikes" min="0" max="200" value="${h(rt ? rt.bikes : 0)}"></label>
           <label>Price per bike, AED <span class="hint">(optional, shown to them)</span><input type="number" name="price" min="0" step="1" value="${h(rt && rt.price != null ? +rt.price : "")}"></label>
           <label>Booking closes <span class="hint">(optional)</span><input type="datetime-local" name="closes_at" value="${h(rt && rt.closes_at ? rt.closes_at : "")}"></label>
           <button class="btn primary">Save</button></form></section>`}
@@ -294,12 +293,12 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
   }));
   app.post("/corporate/signups/:code/:key/rental", S, wrap(async (req, res) => {
     const L = await loadRide(req); if (!L) return res.redirect("/corporate/signups");
-    const b = req.body || {}, bikes = Math.max(0, Math.min(200, Math.round(+b.bikes || 0))), price = b.price === "" || b.price == null ? null : Math.max(0, +b.price || 0);
+    const b = req.body || {}, bikes = 0, price = b.price === "" || b.price == null ? null : Math.max(0, +b.price || 0);
     const closes = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(b.closes_at || "") ? b.closes_at : null;
     await pool.query(`INSERT INTO corp_ride_rental (company, ride_key, ride_date, bikes, price, closes_at) VALUES ($1,$2,$3,$4,$5,$6)
       ON CONFLICT (company, ride_key) DO UPDATE SET bikes = $4, price = $5, closes_at = $6`, [L.co.code, L.ride.key, L.ride.date, bikes, price, closes]);
     await audit(pool, actor(req), "corp.rental.set", "corp_ride", `${L.co.code}:${L.ride.key}`, null, { bikes, price, closes });
-    setFlash(req, "ok", bikes ? `${bikes} rental bike${bikes === 1 ? "" : "s"} open for booking.` : "Rental bikes switched off for this ride.");
+    setFlash(req, "ok", "Saved.");
     res.redirect(`/corporate/signups/${encodeURIComponent(L.co.code)}/${encodeURIComponent(L.ride.key)}`);
   }));
   app.post("/corporate/signups/:code/:key/remove", S, wrap(async (req, res) => {
