@@ -260,7 +260,8 @@ test("cycling development hub", async (t) => {
     const one = await admin(`/corporate/participants/${ns.pid}/emailqr`);
     assert.equal(one.status, 302); assert.match(one.location, /^https:\/\/outlook\.office\.com\/mail\/deeplink\/compose\?to=starter\.new%40nmdc\.ae&subject=/);
     assert.ok((await pool.query("SELECT qr_sent_at FROM corp_participants WHERE id = $1", [ns.id])).rows[0].qr_sent_at, "marked sent");
-    const link = /(\/cq\/[^\s%]+?)(%0A|$)/.exec(decodeURIComponent(one.location).replace(/\n/g, "%0A"))[1];
+    const link = /\/cq\/[A-Z0-9-]+\.[A-Za-z0-9_-]{12}/.exec(decodeURIComponent(one.location))[0];
+    const png = await admin(`/corporate/participants/${ns.pid}/qr.png`, { raw: true }); assert.equal(png.status, 200); assert.match(png.type, /png/);
     assert.match(ok200(await client()(link), "personal QR page").text, new RegExp(ns.pid));
     assert.equal((await client()(`/cq/${ns.pid}.AAAAAAAAAAAA`)).status, 404, "a guessed link doesn't work");
     const all = ok200(await admin("/corporate/participants/sendqr-all", { method: "POST", form: { company: "NMDC", which: "unsent", back: "/corporate/participants?company=NMDC" } }), "send all").text;

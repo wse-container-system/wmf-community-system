@@ -45,7 +45,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   function qrMail(req, p, co) {
     const first = String(p.full_name || "").split(" ")[0], link = cqLink(req, p.pid);
     const subject = `Your personal QR code: ${co.name} cycling programme`;
-    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code:\n${link}\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nSee you on the ride!\nCycling Development team`;
+    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code (also at this link: ${link}):\n\n\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nSee you on the ride!\nCycling Development team`;
     return { subject, text, link };
   }
   /** Send by email when sending is set up; returns false when it isn't (the caller opens an email draft instead). */
@@ -64,7 +64,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   /** The send button for one person (list and participant page). */
   const qrBtn = (p, back) => !p.email ? '<span class="muted">add email first</span>'
     : MAIL.configured() ? `<form method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/sendqr" style="display:inline"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn">${p.qr_sent_at ? "Send again" : "Send QR"}</button></form>`
-    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" title="Opens a ready-written email in Outlook">${p.qr_sent_at ? "Draft again" : "Draft email"}</a>`;
+    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-qr-copy="/corporate/participants/${encodeURIComponent(p.pid)}/qr.png" title="Copies the QR picture and opens a ready-written email in Outlook: paste the picture in with Ctrl+V">${p.qr_sent_at ? "Draft again" : "Draft email"}</a>`;
 
   // company in the query, limited to what this user may see
   async function scope(req) {
@@ -436,7 +436,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <div class="row2"><label>Community<select name="community"><option value="">Not recorded</option>${C.COMMUNITIES.map((x) => opt(x, x, "")).join("")}<option>Other</option></select></label>
         <label>Gender<select name="gender"><option value="">Not recorded</option><option>Female</option><option>Male</option></select></label></div>
         <label>Bike size<input name="bike_size" maxlength="30" placeholder="Own bike, XS, S, M, L"></label>
-        <button class="btn primary">Add participant</button></form></section></div>`, { active: "/corporate/participants" }));
+        <button class="btn primary">Add participant</button></form></section></div>`, { active: "/corporate/participants", scripts: '<script src="/qrcopy.js"></script>' }));
   }));
   // ----- send personal QR codes
   const sentBack = (b) => (/^\/corporate\/participants(\/[A-Z0-9-]+)?(\?[^#\s]*)?$/.test(String(b || "")) ? String(b) : "/corporate/participants");
@@ -468,10 +468,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     }
     // email sending isn't switched on yet: one ready-written email per person, sent from your own mail app
     res.send(page(req, "Send QR codes", `<section class="card"><h2>Send QR codes (${nf(ps.length)})</h2>
-      <p class="lead">Click each button: Outlook opens a new email with the message and their personal QR link ready. Check it and press Send. Each one is marked as sent.</p>
-      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener">Draft email</a>`)]))}
+      <p class="lead">Click each button: the QR picture is copied and Outlook opens a new email with the message ready. Click in the email where it says to paste, press <b>Ctrl+V</b>, then Send. Each one is marked as sent.</p>
+      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-qr-copy="/corporate/participants/${encodeURIComponent(p.pid)}/qr.png">Draft email</a>`)]))}
       <p class="muted" style="margin-top:12px">To send them all in one click, switch on email sending: add SMTP_HOST, SMTP_USER and SMTP_PASS in Render (for example your Outlook account: smtp.office365.com).</p>
-      <p><a class="btn" href="${h(back)}">Back to participants</a></p></section>`, { active: "/corporate/participants" }));
+      <p><a class="btn" href="${h(back)}">Back to participants</a></p></section>`, { active: "/corporate/participants", scripts: '<script src="/qrcopy.js"></script>' }));
   }));
   app.post("/corporate/participants/:pid/sendqr", S, wrap(async (req, res) => {
     const L = await loadParticipant(req), back = sentBack((req.body || {}).back);
@@ -480,6 +480,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     try { await sendQr(req, L.p, L.co); await audit(pool, actor(req), "corp.qr.send", "corp_participant", L.p.pid, null, { to: L.p.email }); setFlash(req, "ok", `QR code sent to ${L.p.full_name} (${L.p.email}).`); }
     catch (e) { setFlash(req, "err", `Couldn't send to ${L.p.email}: ${e.message}`); }
     res.redirect(back);
+  }));
+  app.get("/corporate/participants/:pid/qr.png", S, wrap(async (req, res) => {
+    const L = await loadParticipant(req); if (!L) return res.status(404).send("Not found");
+    res.type("png").set("Cache-Control", "private, max-age=3600").send(await QRCode.toBuffer(C.pidQr(L.p.pid), { errorCorrectionLevel: "M", margin: 2, width: 360 }));
   }));
   // without email sending: mark as sent and open a ready-written email in Outlook on the web (you press Send)
   app.get("/corporate/participants/:pid/emailqr", S, wrap(async (req, res) => {
@@ -621,7 +625,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <form class="form" method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/merge" data-confirm="Merge the other record into ${h(p.full_name)}? This can't be undone."><label>Other ID<input name="other" required placeholder="${h(co.code)}-0000"></label><button class="btn danger">Merge into this person</button></form>` : ""}</section>
       <section class="card c12"><h2>Sessions attended</h2>${table(["Date", "Session", "Activity", "How"], hist.map((s) => [fmtDate(s.session_date), raw(sessLink(s, co)), s.kind, s.method]), { empty: "No sessions yet." })}</section>
       ${log.length ? `<section class="card c12"><h2>Change history</h2>${table(["When", "Who", "What"], log.map((a) => [require("./views").fmtTs(a.at), a.actor || "", a.action]))}</section>` : ""}
-    </div>`, { active: "/corporate/participants" }));
+    </div>`, { active: "/corporate/participants", scripts: '<script src="/qrcopy.js"></script>' }));
   }));
   app.post("/corporate/participants/:pid", S, wrap(async (req, res) => {
     const L = await loadParticipant(req); if (!L) return res.redirect("/corporate/participants");
