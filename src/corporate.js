@@ -59,11 +59,12 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     await c.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [p.id]);
     return true;
   }
-  const mailto = (req, p, co) => { const m = qrMail(req, p, co); return `mailto:${encodeURIComponent(p.email)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.text)}`; };
+  // a ready-written email in Outlook on the web (works without a mail app on the computer and without IT set-up)
+  const draftUrl = (req, p, co) => { const m = qrMail(req, p, co); return `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(p.email)}&subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.text)}`; };
   /** The send button for one person (list and participant page). */
   const qrBtn = (p, back) => !p.email ? '<span class="muted">add email first</span>'
     : MAIL.configured() ? `<form method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/sendqr" style="display:inline"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn">${p.qr_sent_at ? "Send again" : "Send QR"}</button></form>`
-    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr">${p.qr_sent_at ? "Email again" : "Email QR"}</a>`;
+    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" title="Opens a ready-written email in Outlook">${p.qr_sent_at ? "Draft again" : "Draft email"}</a>`;
 
   // company in the query, limited to what this user may see
   async function scope(req) {
@@ -414,8 +415,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       ${(() => { const withMail = rows.filter((p) => p.email && p.status === "Active"), unsent = withMail.filter((p) => !p.qr_sent_at);
         return withMail.length ? `<div class="qr-send noprint"><div><b>Personal QR codes</b> · ${nf(withMail.length - unsent.length)} of ${nf(withMail.length)} sent${sc.sel ? "" : " (all companies shown)"}</div>
           <form method="post" action="/corporate/participants/sendqr-all" class="toolbar" style="margin:0"><input type="hidden" name="company" value="${h(sc.sel ? sc.sel.code : "")}"><input type="hidden" name="back" value="${h(req.originalUrl)}">
-            <button class="btn primary" name="which" value="unsent" ${unsent.length ? "" : "disabled"} data-confirm="Send the QR code to ${nf(unsent.length)} people who haven't had it yet?">Send to everyone not sent yet (${nf(unsent.length)})</button>
-            <button class="btn" name="which" value="all" data-confirm="Send the QR code to all ${nf(withMail.length)} people with an email, including those who already have it?">Send to all (${nf(withMail.length)})</button></form></div>` : ""; })()}
+            <button class="btn primary" name="which" value="unsent" ${unsent.length ? "" : "disabled"} ${MAIL.configured() ? `data-confirm="Send the QR code to ${nf(unsent.length)} people who haven't had it yet?"` : ""}>${MAIL.configured() ? "Send" : "Draft emails"} to everyone not sent yet (${nf(unsent.length)})</button>
+            <button class="btn" name="which" value="all" ${MAIL.configured() ? `data-confirm="Send the QR code to all ${nf(withMail.length)} people with an email, including those who already have it?"` : ""}>${MAIL.configured() ? "Send" : "Draft"} to all (${nf(withMail.length)})</button></form></div>` : ""; })()}
       <div class="grid"><section class="card c12 cp-list">${(() => { const one = !!sc.sel;
         const head = ["ID", "Name", ...(one ? [] : ["Company"]), "Work email", "Status", "Sessions", "Last attended", "QR code"];
         return table(head, rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), ...(one ? [] : [sc.byCode[p.company].name]), p.email || raw('<span class="muted">none yet</span>'),
@@ -427,6 +428,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <input type="file" name="file" accept=".xlsx,.csv" required>
           <button class="btn primary">Read list and preview</button></form>
         <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
+      <section class="card c12 noprint"><div class="si-top"><div><h2>Email sending</h2><p class="lead" style="margin:0">${MAIL.configured() ? `<span class="badge good">On</span> QR codes are emailed from ${h(process.env.MAIL_FROM || process.env.SMTP_USER)}.` : `<span class="badge">Off</span> "Draft email" opens a ready-written email in Outlook. To send automatically, set SMTP_HOST, SMTP_USER and SMTP_PASS in Render.`}</p></div>
+        ${MAIL.configured() ? `<form method="post" action="/corporate/participants/test-email" class="toolbar" style="margin:0"><input class="inp" type="email" name="to" required placeholder="you@company.com" value="${h(user(req).email || "")}" aria-label="Send a test to"><button class="btn">Send a test email</button></form>` : ""}</div></section>
       <section class="card c6"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
         <label>Full name<input name="full_name" required maxlength="120"></label><label>Work email<input type="email" name="email" maxlength="160"></label>
@@ -437,6 +440,19 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   }));
   // ----- send personal QR codes
   const sentBack = (b) => (/^\/corporate\/participants(\/[A-Z0-9-]+)?(\?[^#\s]*)?$/.test(String(b || "")) ? String(b) : "/corporate/participants");
+  // try the email settings: sends a sample QR email to any address
+  app.post("/corporate/participants/test-email", S, wrap(async (req, res) => {
+    const to = R.normEmail((req.body || {}).to);
+    if (!R.EMAIL_RE.test(to || "")) { setFlash(req, "err", "Enter an email address to send the test to."); return res.redirect("/corporate/participants"); }
+    if (!MAIL.configured()) { setFlash(req, "err", "Email sending isn't switched on: SMTP_HOST, SMTP_USER and SMTP_PASS aren't all set in Render."); return res.redirect("/corporate/participants"); }
+    try {
+      const png = await QRCode.toBuffer("TEST", { margin: 2, width: 300 });
+      await MAIL.send({ to, subject: "Test: QR code email from the Cycling Development system", text: "This is a test. If you can read this, QR code emails work.",
+        html: '<p>This is a test. If you can read this, QR code emails work.</p><p><img src="cid:qr" width="160" height="160" alt="Test QR code"></p>', attachments: [{ filename: "test-QR.png", content: png, cid: "qr" }] });
+      setFlash(req, "ok", `Test email sent to ${to}. Check the inbox (and Junk).`);
+    } catch (e) { setFlash(req, "err", `The test email didn't send: ${String(e.message || e).slice(0, 300)}`); }
+    res.redirect("/corporate/participants");
+  }));
   app.post("/corporate/participants/sendqr-all", S, wrap(async (req, res) => {
     const list = await C.companiesFor(user(req)), b = req.body || {}, back = sentBack(b.back);
     const codes = b.company ? list.filter((x) => x.code === b.company).map((x) => x.code) : list.map((x) => x.code);
@@ -452,8 +468,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     }
     // email sending isn't switched on yet: one ready-written email per person, sent from your own mail app
     res.send(page(req, "Send QR codes", `<section class="card"><h2>Send QR codes (${nf(ps.length)})</h2>
-      <p class="lead">Click each button: your email app opens with the message and their personal QR link ready. Each one is marked as sent.</p>
-      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-sent>Email QR</a>`)]))}
+      <p class="lead">Click each button: Outlook opens a new email with the message and their personal QR link ready. Check it and press Send. Each one is marked as sent.</p>
+      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener">Draft email</a>`)]))}
       <p class="muted" style="margin-top:12px">To send them all in one click, switch on email sending: add SMTP_HOST, SMTP_USER and SMTP_PASS in Render (for example your Outlook account: smtp.office365.com).</p>
       <p><a class="btn" href="${h(back)}">Back to participants</a></p></section>`, { active: "/corporate/participants" }));
   }));
@@ -465,13 +481,13 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     catch (e) { setFlash(req, "err", `Couldn't send to ${L.p.email}: ${e.message}`); }
     res.redirect(back);
   }));
-  // without email sending: mark as sent and open a ready-written email in your own mail app
+  // without email sending: mark as sent and open a ready-written email in Outlook on the web (you press Send)
   app.get("/corporate/participants/:pid/emailqr", S, wrap(async (req, res) => {
     const L = await loadParticipant(req);
     if (!L || !L.p.email) { setFlash(req, "err", "Add a work email first."); return res.redirect("/corporate/participants"); }
     await pool.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [L.p.id]);
     await audit(pool, actor(req), "corp.qr.email", "corp_participant", L.p.pid, null, { to: L.p.email });
-    res.redirect(mailto(req, L.p, L.co));
+    res.redirect(draftUrl(req, L.p, L.co));
   }));
 
   // ----- staff list upload (from each company's HR): name + work email, optional employee no, gender, community
