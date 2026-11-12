@@ -327,7 +327,7 @@ test("cycling development hub", async (t) => {
     const tokS = (await pool.query("SELECT signup_token FROM corp_companies WHERE code = 'AURORA'")).rows[0].signup_token; assert.ok(tokS);
     const rides = await require("../src/corpsignup").ridesFor((await pool.query("SELECT * FROM corp_companies WHERE code = 'AURORA'")).rows[0], today, E.helpers.addDays(today, 56));
     const rd = rides.find((x) => !x.cancelled); assert.ok(rd, "Aurora has an upcoming ride");
-    await admin(`/corporate/signups/AURORA/${rd.key}/rental`, { method: "POST", form: { bikes: "1", price: "50" } });
+    await admin(`/corporate/signups/AURORA/${rd.key}/rental`, { method: "POST", form: { price: "50" } });
     const anon = client(), pubPage = ok200(await anon(`/ride/${tokS}?k=${rd.key}`), "public sign-up").text;
     assert.match(pubPage, /Rent a bike \(AED 50\)/); assert.doesNotMatch(pubPage, /class="hub-nav|Sign out/, "no hub menus");
     const s1 = await anon(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: wi.pid, rent: "1", height_cm: "165" } });
@@ -336,9 +336,9 @@ test("cycling development hub", async (t) => {
     assert.ok(row.rent && row.height_cm === 165 && /^AURORA-\d{4}-01$/.test(row.ref), "rental booked with a reference");
     const mine = ok200(await anon(`/ride/${tokS}?k=${rd.key}`), "after sign-up").text;
     assert.match(mine, /You're in, Walk!/); assert.match(mine, /Who's coming \(1\)/); assert.match(mine, /Walk R\./, "first name and initial only");
-    // the only rental bike is taken: the next person can come on their own bike, not rent
-    const other = client(), s2 = ok200(await other(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "ap@aurora.example", rent: "1", height_cm: "170" } }), "fully booked").text;
-    assert.match(s2, /fully booked/);
+    // no limit on rental bikes: the next person can rent too, then switch to her own bike
+    const other = client();
+    assert.equal((await other(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "ap@aurora.example", rent: "1", height_cm: "170" } })).status, 303, "no limit");
     assert.equal((await other(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "ap@aurora.example", rent: "0" } })).status, 303);
     // a new person joins with name and mobile
     const nw = client(), ask = ok200(await nw(`/ride/${tokS}/signup`, { method: "POST", form: { k: rd.key, who: "fresh.rider@aurora.example", rent: "0" } }), "ask name").text;
@@ -348,7 +348,6 @@ test("cycling development hub", async (t) => {
     assert.match(staffRide, /Who's coming \(3\)/); assert.match(staffRide, /wa\.me\/[^"]*\?text=[^"]*165%20cm/, "WhatsApp draft with height");
     const xl = await admin(`/corporate/signups/AURORA/${rd.key}/rentals.xlsx`, { raw: true }); assert.equal(xl.status, 200);
     // someone already coming on her own bike can switch to a rental from her confirmation
-    await admin(`/corporate/signups/AURORA/${rd.key}/rental`, { method: "POST", form: { bikes: "3" } });
     assert.match(ok200(await other(`/ride/${tokS}?k=${rd.key}`), "own bike page").text, /Book a rental bike/);
     // with the shop's booking link set, the ladies book their own bike there (description "<Company> Corporate Ride")
     await admin("/corporate/signups/shop", { method: "POST", form: { company: "AURORA", name: "Wolfi's", link: "https://wolfis.example/book", phone: "" } });
