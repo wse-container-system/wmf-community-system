@@ -255,9 +255,9 @@ test("cycling development hub", async (t) => {
     assert.ok(ns && ns.gender === "Female", "email and details updated");
     // personal QR codes: send one, then everyone not sent yet
     const lp = ok200(await admin("/corporate/participants?company=NMDC"), "participants").text;
-    assert.match(lp, /Send to everyone not sent yet/); assert.match(lp, /Email QR/);
+    assert.match(lp, /Draft emails to everyone not sent yet/); assert.match(lp, /Draft email</);
     const one = await admin(`/corporate/participants/${ns.pid}/emailqr`);
-    assert.equal(one.status, 302); assert.match(one.location, /^mailto:starter\.new%40nmdc\.ae\?subject=/);
+    assert.equal(one.status, 302); assert.match(one.location, /^https:\/\/outlook\.office\.com\/mail\/deeplink\/compose\?to=starter\.new%40nmdc\.ae&subject=/);
     assert.ok((await pool.query("SELECT qr_sent_at FROM corp_participants WHERE id = $1", [ns.id])).rows[0].qr_sent_at, "marked sent");
     const link = /(\/cq\/[^\s%]+?)(%0A|$)/.exec(decodeURIComponent(one.location).replace(/\n/g, "%0A"))[1];
     assert.match(ok200(await client()(link), "personal QR page").text, new RegExp(ns.pid));
