@@ -41,30 +41,36 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       <a class="btn primary big" href="${img}" download="${h(p.pid)}-QR.png" style="justify-content:center">Download my QR code</a>
       <p class="muted" style="margin:0">Tip: take a screenshot too. Your ID is ${h(p.pid)}.</p></section>`, { wide: false }));
   }));
-  /** The email with someone's personal QR code. */
-  function qrMail(req, p, co) {
+  /** The email with someone's personal QR code: text, HTML with the picture, and the picture itself. */
+  async function qrMail(req, p, co) {
     const first = String(p.full_name || "").split(" ")[0], link = cqLink(req, p.pid);
     const subject = `Your personal QR code: ${co.name} cycling programme`;
-    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code (also at this link: ${link}):\n\n\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nSee you on the ride!\nCycling Development team`;
-    return { subject, text, link };
+    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Your personal QR code is below. Please save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nYou can also open it on your phone: ${link}\n\nSee you on the ride!\nCycling Development team`;
+    const html = `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1d1b3a"><p>Hi ${h(first)},</p>
+      <p>Welcome to the ${h(co.name)} cycling programme. Here is your personal QR code:</p>
+      <p><img src="cid:qr" alt="Your QR code" width="220" height="220"><br><b>${h(p.pid)}</b></p>
+      <p>Please save it (a screenshot works) and show it to the ride lead at every session.</p>
+      <p>You can also open it on your phone: <a href="${h(link)}">${h(link)}</a></p><p>See you on the ride!<br>Cycling Development team</p></div>`;
+    const png = await QRCode.toBuffer(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 440 });
+    return { subject, text, html, link, attachments: [{ filename: `${p.pid}-QR.png`, content: png, cid: "qr", contentDisposition: "inline" }] };
   }
-  /** Send by email when sending is set up; returns false when it isn't (the caller opens an email draft instead). */
+  /** Send by email when sending is set up; returns false when it isn't (the caller makes a draft instead). */
   async function sendQr(req, p, co, c = pool) {
     if (!MAIL.configured() || !p.email) return false;
-    const m = qrMail(req, p, co), png = await QRCode.toBuffer(C.pidQr(p.pid), { errorCorrectionLevel: "M", margin: 2, width: 480 });
-    const html = `<p>${h(m.text.split("\n\n")[0])}</p><p>Welcome to the ${h(co.name)} cycling programme. Here is your personal QR code:</p>
-      <p><img src="cid:qr" alt="Your QR code" width="240" height="240"><br><b>${h(p.pid)}</b></p><p><a href="${h(m.link)}">Open it on your phone</a></p>
-      <p>Please save it (a screenshot works) and show it to the ride lead at every session.</p><p>See you on the ride!<br>Cycling Development team</p>`;
-    await MAIL.send({ to: p.email, subject: m.subject, text: m.text, html, attachments: [{ filename: `${p.pid}-QR.png`, content: png, cid: "qr" }] });
+    const m = await qrMail(req, p, co);
+    await MAIL.send({ to: p.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments });
     await c.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [p.id]);
     return true;
   }
-  // a ready-written email in Outlook on the web (works without a mail app on the computer and without IT set-up)
-  const draftUrl = (req, p, co) => { const m = qrMail(req, p, co); return `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(p.email)}&subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.text)}`; };
+  /** A ready-to-send draft for the Outlook app (.eml marked unsent), with the QR picture already in the email. */
+  async function draftEml(req, p, co) {
+    const m = await qrMail(req, p, co), MailComposer = require("nodemailer/lib/mail-composer");
+    return new MailComposer({ to: p.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments, headers: { "X-Unsent": "1" } }).compile().build();
+  }
   /** The send button for one person (list and participant page). */
   const qrBtn = (p, back) => !p.email ? '<span class="muted">add email first</span>'
     : MAIL.configured() ? `<form method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/sendqr" style="display:inline"><input type="hidden" name="back" value="${h(back)}"><button class="btn tblbtn">${p.qr_sent_at ? "Send again" : "Send QR"}</button></form>`
-    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-qr-copy="/corporate/participants/${encodeURIComponent(p.pid)}/qr.png" title="Copies the QR picture and opens a ready-written email in Outlook: paste the picture in with Ctrl+V">${p.qr_sent_at ? "Draft again" : "Draft email"}</a>`;
+    : `<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" download data-draft title="Downloads a ready email with the QR picture: open it and Outlook shows it ready to send">${p.qr_sent_at ? "Draft again" : "Draft email"}</a>`;
 
   // company in the query, limited to what this user may see
   async function scope(req) {
@@ -428,7 +434,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <input type="file" name="file" accept=".xlsx,.csv" required>
           <button class="btn primary">Read list and preview</button></form>
         <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
-      <section class="card c12 noprint"><div class="si-top"><div><h2>Email sending</h2><p class="lead" style="margin:0">${MAIL.configured() ? `<span class="badge good">On</span> QR codes are emailed from ${h(process.env.MAIL_FROM || process.env.SMTP_USER)}.` : `<span class="badge">Off</span> "Draft email" opens a ready-written email in Outlook. To send automatically, set SMTP_HOST, SMTP_USER and SMTP_PASS in Render.`}</p></div>
+      <section class="card c12 noprint"><div class="si-top"><div><h2>Email sending</h2><p class="lead" style="margin:0">${MAIL.configured() ? `<span class="badge good">On</span> QR codes are emailed from ${h(process.env.MAIL_FROM || process.env.SMTP_USER)}.` : `<span class="badge">Off</span> "Draft email" downloads a ready email with the QR picture: open it in the Outlook app and press Send. To send automatically, set SMTP_HOST, SMTP_USER and SMTP_PASS in Render.`}</p></div>
         ${MAIL.configured() ? `<form method="post" action="/corporate/participants/test-email" class="toolbar" style="margin:0"><input class="inp" type="email" name="to" required placeholder="you@company.com" value="${h(user(req).email || "")}" aria-label="Send a test to"><button class="btn">Send a test email</button></form>` : ""}</div></section>
       <section class="card c6"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
@@ -468,8 +474,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     }
     // email sending isn't switched on yet: one ready-written email per person, sent from your own mail app
     res.send(page(req, "Send QR codes", `<section class="card"><h2>Send QR codes (${nf(ps.length)})</h2>
-      <p class="lead">Click each button: the QR picture is copied and Outlook opens a new email with the message ready. Click in the email where it says to paste, press <b>Ctrl+V</b>, then Send. Each one is marked as sent.</p>
-      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" target="_blank" rel="noopener" data-qr-copy="/corporate/participants/${encodeURIComponent(p.pid)}/qr.png">Draft email</a>`)]))}
+      <p class="lead">Click each button: a ready email downloads. Open it and the Outlook app shows it with their QR picture inside: press <b>Send</b>. Each one is marked as sent.</p>
+      ${table(["Name", "Company", "Work email", ""], ps.map((p) => [p.full_name, byCode[p.company] ? byCode[p.company].name : p.company, p.email, raw(`<a class="btn tblbtn" href="/corporate/participants/${encodeURIComponent(p.pid)}/emailqr" download data-draft>Draft email</a>`)]))}
       <p class="muted" style="margin-top:12px">To send them all in one click, switch on email sending: add SMTP_HOST, SMTP_USER and SMTP_PASS in Render (for example your Outlook account: smtp.office365.com).</p>
       <p><a class="btn" href="${h(back)}">Back to participants</a></p></section>`, { active: "/corporate/participants", scripts: '<script src="/qrcopy.js"></script>' }));
   }));
@@ -485,13 +491,14 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const L = await loadParticipant(req); if (!L) return res.status(404).send("Not found");
     res.type("png").set("Cache-Control", "private, max-age=3600").send(await QRCode.toBuffer(C.pidQr(L.p.pid), { errorCorrectionLevel: "M", margin: 2, width: 360 }));
   }));
-  // without email sending: mark as sent and open a ready-written email in Outlook on the web (you press Send)
+  // without email sending: mark as sent and download a ready email for the Outlook app (picture included; you press Send)
   app.get("/corporate/participants/:pid/emailqr", S, wrap(async (req, res) => {
     const L = await loadParticipant(req);
     if (!L || !L.p.email) { setFlash(req, "err", "Add a work email first."); return res.redirect("/corporate/participants"); }
     await pool.query("UPDATE corp_participants SET qr_sent_at = now() WHERE id = $1", [L.p.id]);
     await audit(pool, actor(req), "corp.qr.email", "corp_participant", L.p.pid, null, { to: L.p.email });
-    res.redirect(draftUrl(req, L.p, L.co));
+    const eml = await draftEml(req, L.p, L.co);
+    res.set({ "Content-Type": "message/rfc822", "Content-Disposition": `attachment; filename="QR code - ${String(L.p.full_name).replace(/[^\w .-]+/g, "").slice(0, 60) || L.p.pid}.eml"`, "Cache-Control": "no-store" }).send(eml);
   }));
 
   // ----- staff list upload (from each company's HR): name + work email, optional employee no, gender, community
