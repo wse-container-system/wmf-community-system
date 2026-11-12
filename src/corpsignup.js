@@ -97,9 +97,12 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     }
     const minM = today.slice(0, 7), maxM = addDays(today, AHEAD).slice(0, 7);
     const nav = `<div class="rs-mh">${m > minM ? `<a class="btn tblbtn" href="${base}?m=${addMonths(m, -1)}" aria-label="Previous month">‹</a>` : "<span></span>"}<b>${h(monLabel(m, true))}</b>${m < maxM ? `<a class="btn tblbtn" href="${base}?m=${addMonths(m, 1)}" aria-label="Next month">›</a>` : "<span></span>"}</div>`;
-    const list = rides.filter((x) => x.date.slice(0, 7) === m).map((x) => { const c = cnt[x.key] || {};
+    // the list under the calendar: this week's rides only (or the next ride when nothing is left this week); other dates are in the calendar
+    const sunday = addDays(today, (7 - new Date(today + "T12:00:00Z").getUTCDay()) % 7);
+    let week = rides.filter((x) => x.date >= today && x.date <= sunday); if (!week.length) week = rides.filter((x) => x.date >= today && !x.cancelled).slice(0, 1);
+    const list = week.map((x) => { const c = cnt[x.key] || {};
       return `<a class="rs-ride${sel && sel.key === x.key ? " sel" : ""}${x.cancelled ? " off" : ""}" href="${base}?k=${encodeURIComponent(x.key)}#signup"><b>${h(dayLabel(x.date))}${x.time ? " · " + h(t12(x.time)) : ""}</b><span>${h(x.title)}${x.where ? " · " + h(x.where) : ""}</span><span class="muted">${x.cancelled ? "Cancelled" : `${nf(c.n || 0)} coming`}</span></a>`; }).join("")
-      || '<p class="muted">No rides planned this month yet.</p>';
+      || '<p class="muted">No rides planned yet.</p>';
     // the chosen ride: sign-up form, or "you're in"
     let panel = "";
     if (sel) {
@@ -136,7 +139,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
         <p class="lead" style="margin:4px 0 0">Pick a ride, tell us you're coming, and book a rental bike if you need one.</p></section>
       ${done ? `<div class="flash ok" role="status">${h(done)}</div>` : ""}
       <div class="rs-grid"><section class="card"><div class="rs-cal">${nav}<div class="rs-dow">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span>${x}</span>`).join("")}</div><div class="rs-days">${cells}</div></div>
-        <div class="rs-list">${list}</div></section>
+        <p class="hint" style="margin:12px 0 0">${week.length && week[0].date <= sunday ? "This week" : "Next ride"} · tap a date above for other rides</p><div class="rs-list" style="margin-top:6px">${list}</div></section>
       <section class="card" id="signup">${panel || '<p class="muted" style="margin:0">Tap a ride in the calendar to sign up.</p>'}</section></div>
       <p class="muted" style="text-align:center;font-size:12px">Cycling Development · <a href="https://wa.me/?text=${encodeURIComponent(shareMsg)}" target="_blank" rel="noopener">Share this page</a></p>`,
     { wide: false }));
