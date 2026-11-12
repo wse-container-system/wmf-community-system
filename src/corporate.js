@@ -621,7 +621,9 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <div class="toolbar" style="margin:10px 0 0">${qrBtn(p, req.originalUrl)}<a class="btn" href="${img}" download="${h(p.pid)}.png">Download PNG</a></div>
         ${p.qr_sent_at ? `<p class="hint" style="margin:6px 0 0">QR code sent ${h(fmtDate(new Date(p.qr_sent_at).toISOString().slice(0, 10)))}.</p>` : ""}
         ${user(req).role === "admin" ? `<h2 style="margin-top:16px">Merge a duplicate</h2><p class="lead">Moves the other record's sessions here and removes it.</p>
-          <form class="form" method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/merge" data-confirm="Merge the other record into ${h(p.full_name)}? This can't be undone."><label>Other ID<input name="other" required placeholder="${h(co.code)}-0000"></label><button class="btn danger">Merge into this person</button></form>` : ""}</section>
+          <form class="form" method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/merge" data-confirm="Merge the other record into ${h(p.full_name)}? This can't be undone."><label>Other ID<input name="other" required placeholder="${h(co.code)}-0000"></label><button class="btn danger">Merge into this person</button></form>
+          <h2 style="margin-top:16px">Delete this person</h2><p class="lead">Removes ${h(p.full_name)} from the list${hist.length ? ` and their ${hist.length} session${hist.length === 1 ? "" : "s"} from the attendance` : ""}. Use it for test or mistaken entries; to keep their history, set Status to Inactive instead.</p>
+          <form method="post" action="/corporate/participants/${encodeURIComponent(p.pid)}/delete" data-confirm="Delete ${h(p.full_name)} (${h(p.pid)})${hist.length ? ` and their ${hist.length} attended session${hist.length === 1 ? "" : "s"}` : ""}? This can't be undone."><button class="btn danger">Delete ${h(p.pid)}</button></form>` : ""}</section>
       <section class="card c12"><h2>Sessions attended</h2>${table(["Date", "Session", "Activity", "How"], hist.map((s) => [fmtDate(s.session_date), raw(sessLink(s, co)), s.kind, s.method]), { empty: "No sessions yet." })}</section>
       ${log.length ? `<section class="card c12"><h2>Change history</h2>${table(["When", "Who", "What"], log.map((a) => [require("./views").fmtTs(a.at), a.actor || "", a.action]))}</section>` : ""}
     </div>`, { active: "/corporate/participants", scripts: '<script src="/qrcopy.js"></script>' }));
@@ -640,6 +642,16 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     });
     setFlash(req, "ok", "Saved.");
     res.redirect(back);
+  }));
+  app.post("/corporate/participants/:pid/delete", A, wrap(async (req, res) => {
+    const L = await loadParticipant(req); if (!L) return res.redirect("/corporate/participants");
+    await tx(async (c) => {
+      const n = (await c.query("SELECT count(*)::int n FROM corp_attendance WHERE participant_id = $1", [L.p.id])).rows[0].n;
+      await c.query("DELETE FROM corp_participants WHERE id = $1", [L.p.id]); // their attendance goes with them
+      await audit(c, actor(req), "corp.participant.delete", "corp_participant", L.p.pid, L.p, { sessionsRemoved: n });
+    });
+    setFlash(req, "ok", `${L.p.full_name} (${L.p.pid}) deleted.`);
+    res.redirect("/corporate/participants?company=" + L.co.code);
   }));
   app.post("/corporate/participants/:pid/merge", A, wrap(async (req, res) => {
     const L = await loadParticipant(req); if (!L) return res.redirect("/corporate/participants");

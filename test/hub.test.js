@@ -322,6 +322,10 @@ test("cycling development hub", async (t) => {
     assert.match(ok200(await client()("/s/" + sl.token), "scanner link").text, /id="corpWalkin"/);
     const lw = (await client()(`/s/${sl.token}/corpwalkin`, { method: "POST", json: { company: "AURORA", session: "ride:AUTO", full_name: "Link Walk Rider", mobile: "0502223344" } })).json();
     assert.equal(lw.status, "ok"); assert.match(lw.qrUrl, /\/cq\//);
+    // delete a mistaken entry (admin): gone, with its attendance
+    assert.match(ok200(await admin(`/corporate/participants/${lw.pid}`), "participant page").text, /Delete this person/);
+    assert.equal((await admin(`/corporate/participants/${lw.pid}/delete`, { method: "POST", form: {} })).status, 302);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_participants WHERE pid = $1", [lw.pid])).rows[0].n, 0);
     // cancel next week's LIMAD ride; it shows as cancelled and isn't offered
     const lim = (await pool.query("SELECT id FROM corp_schedules WHERE company = 'LIMAD'")).rows[0];
     let thu = today; while (new Date(thu + "T12:00:00Z").getUTCDay() !== 4 || thu === today) thu = E.helpers.addDays(thu, 1);
