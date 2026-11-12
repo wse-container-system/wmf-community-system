@@ -428,6 +428,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <input type="file" name="file" accept=".xlsx,.csv" required>
           <button class="btn primary">Read list and preview</button></form>
         <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
+      <section class="card c12 noprint"><div class="si-top"><div><h2>Email sending</h2><p class="lead" style="margin:0">${MAIL.configured() ? `<span class="badge good">On</span> QR codes are emailed from ${h(process.env.MAIL_FROM || process.env.SMTP_USER)}.` : `<span class="badge">Off</span> "Draft email" opens a ready-written email in Outlook. To send automatically, set SMTP_HOST, SMTP_USER and SMTP_PASS in Render.`}</p></div>
+        ${MAIL.configured() ? `<form method="post" action="/corporate/participants/test-email" class="toolbar" style="margin:0"><input class="inp" type="email" name="to" required placeholder="you@company.com" value="${h(user(req).email || "")}" aria-label="Send a test to"><button class="btn">Send a test email</button></form>` : ""}</div></section>
       <section class="card c6"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
         <label>Full name<input name="full_name" required maxlength="120"></label><label>Work email<input type="email" name="email" maxlength="160"></label>
@@ -438,6 +440,19 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   }));
   // ----- send personal QR codes
   const sentBack = (b) => (/^\/corporate\/participants(\/[A-Z0-9-]+)?(\?[^#\s]*)?$/.test(String(b || "")) ? String(b) : "/corporate/participants");
+  // try the email settings: sends a sample QR email to any address
+  app.post("/corporate/participants/test-email", S, wrap(async (req, res) => {
+    const to = R.normEmail((req.body || {}).to);
+    if (!R.EMAIL_RE.test(to || "")) { setFlash(req, "err", "Enter an email address to send the test to."); return res.redirect("/corporate/participants"); }
+    if (!MAIL.configured()) { setFlash(req, "err", "Email sending isn't switched on: SMTP_HOST, SMTP_USER and SMTP_PASS aren't all set in Render."); return res.redirect("/corporate/participants"); }
+    try {
+      const png = await QRCode.toBuffer("TEST", { margin: 2, width: 300 });
+      await MAIL.send({ to, subject: "Test: QR code email from the Cycling Development system", text: "This is a test. If you can read this, QR code emails work.",
+        html: '<p>This is a test. If you can read this, QR code emails work.</p><p><img src="cid:qr" width="160" height="160" alt="Test QR code"></p>', attachments: [{ filename: "test-QR.png", content: png, cid: "qr" }] });
+      setFlash(req, "ok", `Test email sent to ${to}. Check the inbox (and Junk).`);
+    } catch (e) { setFlash(req, "err", `The test email didn't send: ${String(e.message || e).slice(0, 300)}`); }
+    res.redirect("/corporate/participants");
+  }));
   app.post("/corporate/participants/sendqr-all", S, wrap(async (req, res) => {
     const list = await C.companiesFor(user(req)), b = req.body || {}, back = sentBack(b.back);
     const codes = b.company ? list.filter((x) => x.code === b.company).map((x) => x.code) : list.map((x) => x.code);
