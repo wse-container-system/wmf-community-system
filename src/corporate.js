@@ -45,7 +45,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   function qrMail(req, p, co) {
     const first = String(p.full_name || "").split(" ")[0], link = cqLink(req, p.pid);
     const subject = `Your personal QR code: ${co.name} cycling programme`;
-    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code (also at this link: ${link}):\n\n\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nSee you on the ride!\nCycling Development team`;
+    const text = `Hi ${first},\n\nWelcome to the ${co.name} cycling programme. Here is your personal QR code:\n\n\n\nPlease save it (a screenshot works) and show it to the ride lead at every session. Your ID is ${p.pid}.\n\nYou can also open it on your phone:\n${link}\n\nSee you on the ride!\nCycling Development team`;
     return { subject, text, link };
   }
   /** Send by email when sending is set up; returns false when it isn't (the caller opens an email draft instead). */
