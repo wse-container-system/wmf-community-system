@@ -49,6 +49,7 @@ async function createParticipant(c, d, by, source) {
   [pid, d.company, R.clean(d.full_name), nameKey(d.full_name), R.normEmail(d.email) || null, R.clean(d.gender) || null, R.clean(d.community) || null,
     R.clean(d.bike_size) || null, d.status === "Inactive" ? "Inactive" : "Active", d.joined || R.todayLocal(), source, R.clean(d.notes) || null])).rows[0];
   await audit(c, by, "corp.participant.create", "corp_participant", pid, null, { company: d.company, name: row.full_name, source });
+  if (!d.noSeason) { const se = await currentSeason(c, d.company); if (se) await enrol(c, se.id, row.id, source); }
   return row;
 }
 /** Match a person within a company: work email first, then the name (word order and accents ignored). */
@@ -182,6 +183,13 @@ async function stats({ codes, start, end, asOf = R.todayLocal() }) {
       WHERE s.company = ANY($1) AND s.status <> 'Cancelled' ORDER BY s.session_date`, [codes]),
     pool.query("SELECT * FROM corp_participants WHERE company = ANY($1) ORDER BY company, full_name", [codes]),
   ]);
+  // enrolled per company: the season list running at the end of the period (when the company uses seasons), otherwise everyone active
+  const seasonRoster = new Map();
+  { const refD = end < asOf ? end : asOf;
+    const se = (await pool.query(`SELECT DISTINCT ON (s.company) s.company, (SELECT count(*) FROM corp_season_members m WHERE m.season_id = s.id)::int n
+      FROM corp_seasons s WHERE s.company = ANY($1) AND s.start_date <= $2 AND EXISTS (SELECT 1 FROM corp_season_members m WHERE m.season_id = s.id)
+      ORDER BY s.company, s.start_date DESC`, [codes, refD])).rows;
+    for (const x of se) seasonRoster.set(x.company, x.n); }
   const P = new Map(parts.rows.map((p) => [p.id, { ...p, dates: [] }]));
   for (const a of att.rows) { const p = P.get(a.participant_id); if (p) p.dates.push(a.d); }
   for (const p of P.values()) { p.first = p.dates[0] || null; p.last = p.dates[p.dates.length - 1] || null; }
@@ -221,7 +229,7 @@ async function stats({ codes, start, end, asOf = R.todayLocal() }) {
     const hs = held.filter((s) => s.company === code), rs = hs.filter((s) => s.kind === RIDE);
     return { code, sessions: rs.length, events: hs.length - rs.length, attendance: sum(hs), rideAttendance: sum(rs), avg: rs.length ? sum(rs) / rs.length : null,
       people: new Set(A.filter((a) => a.company === code).map((a) => a.participant_id)).size, active: active.filter((p) => p.company === code).length,
-      roster: allP.filter((p) => p.company === code && p.status === "Active").length, cancelled: S.filter((s) => s.company === code && s.status === "Cancelled").length,
+      roster: seasonRoster.has(code) ? seasonRoster.get(code) : allP.filter((p) => p.company === code && p.status === "Active").length, cancelled: S.filter((s) => s.company === code && s.status === "Cancelled").length,
       lastSession: (hs[hs.length - 1] || {}).d || null };
   });
   const top = [...perPerson.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, n]) => ({ ...P.get(id), inRange: n }));
@@ -231,7 +239,7 @@ async function stats({ codes, start, end, asOf = R.todayLocal() }) {
     start, end, asOf, codes,
     k: { rideSessions: rides.length, events: events.length, cancelled: S.filter((s) => s.status === "Cancelled").length, attendance: sum(held), rideAttendance: sum(rides),
       eventAttendance: sum(events), avgPerRide: rides.length ? sum(rides) / rides.length : null, people: people.size, newJoiners, emirati, expat, unknownCommunity,
-      active: active.length, roster: allP.filter((p) => p.status === "Active").length, repeat, repeatRate: people.size ? repeat / people.size : null,
+      active: active.length, roster: byCompany.reduce((t, x) => t + x.roster, 0), repeat, repeatRate: people.size ? repeat / people.size : null,
       headcountOnly: held.filter((s) => !s.named).length },
     months, byKind: [...byKind.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value), byCompany,
     sessions: S, top, needsAttendance, lapsed, participants: P,
@@ -254,6 +262,30 @@ async function corpScan(c, { code, session, by, codes, method = "Scanned by staf
   if (s.company !== p.company) return { status: "error", message: `${p.full_name} is with ${p.company}, not this session's company. Choose the ${p.company} session.` };
   const r = await markAttendance(c, s, p, method, by);
   return { ...r, name: p.full_name, pid: p.pid, company: p.company };
+}
+
+// ---------- seasons: one record per person; each season has its own list (enrolment) of people
+async function seasons(c, company) {
+  return (await c.query(`SELECT s.*, s.start_date::text AS start, s.end_date::text AS "end", (SELECT count(*) FROM corp_season_members m WHERE m.season_id = s.id)::int AS members
+    FROM corp_seasons s WHERE company = $1 ORDER BY start_date DESC, id DESC`, [company])).rows;
+}
+/** The season running on a date (or the latest one that started before it). */
+async function currentSeason(c, company, d = R.todayLocal()) {
+  const all = await seasons(c, company);
+  return all.find((s) => s.start <= d && s.end >= d) || all.find((s) => s.start <= d) || null;
+}
+async function enrol(c, seasonId, participantId, source) {
+  await c.query("INSERT INTO corp_season_members (season_id, participant_id, source) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [seasonId, participantId, source || null]);
+}
+/** One-time start: NMDC's people so far become "NMDC 2025-2026"; "NMDC 2026-2027" is ready for the new list. */
+async function seedSeasons(c) {
+  const done = (await c.query("SELECT 1 FROM settings WHERE key = 'nmdcSeasonsSeeded'")).rows.length;
+  if (done || !(await c.query("SELECT 1 FROM corp_companies WHERE code = 'NMDC'")).rows.length) return;
+  const old = (await c.query(`INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ('NMDC', 'NMDC 2025-2026', '2025-09-01', '2026-08-31')
+    ON CONFLICT (company, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`)).rows[0].id;
+  await c.query(`INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ('NMDC', 'NMDC 2026-2027', '2026-09-01', '2027-08-31') ON CONFLICT DO NOTHING`);
+  await c.query(`INSERT INTO corp_season_members (season_id, participant_id, source) SELECT $1, id, 'Existing list' FROM corp_participants WHERE company = 'NMDC' ON CONFLICT DO NOTHING`, [old]);
+  await c.query("INSERT INTO settings (key, value) VALUES ('nmdcSeasonsSeeded', 'true') ON CONFLICT DO NOTHING");
 }
 
 /** A personal QR link that can't be guessed: /cq/NMDC-0012.<signature> shows only that person's code. */
@@ -300,5 +332,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, seasons, currentSeason, enrol, seedSeasons, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };

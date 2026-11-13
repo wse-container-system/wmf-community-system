@@ -275,6 +275,22 @@ CREATE TABLE IF NOT EXISTS corp_signups (
   UNIQUE (ride_key, participant_id)
 );
 CREATE INDEX IF NOT EXISTS corp_signups_ride ON corp_signups (company, ride_key);
+CREATE TABLE IF NOT EXISTS corp_seasons (
+  id SERIAL PRIMARY KEY,
+  company TEXT NOT NULL,
+  name TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company, name)
+);
+CREATE TABLE IF NOT EXISTS corp_season_members (
+  season_id INTEGER NOT NULL REFERENCES corp_seasons(id) ON DELETE CASCADE,
+  participant_id INTEGER NOT NULL REFERENCES corp_participants(id) ON DELETE CASCADE,
+  source TEXT,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (season_id, participant_id)
+);
 CREATE TABLE IF NOT EXISTS corp_ride_rental (
   company TEXT NOT NULL,
   ride_key TEXT NOT NULL,
