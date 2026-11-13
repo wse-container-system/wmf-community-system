@@ -260,6 +260,7 @@ CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (compa
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS qr_sent_at TIMESTAMPTZ;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS mobile TEXT;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS height_cm INTEGER;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS bike_type TEXT;
 ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS signup_token TEXT UNIQUE;
 CREATE TABLE IF NOT EXISTS corp_signups (
   id SERIAL PRIMARY KEY,

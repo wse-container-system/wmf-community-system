@@ -387,8 +387,9 @@ test("cycling development hub", async (t) => {
     const shopTok = (await pool.query("SELECT value FROM settings WHERE key = 'rentalShop'")).rows[0].value.token; assert.ok(shopTok);
     const shopPage = ok200(await client()(`/shop/${shopTok}`), "shop page").text;
     assert.match(shopPage, new RegExp(wi.pid)); assert.match(shopPage, /165 cm/); assert.doesNotMatch(shopPage, /@aurora\.example/, "no emails");
-    assert.equal((await client()(`/shop/${shopTok}/size`, { method: "POST", form: { pid: wi.pid, bike_size: "M" } })).status, 303);
-    assert.equal((await pool.query("SELECT bike_size FROM corp_participants WHERE pid = $1", [wi.pid])).rows[0].bike_size, "M");
+    assert.equal((await client()(`/shop/${shopTok}/size`, { method: "POST", form: { pid: wi.pid, bike_type: "Hybrid", bike_size: "M" } })).status, 303);
+    const bk = (await pool.query("SELECT bike_size, bike_type FROM corp_participants WHERE pid = $1", [wi.pid])).rows[0];
+    assert.equal(bk.bike_size, "M"); assert.equal(bk.bike_type, "Hybrid");
     assert.equal((await client()("/shop/wrong")).status, 404);
     // cancel frees the bike
     await anon(`/ride/${tokS}/cancel`, { method: "POST", form: { k: rd.key } });
