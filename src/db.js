@@ -259,6 +259,7 @@ ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS employee_no TEXT;
 CREATE INDEX IF NOT EXISTS corp_participants_company ON corp_participants (company, name_key);
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS qr_sent_at TIMESTAMPTZ;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS mobile TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS height_cm INTEGER;
 ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS signup_token TEXT UNIQUE;
 CREATE TABLE IF NOT EXISTS corp_signups (
   id SERIAL PRIMARY KEY,

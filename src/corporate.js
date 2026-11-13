@@ -436,7 +436,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         return table(head, rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>${earlier && earlier.size ? (earlier.has(p.id) ? ' <span class="badge">Returning</span>' : ' <span class="badge good">New</span>') : ""}`), ...(one ? [] : [sc.byCode[p.company].name]), p.email || raw('<span class="muted">none yet</span>'),
           raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last),
           raw(`<span class="cp-qr">${p.qr_sent_at ? `<span class="badge good">Sent ${h(fmtDate(new Date(p.qr_sent_at).toISOString().slice(0, 10)))}</span>` : ""}${qrBtn(p, req.originalUrl)}</span>`)]), { num: [one ? 4 : 5] }); })()}</section>
-      <section class="card c6"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b> (employee number, gender and Emirati/Expat are optional). Uploading adds new people and updates people already here (email and details), with no duplicates. You'll see a preview first, then you can send everyone their QR code.</p>
+      <section class="card c6"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b>, plus <b>height (cm)</b> for rental bikes (employee number, gender and Emirati/Expat are optional). Uploading adds new people and updates people already here (email and details), with no duplicates. You'll see a preview first, then you can send everyone their QR code.</p>
         <form class="form" method="post" action="/corporate/participants/upload" enctype="multipart/form-data">
           <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
           ${seas.length ? `<label>Add everyone on the list to<select name="season">${seas.map((x) => opt(String(x.id), x.name, String((cur || seas[0]).id))).join("")}<option value="">No season</option></select></label>` : ""}
@@ -518,9 +518,9 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   // ----- staff list upload (from each company's HR): name + work email, optional employee no, gender, community
   app.get("/corporate/participants/template.xlsx", S, wrap(async (req, res) => {
     const ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Staff list");
-    ws.addRow(["Full name", "Work email", "Employee number", "Gender", "Emirati / Expat"]).font = { bold: true };
-    ws.addRow(["Example: Sara Al Mansoori", "sara.almansoori@company.ae", "E1234", "Female", "Emirati"]).font = { italic: true, color: { argb: "FF888888" } };
-    [30, 34, 18, 10, 16].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.addRow(["Full name", "Work email", "Employee number", "Gender", "Emirati / Expat", "Height (cm)"]).font = { bold: true };
+    ws.addRow(["Example: Sara Al Mansoori", "sara.almansoori@company.ae", "E1234", "Female", "Emirati", 165]).font = { italic: true, color: { argb: "FF888888" } };
+    [30, 34, 18, 10, 16, 12].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
     res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").set("Content-Disposition", 'attachment; filename="Corporate-cycling-staff-list.xlsx"').send(await wb.xlsx.writeBuffer());
   }));
   async function readList(file) {
@@ -538,10 +538,11 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (hi < 0) throw new Error('No header row with a "Name" and an "Email" column.');
     const head = rows[hi].map((c) => R.clean(c).toLowerCase());
     const col = (re) => head.findIndex((c) => re.test(c));
-    const iName = col(/name/), iMail = col(/mail/), iEmp = col(/(emp|staff|badge).*(no|num|id)|^id$|number/), iGen = col(/gender|sex/), iCom = col(/emirati|expat|community|national/);
+    const iName = col(/name/), iMail = col(/mail/), iEmp = col(/(emp|staff|badge).*(no|num|id)|^id$|number/), iGen = col(/gender|sex/), iCom = col(/emirati|expat|community|national/), iH = col(/height|tall/);
+    const cm = (v) => { const n = parseFloat(String(v || "").replace(",", ".")); const x = n > 0 && n < 3 ? Math.round(n * 100) : Math.round(n); return x >= 120 && x <= 210 ? x : null; };
     return rows.slice(hi + 1).map((r, k) => ({ line: hi + 2 + k, full_name: R.clean(r[iName]), email: R.normEmail(r[iMail]), employee_no: iEmp >= 0 ? R.clean(r[iEmp]) : "",
       gender: iGen >= 0 ? (/^f/i.test(R.clean(r[iGen])) ? "Female" : /^m/i.test(R.clean(r[iGen])) ? "Male" : "") : "",
-      community: iCom >= 0 ? (/emirati|uae|local/i.test(R.clean(r[iCom])) ? "Emirati" : R.clean(r[iCom]) ? "Expat" : "") : "" }))
+      community: iCom >= 0 ? (/emirati|uae|local/i.test(R.clean(r[iCom])) ? "Emirati" : R.clean(r[iCom]) ? "Expat" : "") : "", height_cm: iH >= 0 ? cm(r[iH]) : null }))
       .filter((r) => (r.full_name || r.email) && !/^example/i.test(r.full_name));
   }
   async function planList(co, list) {
@@ -552,7 +553,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       if (!domainOk(co, r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} isn't a ${co.name} work email (${domains(co).join(", ")})`]); continue; }
       if (seen.has(r.email)) { plan.problems.push([r.line, r.full_name, `${r.email} is in the list twice`]); continue; }
       seen.add(r.email);
-      const diff = (x) => [r.employee_no && x.employee_no !== r.employee_no ? "employee no" : "", r.gender && x.gender !== r.gender ? "gender" : "", r.community && x.community !== r.community ? "Emirati / Expat" : ""].filter(Boolean);
+      const diff = (x) => [r.employee_no && x.employee_no !== r.employee_no ? "employee no" : "", r.gender && x.gender !== r.gender ? "gender" : "", r.community && x.community !== r.community ? "Emirati / Expat" : "", r.height_cm && x.height_cm !== r.height_cm ? "height" : ""].filter(Boolean);
       const byMail = await C.findParticipant(pool, co.code, { email: r.email });
       if (byMail) { const d = diff(byMail); (d.length ? plan.update : plan.same).push({ ...r, pid: byMail.pid, id: byMail.id, was: byMail.full_name, changes: d.join(", ") }); continue; }
       const byName = await C.findParticipant(pool, co.code, { name: r.full_name });
@@ -588,7 +589,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
       ${season ? `<div class="qr-send" style="background:var(--accent-soft,#f1f3ff)"><div>Everyone on this list goes into <b>${h(season.name)}</b>: ${nf(plan.add.length + plan.update.length + plan.same.length)} people, of whom <b>${nf(returning)}</b> were on an earlier season's list (no new record for them).</div></div>` : ""}
       <div class="tiles" style="margin-bottom:12px">${tile("New people", nf(plan.add.length), "Get a new ID")}${tile("Updated", nf(plan.update.length), "Already on the list: details updated")}${tile("Already up to date", nf(plan.same.length), "")}${tile("Need checking", nf(plan.problems.length), "Not saved")}</div>
       ${plan.update.length ? `<h3 style="font-size:15px">Matched to people already here</h3>${table(["ID", "On the programme as", "From the list", "Work email", "What changes"], plan.update.map((r) => [r.pid, r.was, r.full_name, r.email, r.changes]))}` : ""}
-      ${plan.add.length ? `<h3 style="font-size:15px;margin-top:12px">New people</h3>${table(["Name", "Work email", "Employee no", "Gender", "Emirati / Expat"], plan.add.map((r) => [r.full_name, r.email, r.employee_no, r.gender, r.community]))}` : ""}
+      ${plan.add.length ? `<h3 style="font-size:15px;margin-top:12px">New people</h3>${table(["Name", "Work email", "Employee no", "Gender", "Emirati / Expat", "Height"], plan.add.map((r) => [r.full_name, r.email, r.employee_no, r.gender, r.community, r.height_cm ? r.height_cm + " cm" : ""]))}` : ""}
       ${plan.problems.length ? `<h3 style="font-size:15px;margin-top:12px">Need checking (not saved)</h3>${table(["Row", "Name", "Problem"], plan.problems)}` : ""}
       <form method="post" action="/corporate/participants/upload/commit" style="margin-top:14px"><input type="hidden" name="token" value="${t}"><button class="btn primary big" ${plan.add.length + plan.update.length + (season ? plan.same.length : 0) ? "" : "disabled"}>Save ${plan.add.length + plan.update.length}${season ? ` changes and the ${h(season.name)} list` : " people"}</button> <a class="btn" href="/corporate/participants?company=${h(co.code)}">Cancel</a></form></section>`, { active: "/corporate/participants" }));
   }));
@@ -603,12 +604,12 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         if (had) { if (pv.season) { await C.enrol(c, pv.season, had.id, "Season list"); enrolled++; } continue; }
         const p = await C.createParticipant(c, { ...r, company: co.code, noSeason: !!pv.season }, actor(req), "Company staff list");
         if (pv.season) { await C.enrol(c, pv.season, p.id, "Season list"); enrolled++; }
-        if (r.employee_no) await c.query("UPDATE corp_participants SET employee_no = $2 WHERE id = $1", [p.id, r.employee_no]);
+        if (r.employee_no || r.height_cm) await c.query("UPDATE corp_participants SET employee_no = coalesce(nullif($2, ''), employee_no), height_cm = coalesce($3, height_cm) WHERE id = $1", [p.id, r.employee_no || "", r.height_cm || null]);
         added++;
       }
       for (const r of pv.plan.update) {
-        await c.query(`UPDATE corp_participants SET email = $2, employee_no = coalesce(nullif($3, ''), employee_no), gender = coalesce(nullif($4, ''), gender), community = coalesce(nullif($5, ''), community), updated_at = now() WHERE id = $1`,
-          [r.id, r.email, r.employee_no, r.gender, r.community]);
+        await c.query(`UPDATE corp_participants SET email = $2, employee_no = coalesce(nullif($3, ''), employee_no), gender = coalesce(nullif($4, ''), gender), community = coalesce(nullif($5, ''), community), height_cm = coalesce($6, height_cm), updated_at = now() WHERE id = $1`,
+          [r.id, r.email, r.employee_no, r.gender, r.community, r.height_cm || null]);
         updated++;
       }
       if (pv.season) for (const r of [...pv.plan.update, ...pv.plan.same]) { await C.enrol(c, pv.season, r.id, "Season list"); enrolled++; }
@@ -652,7 +653,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <div class="row2"><label>Full name<input name="full_name" value="${h(p.full_name)}" required maxlength="120"></label><label>Work email<input type="email" name="email" value="${h(p.email)}" maxlength="160"></label></div>
           <div class="row2"><label>Community<select name="community"><option value="">Not recorded</option>${[...C.COMMUNITIES, "Other"].map((x) => opt(x, x, p.community)).join("")}</select></label>
             <label>Gender<select name="gender"><option value="">Not recorded</option>${["Female", "Male"].map((x) => opt(x, x, p.gender)).join("")}</select></label></div>
-          <div class="row2"><label>Bike size<input name="bike_size" value="${h(p.bike_size)}" maxlength="30"></label><label>Status<select name="status">${["Active", "Inactive"].map((x) => opt(x, x, p.status)).join("")}</select></label></div>
+          <div class="row2"><label>Height (cm)<input type="number" name="height_cm" min="120" max="210" value="${h(p.height_cm || "")}"></label><label>Bike size<input name="bike_size" value="${h(p.bike_size)}" maxlength="30"></label></div>
+          <div class="row2"><label>Status<select name="status">${["Active", "Inactive"].map((x) => opt(x, x, p.status)).join("")}</select></label></div>
           <label>Notes<input name="notes" value="${h(p.notes)}" maxlength="300"></label>
           <button class="btn primary">Save</button></form></section>
       <section class="card c4"><h2>Personal QR code</h2><p class="lead">A ride lead scans this at <a href="/corporate/scan">Corporate → Scan</a>. It holds ${h(C.pidQr(p.pid))}.</p>
@@ -673,7 +675,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (!R.clean(b.full_name)) { setFlash(req, "err", "The name can't be empty."); return res.redirect(back); }
     if (b.email && !R.EMAIL_RE.test(R.normEmail(b.email))) { setFlash(req, "err", "That email doesn't look right."); return res.redirect(back); }
     const upd = { full_name: R.clean(b.full_name), name_key: C.nameKey(b.full_name), email: R.normEmail(b.email) || null, community: R.clean(b.community) || null, gender: R.clean(b.gender) || null,
-      bike_size: R.clean(b.bike_size) || null, status: b.status === "Inactive" ? "Inactive" : "Active", notes: R.clean(b.notes) || null };
+      bike_size: R.clean(b.bike_size) || null, height_cm: (+b.height_cm >= 120 && +b.height_cm <= 210) ? Math.round(+b.height_cm) : null, status: b.status === "Inactive" ? "Inactive" : "Active", notes: R.clean(b.notes) || null };
     await tx(async (c) => {
       const k = Object.keys(upd);
       await c.query(`UPDATE corp_participants SET ${k.map((x, i) => `${x} = $${i + 2}`).join(", ")}, updated_at = now() WHERE id = $1`, [L.p.id, ...k.map((x) => upd[x])]);

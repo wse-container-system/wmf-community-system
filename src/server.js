@@ -82,7 +82,7 @@ const STAFF = ["admin", "coordinator"];
 const takeFlash = (req) => { const f = req.session.flash; delete req.session.flash; return f; };
 const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
 // shared links (management, marketing, Dubai lead, surveys) always look the way their audience sees them: no hub menus, even for someone signed in
-const SHARED = /^\/(g|m|mk|l|f|fs|ride)\//;
+const SHARED = /^\/(g|m|mk|l|f|fs|ride|shop)\//;
 const page = (req, title, body, opts = {}) => SHARED.test(req.path)
   ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
   : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
