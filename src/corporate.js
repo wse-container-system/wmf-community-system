@@ -654,6 +654,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           <div class="row2"><label>Community<select name="community"><option value="">Not recorded</option>${[...C.COMMUNITIES, "Other"].map((x) => opt(x, x, p.community)).join("")}</select></label>
             <label>Gender<select name="gender"><option value="">Not recorded</option>${["Female", "Male"].map((x) => opt(x, x, p.gender)).join("")}</select></label></div>
           <div class="row2"><label>Height (cm)<input type="number" name="height_cm" min="120" max="210" value="${h(p.height_cm || "")}"></label><label>Bike size<input name="bike_size" value="${h(p.bike_size)}" maxlength="30"></label></div>
+          <div class="row2"><label>Bike type<input name="bike_type" value="${h(p.bike_type || "")}" maxlength="30" placeholder="Road, Hybrid, Mountain"></label></div>
           <div class="row2"><label>Status<select name="status">${["Active", "Inactive"].map((x) => opt(x, x, p.status)).join("")}</select></label></div>
           <label>Notes<input name="notes" value="${h(p.notes)}" maxlength="300"></label>
           <button class="btn primary">Save</button></form></section>
@@ -675,7 +676,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     if (!R.clean(b.full_name)) { setFlash(req, "err", "The name can't be empty."); return res.redirect(back); }
     if (b.email && !R.EMAIL_RE.test(R.normEmail(b.email))) { setFlash(req, "err", "That email doesn't look right."); return res.redirect(back); }
     const upd = { full_name: R.clean(b.full_name), name_key: C.nameKey(b.full_name), email: R.normEmail(b.email) || null, community: R.clean(b.community) || null, gender: R.clean(b.gender) || null,
-      bike_size: R.clean(b.bike_size) || null, height_cm: (+b.height_cm >= 120 && +b.height_cm <= 210) ? Math.round(+b.height_cm) : null, status: b.status === "Inactive" ? "Inactive" : "Active", notes: R.clean(b.notes) || null };
+      bike_size: R.clean(b.bike_size) || null, bike_type: R.clean(b.bike_type).slice(0, 30) || null, height_cm: (+b.height_cm >= 120 && +b.height_cm <= 210) ? Math.round(+b.height_cm) : null, status: b.status === "Inactive" ? "Inactive" : "Active", notes: R.clean(b.notes) || null };
     await tx(async (c) => {
       const k = Object.keys(upd);
       await c.query(`UPDATE corp_participants SET ${k.map((x, i) => `${x} = $${i + 2}`).join(", ")}, updated_at = now() WHERE id = $1`, [L.p.id, ...k.map((x) => upd[x])]);
