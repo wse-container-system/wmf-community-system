@@ -402,15 +402,30 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const args = [sc.codes], where = ["company = ANY($1)"];
     if (q) { args.push("%" + q.replace(/[%_]/g, "") + "%"); where.push(`(full_name ILIKE $${args.length} OR email ILIKE $${args.length} OR pid ILIKE $${args.length})`); }
     if (status) { args.push(status); where.push(`status = $${args.length}`); }
+    // seasons (one company at a time): show one season's list, or past seasons' people not on the newest list
+    const seas = sc.sel ? await C.seasons(pool, sc.sel.code) : [], newest = seas[0] || null;
+    const cur = sc.sel ? await C.currentSeason(pool, sc.sel.code) : null;
+    const defSeason = seas.length ? String(((cur && cur.members ? cur : seas.find((x) => x.members)) || seas[0]).id) : "all";
+    const seasonQ = !seas.length ? "all" : ["all", "past"].includes(req.query.season) || seas.some((x) => String(x.id) === req.query.season) ? req.query.season : defSeason;
+    const season = seas.find((x) => String(x.id) === seasonQ) || null;
+    if (season) { args.push(season.id); where.push(`p.id IN (SELECT participant_id FROM corp_season_members WHERE season_id = $${args.length})`); }
+    if (seasonQ === "past" && newest) { args.push(newest.id); where.push(`p.id NOT IN (SELECT participant_id FROM corp_season_members WHERE season_id = $${args.length})`); }
+    // returning = also on an earlier season's list
+    const earlier = season ? new Set((await pool.query(`SELECT DISTINCT m.participant_id FROM corp_season_members m JOIN corp_seasons s ON s.id = m.season_id
+      WHERE s.company = $1 AND s.start_date < $2::date`, [sc.sel.code, season.start])).rows.map((x) => x.participant_id)) : null;
     const rows = (await pool.query(`SELECT p.*, (SELECT count(*) FROM corp_attendance a WHERE a.participant_id = p.id)::int AS total,
       (SELECT max(s.session_date) FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = p.id) AS last
-      FROM corp_participants p WHERE ${where.join(" AND ")} ORDER BY company, full_name`, args)).rows;
+      FROM corp_participants p WHERE ${where.join(" AND ")} ORDER BY p.company, p.full_name`, args)).rows;
+    const nRet = earlier ? rows.filter((p) => earlier.has(p.id)).length : 0;
+    const seasonSel = seas.length ? `<label class="f"><span>Season</span><select class="inp" name="season" data-autosubmit>${seas.map((x) => opt(String(x.id), `${x.name} (${x.members})`, seasonQ)).join("")}
+      ${opt("past", `Past seasons (not in ${newest.name})`, seasonQ)}${opt("all", "Everyone", seasonQ)}</select></label>` : "";
     const dups = (await pool.query(`SELECT company, name_key, array_agg(pid ORDER BY id) pids, array_agg(full_name ORDER BY id) names FROM corp_participants WHERE company = ANY($1) GROUP BY company, name_key HAVING count(*) > 1`, [sc.codes])).rows;
     res.send(page(req, "Corporate participants", `
       <div class="card-head"><div><h2 style="font-size:22px">Participants</h2><p class="muted" style="margin:2px 0 0">${rows.length} shown. Each person gets a personal QR code (on their page) that ride leads can scan.</p></div></div>
-      <form class="toolbar" method="get">${companySelect(sc)}<label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "Active and inactive", status)}${opt("Active", "Active", status)}${opt("Inactive", "Inactive", status)}</select></label>
+      <form class="toolbar" method="get">${companySelect(sc)}${seasonSel}<label class="f"><span>Status</span><select class="inp" name="status" data-autosubmit>${opt("", "Active and inactive", status)}${opt("Active", "Active", status)}${opt("Inactive", "Inactive", status)}</select></label>
         <label class="f"><span>Search</span><input class="inp" type="search" name="q" value="${h(q)}" placeholder="Name, email or ID"></label><button class="btn">Search</button></form>
       ${dups.length ? `<div class="alert warn"><span class="ic">!</span><span><b>Possible duplicates:</b> ${dups.map((d) => `${h(d.names.join(" / "))} (<a href="/corporate/participants/${encodeURIComponent(d.pids[0])}">${h(d.pids.join(", "))}</a>)`).join(" · ")}. Open the first record to merge.</span></div>` : ""}
+      ${season ? `<div class="qr-send" style="background:var(--accent-soft,#f1f3ff)"><div><b>${h(season.name)}</b> · ${h(fmtDate(season.start))} to ${h(fmtDate(season.end))} · <b>${nf(rows.length)}</b> on the list${earlier && earlier.size ? ` · <span class="badge">${nf(nRet)} returning</span> <span class="badge good">${nf(rows.length - nRet)} new</span>` : ""}</div>${!rows.length ? '<span class="hint">Upload the season\'s list below.</span>' : ""}</div>` : seasonQ === "past" ? `<div class="qr-send"><div><b>Past seasons</b> · ${nf(rows.length)} people from earlier seasons who aren't on the ${h(newest.name)} list. Their history stays in the reports.</div></div>` : ""}
       ${(() => { const withMail = rows.filter((p) => p.email && p.status === "Active"), unsent = withMail.filter((p) => !p.qr_sent_at);
         return withMail.length ? `<div class="qr-send noprint"><div><b>Personal QR codes</b> · ${nf(withMail.length - unsent.length)} of ${nf(withMail.length)} sent${sc.sel ? "" : " (all companies shown)"}</div>
           <form method="post" action="/corporate/participants/sendqr-all" class="toolbar" style="margin:0"><input type="hidden" name="company" value="${h(sc.sel ? sc.sel.code : "")}"><input type="hidden" name="back" value="${h(req.originalUrl)}">
@@ -418,17 +433,24 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
             <button class="btn" name="which" value="all" ${MAIL.configured() ? `data-confirm="Send the QR code to all ${nf(withMail.length)} people with an email, including those who already have it?"` : ""}>${MAIL.configured() ? "Send" : "Draft"} to all (${nf(withMail.length)})</button></form></div>` : ""; })()}
       <div class="grid"><section class="card c12 cp-list">${(() => { const one = !!sc.sel;
         const head = ["ID", "Name", ...(one ? [] : ["Company"]), "Work email", "Status", "Sessions", "Last attended", "QR code"];
-        return table(head, rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`), ...(one ? [] : [sc.byCode[p.company].name]), p.email || raw('<span class="muted">none yet</span>'),
+        return table(head, rows.map((p) => [p.pid, raw(`<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>${earlier && earlier.size ? (earlier.has(p.id) ? ' <span class="badge">Returning</span>' : ' <span class="badge good">New</span>') : ""}`), ...(one ? [] : [sc.byCode[p.company].name]), p.email || raw('<span class="muted">none yet</span>'),
           raw(p.status === "Active" ? '<span class="badge good">Active</span>' : '<span class="badge">Inactive</span>'), p.total, fmtDate(p.last),
           raw(`<span class="cp-qr">${p.qr_sent_at ? `<span class="badge good">Sent ${h(fmtDate(new Date(p.qr_sent_at).toISOString().slice(0, 10)))}</span>` : ""}${qrBtn(p, req.originalUrl)}</span>`)]), { num: [one ? 4 : 5] }); })()}</section>
       <section class="card c6"><h2>Upload a staff list</h2><p class="lead">Ask each company for an Excel or CSV list of the staff joining the programme: <b>name and work email</b> (employee number, gender and Emirati/Expat are optional). Uploading adds new people and updates people already here (email and details), with no duplicates. You'll see a preview first, then you can send everyone their QR code.</p>
         <form class="form" method="post" action="/corporate/participants/upload" enctype="multipart/form-data">
           <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
+          ${seas.length ? `<label>Add everyone on the list to<select name="season">${seas.map((x) => opt(String(x.id), x.name, String((cur || seas[0]).id))).join("")}<option value="">No season</option></select></label>` : ""}
           <input type="file" name="file" accept=".xlsx,.csv" required>
           <button class="btn primary">Read list and preview</button></form>
         <p style="margin:8px 0 0"><a href="/corporate/participants/template.xlsx">Download a blank list to send to the company</a></p></section>
       <section class="card c12 noprint"><div class="si-top"><div><h2>Email sending</h2><p class="lead" style="margin:0">${MAIL.configured() ? `<span class="badge good">On</span> QR codes are emailed from ${h(process.env.MAIL_FROM || process.env.SMTP_USER)}.` : `<span class="badge">Off</span> "Draft email" opens a ready-written email in Outlook. To send automatically, set SMTP_HOST, SMTP_USER and SMTP_PASS in Render.`}</p></div>
         ${MAIL.configured() ? `<form method="post" action="/corporate/participants/test-email" class="toolbar" style="margin:0"><input class="inp" type="email" name="to" required placeholder="you@company.com" value="${h(user(req).email || "")}" aria-label="Send a test to"><button class="btn">Send a test email</button></form>` : ""}</div></section>
+      ${sc.sel ? `<section class="card c12 noprint"><h2>${h(sc.sel.name)} seasons</h2><p class="lead">Each season has its own list. A person keeps one ID and QR code across seasons; upload the new list into the new season and returning people are added, not doubled.</p>
+        ${seas.length ? table(["Season", "From", "To", "On the list"], seas.map((x) => [raw(`<a href="/corporate/participants?company=${h(sc.sel.code)}&season=${x.id}">${h(x.name)}</a>${cur && cur.id === x.id ? ' <span class="badge good">Current</span>' : ""}`), fmtDate(x.start), fmtDate(x.end), nf(x.members)]), { num: [3] }) : '<p class="muted">No seasons yet.</p>'}
+        <form class="toolbar" method="post" action="/corporate/seasons" style="margin-top:10px"><input type="hidden" name="company" value="${h(sc.sel.code)}">
+          <label class="f"><span>New season</span><input class="inp" name="name" required maxlength="60" placeholder="${h(sc.sel.code)} 2027-2028"></label>
+          <label class="f"><span>From</span><input class="inp" type="date" name="start_date" required></label><label class="f"><span>To</span><input class="inp" type="date" name="end_date" required></label>
+          <button class="btn">Add season</button></form></section>` : ""}
       <section class="card c6"><h2>Add a participant</h2><form class="form" method="post" action="/corporate/participants">
         <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
         <label>Full name<input name="full_name" required maxlength="120"></label><label>Work email<input type="email" name="email" maxlength="160"></label>
@@ -540,6 +562,16 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     }
     return plan;
   }
+  app.post("/corporate/seasons", S, wrap(async (req, res) => {
+    const b = req.body || {}, co = (await C.companiesFor(user(req))).find((x) => x.code === b.company), name = R.clean(b.name).slice(0, 60);
+    const ok = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+    if (!co || !name || !ok(b.start_date) || !ok(b.end_date) || b.end_date < b.start_date) { setFlash(req, "err", "Add the season's name and its dates (the end after the start)."); return res.redirect("/corporate/participants?company=" + encodeURIComponent(b.company || "")); }
+    const r = (await pool.query("INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ($1,$2,$3,$4) ON CONFLICT (company, name) DO NOTHING RETURNING id", [co.code, name, b.start_date, b.end_date])).rows[0];
+    if (!r) { setFlash(req, "err", `${name} already exists.`); return res.redirect("/corporate/participants?company=" + co.code); }
+    await audit(pool, actor(req), "corp.season.create", "corp_season", String(r.id), null, { company: co.code, name, start: b.start_date, end: b.end_date });
+    setFlash(req, "ok", `${name} added. Upload its list to fill it.`);
+    res.redirect(`/corporate/participants?company=${co.code}&season=${r.id}`);
+  }));
   app.post("/corporate/participants/upload", S, upload.single("file"), wrap(async (req, res) => {
     const co = (await C.companiesFor(user(req))).find((x) => x.code === req.body.company);
     if (!co || !req.file) { setFlash(req, "err", "Choose a company and a file."); return res.redirect("/corporate/participants"); }
@@ -548,23 +580,29 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const plan = await planList(co, list);
     for (const [k, v] of previews) if (Date.now() - v.at > 30 * 60e3) previews.delete(k);
     const t = crypto.randomBytes(16).toString("hex");
-    previews.set(t, { kind: "list", co: co.code, plan, at: Date.now(), name: req.file.originalname });
+    const season = (await C.seasons(pool, co.code)).find((x) => String(x.id) === String(req.body.season || "")) || null;
+    let returning = 0;
+    if (season) { const ids = [...plan.update, ...plan.same].map((r) => r.id); returning = ids.length ? (await pool.query(`SELECT count(DISTINCT m.participant_id)::int n FROM corp_season_members m JOIN corp_seasons s ON s.id = m.season_id WHERE s.company = $1 AND s.id <> $2 AND m.participant_id = ANY($3)`, [co.code, season.id, ids])).rows[0].n : 0; }
+    previews.set(t, { kind: "list", co: co.code, plan, at: Date.now(), name: req.file.originalname, season: season && season.id });
     res.send(page(req, "Staff list preview", `<section class="card"><h2>${coChip(co)} staff list: ${h(req.file.originalname)}</h2><p class="lead">Nothing has been saved yet. ${list.length} rows read.</p>
+      ${season ? `<div class="qr-send" style="background:var(--accent-soft,#f1f3ff)"><div>Everyone on this list goes into <b>${h(season.name)}</b>: ${nf(plan.add.length + plan.update.length + plan.same.length)} people, of whom <b>${nf(returning)}</b> were on an earlier season's list (no new record for them).</div></div>` : ""}
       <div class="tiles" style="margin-bottom:12px">${tile("New people", nf(plan.add.length), "Get a new ID")}${tile("Updated", nf(plan.update.length), "Already on the list: details updated")}${tile("Already up to date", nf(plan.same.length), "")}${tile("Need checking", nf(plan.problems.length), "Not saved")}</div>
       ${plan.update.length ? `<h3 style="font-size:15px">Matched to people already here</h3>${table(["ID", "On the programme as", "From the list", "Work email", "What changes"], plan.update.map((r) => [r.pid, r.was, r.full_name, r.email, r.changes]))}` : ""}
       ${plan.add.length ? `<h3 style="font-size:15px;margin-top:12px">New people</h3>${table(["Name", "Work email", "Employee no", "Gender", "Emirati / Expat"], plan.add.map((r) => [r.full_name, r.email, r.employee_no, r.gender, r.community]))}` : ""}
       ${plan.problems.length ? `<h3 style="font-size:15px;margin-top:12px">Need checking (not saved)</h3>${table(["Row", "Name", "Problem"], plan.problems)}` : ""}
-      <form method="post" action="/corporate/participants/upload/commit" style="margin-top:14px"><input type="hidden" name="token" value="${t}"><button class="btn primary big" ${plan.add.length + plan.update.length ? "" : "disabled"}>Save ${plan.add.length + plan.update.length} people</button> <a class="btn" href="/corporate/participants?company=${h(co.code)}">Cancel</a></form></section>`, { active: "/corporate/participants" }));
+      <form method="post" action="/corporate/participants/upload/commit" style="margin-top:14px"><input type="hidden" name="token" value="${t}"><button class="btn primary big" ${plan.add.length + plan.update.length + (season ? plan.same.length : 0) ? "" : "disabled"}>Save ${plan.add.length + plan.update.length}${season ? ` changes and the ${h(season.name)} list` : " people"}</button> <a class="btn" href="/corporate/participants?company=${h(co.code)}">Cancel</a></form></section>`, { active: "/corporate/participants" }));
   }));
   app.post("/corporate/participants/upload/commit", S, wrap(async (req, res) => {
     const pv = previews.get(String(req.body.token || ""));
     if (!pv || pv.kind !== "list") { setFlash(req, "err", "The preview expired. Upload the list again."); return res.redirect("/corporate/participants"); }
     const co = (await C.companiesFor(user(req))).find((x) => x.code === pv.co); if (!co) return res.redirect("/corporate/participants");
     const n = await tx(async (c) => {
-      let added = 0, updated = 0;
+      let added = 0, updated = 0, enrolled = 0;
       for (const r of pv.plan.add) {
-        if (await C.findParticipant(c, co.code, { email: r.email })) continue;
-        const p = await C.createParticipant(c, { ...r, company: co.code }, actor(req), "Company staff list");
+        const had = await C.findParticipant(c, co.code, { email: r.email });
+        if (had) { if (pv.season) { await C.enrol(c, pv.season, had.id, "Season list"); enrolled++; } continue; }
+        const p = await C.createParticipant(c, { ...r, company: co.code, noSeason: !!pv.season }, actor(req), "Company staff list");
+        if (pv.season) { await C.enrol(c, pv.season, p.id, "Season list"); enrolled++; }
         if (r.employee_no) await c.query("UPDATE corp_participants SET employee_no = $2 WHERE id = $1", [p.id, r.employee_no]);
         added++;
       }
@@ -573,12 +611,13 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
           [r.id, r.email, r.employee_no, r.gender, r.community]);
         updated++;
       }
-      await audit(c, actor(req), "corp.list.upload", "corp_company", co.code, null, { file: pv.name, added, updated });
-      return { added, updated };
+      if (pv.season) for (const r of [...pv.plan.update, ...pv.plan.same]) { await C.enrol(c, pv.season, r.id, "Season list"); enrolled++; }
+      await audit(c, actor(req), "corp.list.upload", "corp_company", co.code, null, { file: pv.name, added, updated, season: pv.season, enrolled });
+      return { added, updated, enrolled };
     });
     previews.delete(String(req.body.token));
-    setFlash(req, "ok", `${co.name}: ${n.added} people added, ${n.updated} updated. Send their QR codes with "Send to everyone not sent yet".`);
-    res.redirect("/corporate/participants?company=" + co.code);
+    setFlash(req, "ok", `${co.name}: ${n.added} new, ${n.updated} updated${pv.season ? `, ${n.enrolled} on the season list` : ""}. New people need their QR codes: "Send to everyone not sent yet".`);
+    res.redirect("/corporate/participants?company=" + co.code + (pv.season ? "&season=" + pv.season : ""));
   }));
   app.post("/corporate/participants", S, wrap(async (req, res) => {
     const b = req.body, sc = await scope(req);

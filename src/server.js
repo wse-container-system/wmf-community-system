@@ -718,6 +718,7 @@ async function init() {
   await require("./social").seed();
   await require("./teamcal").seedHolidays();
   await require("./corpdata").seedCompanies();
+  await require("./db").tx((c) => require("./corpdata").seedSeasons(c));
   await require("./corpdata").seedSchedules();
   await require("./deptschedule").seedTeam();
   const merged = await require("./dupes").autoMergeEmails("system"); // same email = same person

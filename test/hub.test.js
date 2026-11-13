@@ -322,6 +322,27 @@ test("cycling development hub", async (t) => {
     assert.match(ok200(await client()("/s/" + sl.token), "scanner link").text, /id="corpWalkin"/);
     const lw = (await client()(`/s/${sl.token}/corpwalkin`, { method: "POST", json: { company: "AURORA", session: "ride:AUTO", full_name: "Link Walk Rider", mobile: "0502223344" } })).json();
     assert.equal(lw.status, "ok"); assert.match(lw.qrUrl, /\/cq\//);
+    // seasons: NMDC starts with "NMDC 2025-2026" (everyone so far) and an empty "NMDC 2026-2027"
+    const seas = (await pool.query("SELECT * FROM corp_seasons WHERE company = 'NMDC' ORDER BY start_date")).rows;
+    assert.deepEqual(seas.map((x) => x.name), ["NMDC 2025-2026", "NMDC 2026-2027"]);
+    const lp0 = ok200(await admin("/corporate/participants?company=NMDC"), "season view").text;
+    assert.match(lp0, /NMDC 2026-2027/); assert.match(lp0, /Past seasons/);
+    // upload the new season's list: one returning lady (no new record) and one new
+    const retName = (await pool.query("SELECT id, full_name, email FROM corp_participants WHERE company = 'NMDC' AND email LIKE '%@nmdc.ae' ORDER BY id LIMIT 1")).rows[0];
+    await pool.query("DELETE FROM corp_season_members WHERE participant_id = $1", [retName.id]);
+    await pool.query("INSERT INTO corp_season_members (season_id, participant_id) VALUES ($1, $2)", [seas[0].id, retName.id]);
+    const n0s = (await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n;
+    const fdS = new FormData(); fdS.append("company", "NMDC"); fdS.append("season", String(seas[1].id));
+    fdS.append("file", new Blob([`Name,Email\n${retName.full_name},${retName.email}\nSeason Newcomer,season.newcomer@nmdc.ae\n`], { type: "text/csv" }), "season.csv");
+    const pvS = ok200(await admin("/corporate/participants/upload", { method: "POST", multipart: fdS }), "season preview").text;
+    assert.match(pvS, /goes into <b>NMDC 2026-2027<\/b>: 2 people, of whom <b>1<\/b> were on an earlier season/);
+    await admin("/corporate/participants/upload/commit", { method: "POST", form: { token: /name="token" value="([a-f0-9]+)"/.exec(pvS)[1] } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_participants WHERE company = 'NMDC'")).rows[0].n, n0s + 1, "only the newcomer is a new record");
+    const sv = ok200(await admin(`/corporate/participants?company=NMDC&season=${seas[1].id}`), "new season").text;
+    assert.match(sv, /Returning<\/span>/); assert.match(sv, /Season Newcomer<\/a> <span class="badge good">New/);
+    assert.match(ok200(await admin("/corporate/participants?company=NMDC&season=past"), "past").text, /Past seasons<\/b>/);
+    await admin("/corporate/seasons", { method: "POST", form: { company: "NMDC", name: "NMDC 2027-2028", start_date: "2027-09-01", end_date: "2028-08-31" } });
+    assert.equal((await pool.query("SELECT count(*)::int n FROM corp_seasons WHERE company = 'NMDC'")).rows[0].n, 3);
     // ride sign-up: shared link per company, rental bikes with height, who's coming, list for the shop
     assert.match(ok200(await admin("/corporate/signups?company=AURORA"), "sign-ups").text, /Share with Aurora/);
     const tokS = (await pool.query("SELECT signup_token FROM corp_companies WHERE code = 'AURORA'")).rows[0].signup_token; assert.ok(tokS);
