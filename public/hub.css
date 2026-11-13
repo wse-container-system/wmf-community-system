@@ -701,3 +701,4 @@ a.btn.done { opacity: .7; }
 .rs-bike:has(input[name=rent][value="0"]:checked) .rs-h { display: none; }
 .rs-bike label.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
 .rs-bike input[type=radio] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4d5ac2); }
+.sh-size { display: flex; gap: 6px; align-items: center; } .sh-size .inp { width: 110px; min-height: 36px; }

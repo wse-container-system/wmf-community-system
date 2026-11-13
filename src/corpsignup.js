@@ -1,7 +1,8 @@
 "use strict";
 /**
  * Corporate ride sign-up: one shared link per company (/ride/<token>) with that company's ride calendar.
- * Participants say they're coming, can book a rental bike (with their height) and see who else is coming.
+ * Participants say they're coming, can book a rental bike and see who else is coming. Height and bike size live on the person
+ * (from the uploaded list; the bike shop keeps the size up to date on its own link, /shop/<token>).
  * Staff (Corporate → Sign-ups) set the rental bikes per ride, see the list, download it and send it to the bike shop on WhatsApp.
  */
 const crypto = require("crypto");
@@ -45,7 +46,7 @@ async function rental(co, key) {
   return (await pool.query("SELECT * FROM corp_ride_rental WHERE company = $1 AND ride_key = $2", [co.code, key])).rows[0] || null;
 }
 async function signups(co, key) {
-  return (await pool.query(`SELECT su.*, p.full_name, p.pid, p.email, p.mobile FROM corp_signups su JOIN corp_participants p ON p.id = su.participant_id
+  return (await pool.query(`SELECT su.*, p.full_name, p.pid, p.email, p.mobile, p.bike_size, coalesce(p.height_cm, su.height_cm) AS height_cm FROM corp_signups su JOIN corp_participants p ON p.id = su.participant_id
     WHERE su.company = $1 AND su.ride_key = $2 AND su.status = 'Coming' ORDER BY su.created_at`, [co.code, key])).rows;
 }
 /** Counts for many rides at once: coming and rentals per key. */
@@ -62,6 +63,12 @@ async function ensureToken(co) {
   const t = crypto.randomBytes(9).toString("base64url");
   await pool.query("UPDATE corp_companies SET signup_token = $2 WHERE code = $1 AND signup_token IS NULL", [co.code, t]);
   return (await pool.query("SELECT signup_token FROM corp_companies WHERE code = $1", [co.code])).rows[0].signup_token;
+}
+async function shopToken() {
+  const sh = await shopOf(); if (sh.token) return sh.token;
+  const t = crypto.randomBytes(12).toString("base64url");
+  await pool.query("INSERT INTO settings (key, value) VALUES ('rentalShop', $1) ON CONFLICT (key) DO UPDATE SET value = settings.value || $1", [JSON.stringify({ token: t })]);
+  return (await shopOf()).token;
 }
 const shopOf = async () => { const r = (await pool.query("SELECT value FROM settings WHERE key = 'rentalShop'")).rows[0]; return (r && r.value) || { name: "Wolfi's", phone: "" }; };
 
@@ -118,12 +125,12 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       if (sel.cancelled) panel = `<h2>${h(dayLabel(sel.date))}</h2><p class="lead">This session is cancelled.</p>`;
       else if (mine) {
         panel = `<h2>You're in, ${h(String(mine.full_name).split(" ")[0])}!</h2><p class="lead">${h(dayLabel(sel.date))}${sel.time ? " · " + h(t12(sel.time)) : ""}${sel.where ? " · " + h(sel.where) : ""}</p>
-          ${mine.rent && viaLink ? `${bookBox}${mine.height_cm ? `<p class="hint" style="margin:6px 0 0">Your height: ${nf(mine.height_cm)} cm</p>` : ""}<form method="post" action="${base}/signup" style="margin:8px 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">I'll bring my own bike instead</button></form>`
-          : !mine.rent && viaLink ? `<p>Riding your own bike.</p><form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1"><label class="rs-h">Your height (cm)<input name="height_cm" type="number" min="120" max="210" inputmode="numeric" required placeholder="165"></label><button class="btn">I need a rental bike</button></form>`
-          : mine.rent ? `<p class="rs-ref">Rental bike booked · ref <b>${h(mine.ref)}</b> · height ${nf(mine.height_cm)} cm</p>
+          ${mine.rent && viaLink ? `${bookBox}<form method="post" action="${base}/signup" style="margin:8px 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">I'll bring my own bike instead</button></form>`
+          : !mine.rent && viaLink ? `<p>Riding your own bike.</p><form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1"><button class="btn">I need a rental bike</button></form>`
+          : mine.rent ? `<p class="rs-ref">Rental bike booked · ref <b>${h(mine.ref)}</b></p>
             <form method="post" action="${base}/signup" style="margin:0 0 10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="0"><button class="btn tblbtn">Switch to my own bike</button></form>`
           : `<p>Riding your own bike.</p>${rentalOpen(rt, taken) ? `<form class="rs-bike" method="post" action="${base}/signup" style="margin-bottom:10px"><input type="hidden" name="k" value="${h(sel.key)}"><input type="hidden" name="who" value="${h(me.pid)}"><input type="hidden" name="rent" value="1">
-              <b>Need a bike? Rent one${rt.price ? ` (AED ${nf(+rt.price)})` : ""}</b><label>Your height (cm)<input name="height_cm" type="number" min="120" max="210" inputmode="numeric" required placeholder="165"></label>${rentLine}<button class="btn primary">Book a rental bike</button></form>` : ""}`}
+              <b>Need a bike? Rent one${rt && rt.price ? ` (AED ${nf(+rt.price)})` : ""}</b>${rentLine}<button class="btn primary">Book a rental bike</button></form>` : ""}`}
           <p class="hint">Bring your personal QR code: <a href="${h(C.cqPath(me.pid))}">open my QR code</a>.</p>
           <form method="post" action="${base}/cancel"><input type="hidden" name="k" value="${h(sel.key)}"><button class="btn" data-confirm="Cancel your place${mine.rent ? " and your rental bike" : ""}?">Can't make it? Cancel my place</button></form>${whoList}`;
       } else {
@@ -138,12 +145,10 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
             ${viaLink ? `<fieldset class="rs-bike"><legend>Bike</legend>
               <label class="check"><input type="radio" name="rent" value="0" ${v.rent === "1" ? "" : "checked"}> <span>I'll bring my own bike</span></label>
               <label class="check"><input type="radio" name="rent" value="1" ${v.rent === "1" ? "checked" : ""}> <span>I need a rental bike (I'll book it with ${h(shop.name || "the shop")})</span></label>
-              <label class="rs-h">Your height (cm) <span class="hint">so the bike fits you</span><input name="height_cm" type="number" min="120" max="210" inputmode="numeric" value="${h(v.height_cm || "")}" placeholder="165"></label>
               <p class="hint rs-h" style="margin:0">After you sign up you'll get the ${h(shop.name || "shop")} booking link. In the booking description, write <b>${h(note)}</b>.</p></fieldset>`
             : canRent ? `<fieldset class="rs-bike"><legend>Bike</legend>
               <label class="check"><input type="radio" name="rent" value="0" ${v.rent === "1" ? "" : "checked"}> <span>I'll bring my own bike</span></label>
-              <label class="check"><input type="radio" name="rent" value="1" ${v.rent === "1" ? "checked" : ""}> <span>Rent a bike${rt.price ? ` (AED ${nf(+rt.price)})` : ""}</span></label>
-              <label class="rs-h">Your height (cm) <span class="hint">needed for a rental bike</span><input name="height_cm" type="number" min="120" max="210" inputmode="numeric" value="${h(v.height_cm || "")}" placeholder="165"></label>${rentLine}</fieldset>`
+              <label class="check"><input type="radio" name="rent" value="1" ${v.rent === "1" ? "checked" : ""}> <span>Rent a bike${rt && rt.price ? ` (AED ${nf(+rt.price)})` : ""}</span></label>${rentLine}</fieldset>`
               : `<p class="hint">Booking for rental bikes has closed.</p>`}
             <button class="btn primary big">I'm coming</button></form>${whoList}`;
       }
@@ -196,8 +201,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
         const ph = R.normPhone(b.mobile); return ph ? (await c.query("UPDATE corp_participants SET mobile = $2 WHERE id = $1 RETURNING *", [np.id, ph])).rows[0] : np;
       });
     }
-    const rent = b.rent === "1", height = Math.round(+b.height_cm || 0), viaLink = !!(await shopOf()).link;
-    if (rent && (height < 120 || height > 210)) return again("Add your height in cm (for example 165) so the bike fits you.");
+    const rent = b.rent === "1", viaLink = !!(await shopOf()).link, height = null; // height comes from her record (the uploaded list), not asked here
     const out = await tx(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [co.code + key]); // one booking at a time per ride
       const rt = (await c.query("SELECT * FROM corp_ride_rental WHERE company = $1 AND ride_key = $2", [co.code, key])).rows[0];
@@ -209,7 +213,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
       await c.query(`INSERT INTO corp_signups (company, ride_key, ride_date, participant_id, rent, height_cm, ref, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'Coming')
         ON CONFLICT (ride_key, participant_id) DO UPDATE SET rent = $5, height_cm = $6, ref = coalesce(corp_signups.ref, $7), status = 'Coming', updated_at = now()`,
       [co.code, key, ride.date, p.id, rent, rent && height ? height : null, rent && !viaLink ? ref : null]);
-      await audit(c, "Ride sign-up", "corp.signup", "corp_participant", p.pid, null, { ride: key, rent, height: rent ? height : undefined });
+      await audit(c, "Ride sign-up", "corp.signup", "corp_participant", p.pid, null, { ride: key, rent });
       return {};
     });
     if (out.err) return again(out.err);
@@ -232,7 +236,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     return { list, co: list.find((x) => x.code === req.query.company) || list[0] || null };
   }
   const coSelect = (sc) => `<form class="toolbar noprint" method="get" style="margin:0"><label class="f"><span>Company</span><select class="inp" name="company" data-autosubmit>${sc.list.map((x) => `<option value="${h(x.code)}" ${x.code === sc.co.code ? "selected" : ""}>${h(x.name)}</option>`).join("")}</select></label></form>`;
-  const wolfiMsg = (co, ride, list) => `Hi ${"{shop}"} team,\nBike rental booking for the ${co.name} ride, ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""}${ride.where ? ", " + ride.where : ""}.\n${list.length} bike${list.length === 1 ? "" : "s"}:\n${list.map((x, i) => `${i + 1}. ${x.ref} · ${x.full_name} · ${x.height_cm} cm`).join("\n")}\nPlease confirm. Thank you!`;
+  const wolfiMsg = (co, ride, list) => `Hi ${"{shop}"} team,\nBike rental booking for the ${co.name} ride, ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""}${ride.where ? ", " + ride.where : ""}.\n${list.length} bike${list.length === 1 ? "" : "s"}:\n${list.map((x, i) => `${i + 1}. ${x.ref} · ${x.full_name}${x.height_cm ? ` · ${x.height_cm} cm` : ""}${x.bike_size ? ` · size ${x.bike_size}` : ""}`).join("\n")}\nPlease confirm. Thank you!`;
 
   app.get("/corporate/signups", S, wrap(async (req, res) => {
     const sc = await scope(req); if (!sc.co) return res.redirect("/corporate");
@@ -240,7 +244,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     const qr = await QRCode.toDataURL(link, { margin: 1, width: 320 });
     const today = R.todayLocal(), rides = await ridesFor(co, today, addDays(today, AHEAD)), cnt = await counts(co, rides.map((x) => x.key));
     const rts = Object.fromEntries((await pool.query("SELECT * FROM corp_ride_rental WHERE company = $1 AND ride_date >= $2", [co.code, today])).rows.map((x) => [x.ride_key, x]));
-    const shop = await shopOf();
+    const shop = await shopOf(), shopLink = `${(process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "")}/shop/${await shopToken()}`;
     const msg = `Hi ladies! Sign up for the ${co.name} rides here and book a rental bike if you need one: ${link}`;
     res.send(page(req, "Ride sign-ups", `<div class="card-head"><div><h2 style="font-size:22px">Ride sign-ups</h2><p class="muted" style="margin:2px 0 0">Participants sign up for rides, book rental bikes and see who's coming.</p></div>${coSelect(sc)}</div>
       <div class="grid"><section class="card c8"><h2>${h(co.name)}: upcoming rides</h2>
@@ -251,14 +255,47 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
         <div class="sc-row"><input class="inp" value="${h(link)}" readonly aria-label="Sign-up link"><button class="btn" type="button" data-copy="${h(link)}">Copy</button></div>
         <div class="toolbar" style="margin:10px 0 0"><a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Share on WhatsApp</a><a class="btn" href="${qr}" download="${h(co.code)}-ride-signup-QR.png">QR code</a><a class="btn" href="${h(link)}" target="_blank" rel="noopener">Open</a></div>
         <h2 style="margin-top:18px">Bike rental shop</h2>
+        <p class="lead" style="margin:0 0 6px">${h(shop.name || "The shop")}'s own link: everyone who booked a rental bike, with height, and a bike size they keep up to date.</p>
+        <div class="sc-row"><input class="inp" value="${h(shopLink)}" readonly aria-label="Shop link"><button class="btn" type="button" data-copy="${h(shopLink)}">Copy</button></div>
+        <div class="toolbar" style="margin:8px 0 12px"><a class="btn" href="https://wa.me/${h(shop.phone || "")}?text=${encodeURIComponent(`Hi ${shop.name || "team"}! Here is the list of ladies booking rental bikes for our corporate rides, with their height. Please add the bike size for each one, so it's ready for next time: ${shopLink}`)}" target="_blank" rel="noopener">Send to ${h(shop.name || "shop")} on WhatsApp</a><a class="btn" href="${h(shopLink)}" target="_blank" rel="noopener">Open</a></div>
         <form class="form" method="post" action="/corporate/signups/shop"><input type="hidden" name="company" value="${h(co.code)}">
           <label>Shop name<input name="name" maxlength="60" value="${h(shop.name || "")}"></label>
           <label>Booking link <span class="hint">(when set, the ladies book their own bike on it)</span><input name="link" type="url" maxlength="400" value="${h(shop.link || "")}" placeholder="https://…"></label>
           <label>WhatsApp number <span class="hint">(the rental list goes straight to this chat)</span><input name="phone" maxlength="30" inputmode="tel" value="${h(shop.phone || "")}" placeholder="+971 5x xxx xxxx"></label>
           <button class="btn">Save</button></form></section></div>`, { active: "/corporate/signups" }));
   }));
+  // ---------- the bike shop's own page (no sign-in): upcoming rental bookings with height; they set the bike size
+  async function shopByToken(t) { const sh = await shopOf(); return sh.token && String(t || "") === sh.token ? sh : null; }
+  app.get("/shop/:token", wrap(async (req, res) => {
+    const sh = await shopByToken(req.params.token);
+    if (!sh) return res.status(404).send(page(req, "Bike rentals", `<section class="card"><h2>This link doesn't work</h2><p class="lead">Ask the Cycling Development team for the new link.</p></section>`, { wide: false }));
+    const today = R.todayLocal(), cos = await C.companies(pool), base = `/shop/${encodeURIComponent(req.params.token)}`;
+    const rows = (await pool.query(`SELECT su.ride_key, su.ride_date::text AS d, su.company, su.ref, p.pid, p.full_name, p.bike_size, coalesce(p.height_cm, su.height_cm) AS height_cm
+      FROM corp_signups su JOIN corp_participants p ON p.id = su.participant_id WHERE su.rent AND su.status = 'Coming' AND su.ride_date >= $1 ORDER BY su.ride_date, su.company, p.full_name`, [today])).rows;
+    const groups = new Map(); for (const r of rows) { const k = r.company + "|" + r.ride_key; (groups.get(k) || groups.set(k, []).get(k)).push(r); }
+    let html = "";
+    for (const [k, list] of groups) {
+      const co = cos.find((x) => x.code === list[0].company) || { code: list[0].company, name: list[0].company }, ride = await rideByKey(co, list[0].ride_key);
+      html += `<section class="card"><h2>${h(co.name)} · ${h(dayLabel(list[0].d))}${ride && ride.time ? " · " + h(t12(ride.time)) : ""}</h2><p class="lead">${ride ? h(ride.title) + (ride.where ? " · " + h(ride.where) : "") + " · " : ""}${list.length} rental bike${list.length === 1 ? "" : "s"} · booking description "${h(co.name)} Corporate Ride"</p>
+        ${table(["Name", "ID", "Height", "Bike size"], list.map((x) => [x.full_name, x.pid, x.height_cm ? `${x.height_cm} cm` : "—",
+          raw(`<form class="sh-size" method="post" action="${base}/size"><input type="hidden" name="pid" value="${h(x.pid)}"><input class="inp" name="bike_size" value="${h(x.bike_size || "")}" maxlength="20" placeholder="e.g. S, M, 52" list="sizes" aria-label="Bike size for ${h(x.full_name)}"><button class="btn tblbtn">Save</button></form>`)]))}</section>`;
+    }
+    res.set("Cache-Control", "no-store").send(page(req, "Bike rentals", `<section class="card"><div class="wc-eyebrow">Corporate cycling · Cycling Development</div><h2 style="margin:4px 0 0">${h(sh.name || "Bike")} rentals</h2>
+        <p class="lead" style="margin:4px 0 0">Everyone who booked a rental bike for the coming rides, with their height. Add or update the bike size for each rider: it's kept for her next rides.</p></section>
+      ${req.query.saved ? `<div class="flash ok" role="status">Bike size saved.</div>` : ""}
+      ${html || '<section class="card"><p class="muted" style="margin:0">No rental bikes booked for the coming rides yet.</p></section>'}
+      <datalist id="sizes">${["XS", "S", "M", "L", "XL"].map((x) => `<option value="${x}">`).join("")}</datalist>`, { wide: false }));
+  }));
+  app.post("/shop/:token/size", rl, wrap(async (req, res) => {
+    const sh = await shopByToken(req.params.token); if (!sh) return res.status(404).send("Not found");
+    const b = req.body || {}, size = R.clean(b.bike_size).slice(0, 20) || null;
+    // only someone with a rental booking can be changed from this page
+    const p = (await pool.query("SELECT p.* FROM corp_participants p WHERE p.pid = $1 AND EXISTS (SELECT 1 FROM corp_signups su WHERE su.participant_id = p.id AND su.rent)", [R.clean(b.pid)])).rows[0];
+    if (p) { await pool.query("UPDATE corp_participants SET bike_size = $2, updated_at = now() WHERE id = $1", [p.id, size]); await audit(pool, `Bike shop (${sh.name || "shop"})`, "corp.bikeSize", "corp_participant", p.pid, { bike_size: p.bike_size }, { bike_size: size }); }
+    res.redirect(303, `/shop/${encodeURIComponent(req.params.token)}?saved=1`);
+  }));
   app.post("/corporate/signups/shop", S, wrap(async (req, res) => {
-    const b = req.body || {}, v = { name: R.clean(b.name).slice(0, 60) || "Wolfi's", phone: R.normPhone(b.phone) || "", link: /^https:\/\/\S+$/i.test(R.clean(b.link)) ? R.clean(b.link).slice(0, 400) : "" };
+    const b = req.body || {}, old = await shopOf(), v = { token: old.token, name: R.clean(b.name).slice(0, 60) || "Wolfi's", phone: R.normPhone(b.phone) || "", link: /^https:\/\/\S+$/i.test(R.clean(b.link)) ? R.clean(b.link).slice(0, 400) : "" };
     if (R.clean(b.link) && !v.link) { setFlash(req, "err", "The booking link must start with https://"); return res.redirect("/corporate/signups?company=" + encodeURIComponent(R.clean(b.company))); }
     await pool.query("INSERT INTO settings (key, value) VALUES ('rentalShop', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(v)]);
     await audit(pool, actor(req), "corp.rentalShop", "settings", "rentalShop", null, v);
@@ -275,7 +312,7 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     const L = await loadRide(req); if (!L) return res.redirect("/corporate/signups");
     const { co, ride } = L, rt = await rental(co, ride.key), who = await signups(co, ride.key), bikes = who.filter((x) => x.rent), shop = await shopOf();
     const base = `/corporate/signups/${encodeURIComponent(co.code)}/${encodeURIComponent(ride.key)}`;
-    const msg = (shop.link ? `Hi ${shop.name || "Wolfi's"} team,\nThese ladies from the ${co.name} ride on ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""} are booking rental bikes on your link (description "${co.name} Corporate Ride"):\n${bikes.map((x, i) => `${i + 1}. ${x.full_name}${x.height_cm ? ` · ${x.height_cm} cm` : ""}`).join("\n")}\nThank you!` : wolfiMsg(co, ride, bikes).replace("{shop}", shop.name || "Wolfi's")) + `\n${(user(req).name || "").split(" ")[0] || "Cycling Development"} · Cycling Development`;
+    const msg = (shop.link ? `Hi ${shop.name || "Wolfi's"} team,\nThese ladies from the ${co.name} ride on ${dayLabel(ride.date)}${ride.time ? ", " + t12(ride.time) : ""} are booking rental bikes on your link (description "${co.name} Corporate Ride"):\n${bikes.map((x, i) => `${i + 1}. ${x.full_name}${x.height_cm ? ` · ${x.height_cm} cm` : ""}${x.bike_size ? ` · size ${x.bike_size}` : ""}`).join("\n")}\nThank you!` : wolfiMsg(co, ride, bikes).replace("{shop}", shop.name || "Wolfi's")) + `\n${(user(req).name || "").split(" ")[0] || "Cycling Development"} · Cycling Development`;
     res.send(page(req, "Ride sign-ups", `<p class="muted" style="margin:0 0 6px"><a href="/corporate/signups?company=${h(co.code)}">‹ All rides</a></p>
       <div class="card-head"><div><h2 style="font-size:22px">${h(co.name)} · ${h(dayLabel(ride.date))}</h2><p class="muted" style="margin:2px 0 0">${h(ride.title)}${ride.time ? " · " + h(t12(ride.time)) : ""}${ride.where ? " · " + h(ride.where) : ""} · ${nf(who.length)} coming · ${nf(bikes.length)} rental bike${bikes.length === 1 ? "" : "s"}</p></div></div>
       <div class="grid">${shop.link ? `<section class="card c4"><h2>Bike rental for this ride</h2><p class="lead">The ladies book their own bike on the ${h(shop.name || "shop")} booking link, writing <b>${h(co.name)} Corporate Ride</b> in the description. This list shows who said she needs a rental bike, to check against ${h(shop.name || "the shop")}'s bookings.</p>
@@ -286,10 +323,10 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
           <button class="btn primary">Save</button></form></section>`}
       <section class="card c8"><div class="si-top"><h2>Rental list for ${h(shop.name || "the shop")} (${nf(bikes.length)})</h2>
         <div class="toolbar" style="margin:0">${bikes.length ? `<a class="btn" href="${base}/rentals.xlsx">Download Excel</a><a class="btn primary" href="https://wa.me/${h(shop.phone || "")}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send to ${h(shop.name || "shop")} on WhatsApp</a>` : ""}</div></div>
-        ${table(["Ref", "Name", "ID", "Height"], bikes.map((x) => [x.ref || "—", x.full_name, x.pid, x.height_cm ? `${nf(x.height_cm)} cm` : "—"]), { empty: "No rental bikes booked yet." })}
+        ${table(["Ref", "Name", "ID", "Height", "Bike size"], bikes.map((x) => [x.ref || "—", x.full_name, x.pid, x.height_cm ? `${nf(x.height_cm)} cm` : "—", x.bike_size || "—"]), { empty: "No rental bikes booked yet." })}
         ${bikes.length ? `<details style="margin-top:10px"><summary class="hint">See the WhatsApp message</summary><pre class="rs-msg">${h(msg)}</pre></details>` : ""}${shop.phone ? "" : `<p class="hint">Add the shop's WhatsApp number on <a href="/corporate/signups?company=${h(co.code)}">Ride sign-ups</a> so the message opens in their chat.</p>`}</section>
       <section class="card c12"><h2>Who's coming (${nf(who.length)})</h2>
-        ${table(["Name", "ID", "Bike", "Signed up", ""], who.map((x) => [x.full_name, x.pid, x.rent ? (x.ref ? `Rental · ${x.ref} · ${nf(x.height_cm)} cm` : `Rental (books with ${shop.name || "the shop"})${x.height_cm ? ` · ${nf(x.height_cm)} cm` : ""}`) : "Own bike", require("./views").fmtTs(x.created_at),
+        ${table(["Name", "ID", "Bike", "Signed up", ""], who.map((x) => [x.full_name, x.pid, x.rent ? (x.ref ? `Rental · ${x.ref}${x.height_cm ? ` · ${nf(x.height_cm)} cm` : ""}` : `Rental (books with ${shop.name || "the shop"})${x.height_cm ? ` · ${nf(x.height_cm)} cm` : ""}`) : "Own bike", require("./views").fmtTs(x.created_at),
           raw(`<form method="post" action="${base}/remove" style="display:inline"><input type="hidden" name="id" value="${x.id}"><button class="btn tblbtn" data-confirm="Remove ${h(x.full_name)} from this ride?">Remove</button></form>`)]), { empty: "Nobody has signed up yet. Share the link from Ride sign-ups." })}</section></div>`, { active: "/corporate/signups" }));
   }));
   app.post("/corporate/signups/:code/:key/rental", S, wrap(async (req, res) => {
@@ -314,9 +351,9 @@ module.exports = function corpSignup(app, { need, page, setFlash, actor, user, w
     const bikes = (await signups(L.co, L.ride.key)).filter((x) => x.rent), ExcelJS = require("exceljs"), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Rental bikes");
     ws.addRow([`${L.co.name} ride · ${dayLabel(L.ride.date)}${L.ride.time ? " · " + t12(L.ride.time) : ""}${L.ride.where ? " · " + L.ride.where : ""}`]).font = { bold: true, size: 13 };
     ws.addRow([`${bikes.length} rental bike${bikes.length === 1 ? "" : "s"}`]); ws.addRow([]);
-    const hr = ws.addRow(["#", "Booking ref", "Name", "Height (cm)"]); hr.font = { bold: true };
-    bikes.forEach((x, i) => ws.addRow([i + 1, x.ref || "", x.full_name, x.height_cm || ""]));
-    ws.columns = [{ width: 5 }, { width: 18 }, { width: 32 }, { width: 13 }];
+    const hr = ws.addRow(["#", "Booking ref", "Name", "Height (cm)", "Bike size"]); hr.font = { bold: true };
+    bikes.forEach((x, i) => ws.addRow([i + 1, x.ref || "", x.full_name, x.height_cm || "", x.bike_size || ""]));
+    ws.columns = [{ width: 5 }, { width: 18 }, { width: 32 }, { width: 13 }, { width: 12 }];
     res.set({ "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${L.co.code}-rental-bikes-${L.ride.date}.xlsx"` });
     res.send(Buffer.from(await wb.xlsx.writeBuffer()));
   }));
