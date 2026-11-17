@@ -13,6 +13,7 @@ const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses
 const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
   ["intro", "Intro", "Every rider remembers her first ride: the nerves, the wobble, the joy. Ride It Forward helps women who are new to cycling begin with the right gear and a community cheering them on. Give your gear a new home and help her ride.", 500],
+  ["aim", "Our aim", "To help more women begin their cycling journey by providing donated cycling essentials, building confidence and connecting them with a supportive cycling community.", 400],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
@@ -88,6 +89,8 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <p class="rif-tag">${para(t.tagline)}</p>
         <p class="rif-sub">${para(t.intro)}</p>
       </section>
+      <section class="rif-aim"><h2>Our aim</h2><p>${para(t.aim)}</p>
+        <div class="rif-pills"><span>🎁 Essentials</span><span>💪 Confidence</span><span>🤝 Community</span></div></section>
       <div class="rif-choices">
         <a class="rif-choice" href="/ride-it-forward/donate">
           <span class="rif-ic" aria-hidden="true">🎁</span>
