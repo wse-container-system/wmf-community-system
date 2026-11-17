@@ -17,7 +17,7 @@ const TEXT = [
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
   ["day_when", "Event day: date", "Sunday, 6 December 2026", 120],
   ["day_text", "Event day: text", "All women are invited! Join our women-only community ride, then watch the final of the Hudayriyat Women's Races series and cheer on amazing, strong women to look up to.", 600],
-  ["dropoff", "Where to drop donations", "Drop your items at the Ride It Forward donation point, or bring them to a WMF ride.", 300],
+  ["dropoff", "Where to drop donations", "Drop your items at Wolfi's reception from 30 November to 4 December.", 300],
 ];
 async function loadText() {
   const r = (await pool.query("SELECT value FROM settings WHERE key = 'rideItForward'")).rows[0];
@@ -105,7 +105,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p></div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
-          <li><b>Donate</b><span>Drop clean, good-condition gear at the donation point, or bring it to a WMF ride.</span></li>
+          <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
           <li><b>Apply</b><span>Beginners share their story during the one-week application period.</span></li>
           <li><b>Ride</b><span>Selected women receive their gear on ${h(t.day_title)} (${h(t.day_when)}) and ride with a community cheering them on.</span></li>
         </ol>
