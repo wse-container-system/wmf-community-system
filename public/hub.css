@@ -729,3 +729,8 @@ a.btn.done { opacity: .7; }
 .rif-day .rif-kicker { color: var(--accent, #4a4fb5); }
 .rif-date { flex: none; width: 56px; border-radius: 10px; background: var(--brand-grad-deep); color: #fff; text-align: center; font-size: 26px; font-weight: 700; line-height: 1; padding: 8px 0 10px; }
 .rif-date small { display: block; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 4px; opacity: .9; }
+.rif-aim { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; text-align: center; display: grid; gap: 8px; }
+.rif-aim h2 { margin: 0; font-size: 20px; }
+.rif-aim p { margin: 0 auto; max-width: 52ch; line-height: 1.5; color: var(--ink-2); }
+.rif-pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+.rif-pills span { background: var(--accent-wash, #eef0fd); border: 1px solid var(--brand-lavender); border-radius: 999px; padding: 5px 12px; font-size: 14px; font-weight: 600; }
