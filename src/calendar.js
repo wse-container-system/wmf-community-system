@@ -20,7 +20,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function toItem(row, act) {
   const it = { id: row.id, t: row.title, c: row.category, s: row.start_date, e: row.end_date, st: row.start_time || "", et: row.end_time || "",
     loc: row.location || "", status: row.status, r: row.recur || null, x: row.exceptions || null, u: row.url || (act && act.strava_url) || "", slot: row.ride_slot || null };
-  if (act && act.registration_open && act.kind === "event" && act.status === "Active" && (!act.event_date || act.event_date >= R.todayLocal())) it.signup = "/events/" + encodeURIComponent(act.activity_id);
+  if (act && act.registration_open && act.kind === "event" && act.status === "Active" && (!act.event_date || act.event_date >= R.todayLocal())) it.signup = act.activity_id === "ACT-RIDE-IT-FORWARD-DAY" ? "/ride-it-forward#day" : "/events/" + encodeURIComponent(act.activity_id);
   if (act && Number(act.price_aed) > 0) it.fee = "AED " + Number(act.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 });
   return it;
 }

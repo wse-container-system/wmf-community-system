@@ -549,6 +549,9 @@ test("cycling development hub", async (t) => {
     assert.match((await donor("/ride-it-forward")).text, /As Gia Ver/);
     assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: {} })).location, "/ride-it-forward?going=yes#day");
     assert.equal((await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND voided_at IS NULL")).rows[0].n, 2);
+    // on the WMF calendar, Sign up opens the Ride It Forward page
+    const cal = JSON.parse((await pub("/api/calendar.json")).text);
+    assert.ok(JSON.stringify(cal).includes("/ride-it-forward#day"));
     // closed after the last day to apply: donations stay open
     await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);
     assert.equal((await pub("/events/" + id)).status, 404);

@@ -536,6 +536,10 @@ INSERT INTO activities (activity_id, name, activity_type, category, kind, locati
   VALUES ('ACT-RIDE-IT-FORWARD-DAY', 'Ride It Forward Day', 'Event Registration', 'Community Gatherings', 'event', 'Abu Dhabi', 'Active', TRUE, '2026-12-06',
     'Women-only community ride, then the final of the Hudayriyat Women''s Races series. All women are invited!')
   ON CONFLICT (activity_id) DO NOTHING;
+-- Ride It Forward Day on the WMF calendar (Sign up opens the Ride It Forward page)
+INSERT INTO calendar_items (title, category, start_date, end_date, location, status, activity_id)
+  SELECT 'Ride It Forward Day (women only)', 'wmf_event', '2026-12-06', '2026-12-06', 'Abu Dhabi', 'Confirmed', 'ACT-RIDE-IT-FORWARD-DAY'
+  WHERE NOT EXISTS (SELECT 1 FROM calendar_items WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY');
 -- Ride It Forward gear donations ("Give Your Gear a New Home")
 CREATE TABLE IF NOT EXISTS gear_donations (
   id SERIAL PRIMARY KEY, ref TEXT UNIQUE, full_name TEXT NOT NULL, mobile TEXT, email TEXT, items TEXT[] NOT NULL DEFAULT '{}', details TEXT,
