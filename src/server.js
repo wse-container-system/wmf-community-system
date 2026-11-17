@@ -10,6 +10,7 @@ const { pool, migrate, tx, audit, getSettings } = require("./db");
 const R = require("./rules");
 const { h, layout, ROLE_TEXT, fmtDate, fmtTs } = require("./views");
 const { buildData, anonymise } = require("./snapshot");
+const APPLY = require("./apply");
 
 const app = express();
 const PROD = process.env.NODE_ENV === "production";
@@ -198,6 +199,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       ${tile("/scan", "Ride check-ins today", s.today, fmtDate(today))}
       ${tile("/members?sort=new", "New members, last 30 days", s.new30, "Registrations")}
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
+      ${tile("/ride-it-forward/manage", "Ride It Forward", "Open", "Gear donations, applications, QR code")}
       ${tile("/rides", "Attendance per ride", "Check", "Spot riders you forgot to scan")}
       ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
@@ -207,6 +209,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link, and the calendar shows every ride and event.</p>
       <dl class="kv"><dt>Registration</dt><dd><a href="/join">${h(req.protocol + "://" + req.get("host"))}/join</a></dd>
       <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd>
+      <dt>Ride It Forward</dt><dd><a href="/ride-it-forward">${h(req.protocol + "://" + req.get("host"))}/ride-it-forward</a> · <a href="/ride-it-forward/manage">QR code</a></dd>
       <dt>Ride calendar</dt><dd><a href="/calendar">${h(req.protocol + "://" + req.get("host"))}/calendar</a> · <a href="/calendar/manage">Share it (WhatsApp, QR code)</a></dd></dl></section>`, { active: "/wmf" }));
 }));
 
@@ -426,9 +429,9 @@ app.post("/join", limit("join", 8, 60 * 60e3), wrap(async (req, res) => {
 
 // ======================= public: event sign-up =======================
 app.get("/events", wrap(async (req, res) => {
-  const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
+  const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) AND (apply_until IS NULL OR apply_until >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
   res.send(page(req, "Events", `<section class="card"><h2>Upcoming WMF events</h2><p class="lead">Choose an event to sign up.</p>
-    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${priceText(e) ? " · " + h(priceText(e)) : " · Free"}${e.strava_url ? " · on Strava" : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
+    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.apply_form ? (e.apply_until ? " · Apply by " + fmtDate(e.apply_until) : " · Applications open") : priceText(e) ? " · " + h(priceText(e)) : " · Free"}${e.strava_url ? " · on Strava" : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
     <p style="margin-top:14px"><a href="/calendar">See the full WMF calendar</a> · <a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
 }));
 const priceText = (e) => (Number(e.price_aed) > 0 ? "AED " + Number(e.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "");
@@ -436,27 +439,31 @@ const stravaBtn = (e, text = "Join on Strava ↗") => (e.strava_url && /^https:\
   ? `<a class="btn strava" href="${h(e.strava_url)}" target="_blank" rel="noopener noreferrer">${h(text)}</a>` : "");
 const safePayUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch (err) { return ""; } };
 function eventForm(e, v = {}, err) {
-  return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.notes ? "<br>" + h(e.notes) : ""}</p>
+  return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${[e.event_date ? fmtDate(e.event_date) : "", e.location ? h(e.location) : ""].filter(Boolean).join(" · ")}${e.notes ? "<br>" + h(e.notes) : ""}</p>
     ${priceText(e) ? `<div class="alert info"><span class="ic">i</span><span><b>Fee: ${h(priceText(e))}.</b> After you sign up you'll be taken to the payment page. Your place is confirmed once payment is received.</span></div>` : ""}
+    ${e.apply_form ? `<div class="alert info"><span class="ic">i</span><span><b>This is an application.</b> Tell us your story below. ${e.apply_until ? `Applications close on <b>${fmtDate(e.apply_until)}</b>. ` : ""}The WMF team will contact the selected participants.</span></div>` : ""}
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     ${e.strava_url ? `<p class="hint" style="margin:0 0 8px">This event is also on Strava. Sign up here first, then ${stravaBtn(e, "join it on Strava ↗")} so your ride is part of it.</p>` : ""}
     <form class="form" method="post">
-      <label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>
+      ${e.apply_form ? "" : `<label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>`}
       <label>Full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel"></label></div>
+      ${e.apply_form ? APPLY.fields(v) : ""}
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-      <button class="btn primary big">Sign up</button></form></section>`;
+      <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form>
+    ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? `<p style="margin:12px 0 0"><a href="/ride-it-forward">Back to Ride It Forward</a></p>` : ""}</section>`;
 }
+const evOpts = (e) => ({ wide: false, ...(e.activity_id === "ACT-RIDE-IT-FORWARD" ? { active: "/ride-it-forward" } : {}) });
 async function openEvent(id) {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'event'", [id])).rows[0];
-  return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) ? e : null;
+  return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) && (!e.apply_until || e.apply_until >= R.todayLocal()) ? e : null;
 }
 app.get("/events/:id", wrap(async (req, res) => {
   const e = await openEvent(req.params.id);
   if (!e) return res.status(404).send(page(req, "Event", `<section class="card"><h2>Sign-up is closed</h2><p class="lead"><a href="/events">See open events</a></p></section>`, { wide: false }));
-  res.send(page(req, e.name, eventForm(e), { wide: false }));
+  res.send(page(req, e.name, eventForm(e), evOpts(e)));
 }));
 app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => {
   const b = req.body || {};
@@ -465,7 +472,9 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   if (!e) return res.redirect("/events");
   const email = R.normEmail(b.email);
   if (!R.clean(b.full_name) || !R.EMAIL_RE.test(email) || R.normPhone(b.mobile).length < 9 || !b.waiver_consent)
-    return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), { wide: false }));
+    return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), evOpts(e)));
+  const ap = e.apply_form ? APPLY.read(b) : {};
+  if (ap.err) return res.send(page(req, e.name, eventForm(e, b, ap.err), evOpts(e)));
   const out = await tx(async (c) => {
     await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["event|" + e.activity_id]);
     // the Member ID only counts when it belongs to the same email, so nobody can sign up as someone else
@@ -483,18 +492,20 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     const r = await R.addParticipation(c, { member, recordType: "Event Registration", date: R.nowLocal(), activityId: e.activity_id, activityName: e.name,
       activityType: e.activity_type || "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: `event|${member.member_id}|${e.activity_id}` }, "public");
     let paymentStatus = r.row.payment_status;
+    if (!r.duplicate && ap.answers) await c.query("UPDATE participation SET answers = $2 WHERE id = $1", [r.row.id, JSON.stringify(ap.answers)]);
     if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
-  if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), { wide: false }));
+  if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), evOpts(e)));
   let qr = "";
   if (out.created) { const img = await qrDataUrl(out.member.qr_value); qr = `<p class="lead">You're also now a WMF member. This is your personal QR code for rides:</p><div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(out.member.member_id)}</span></div><a class="btn" href="${img}" download="${h(out.member.member_id)}-WMF-QR.png">Download QR code</a>`; }
   const payUrl = safePayUrl(e.payment_url);
   const pay = out.paymentStatus === "Unpaid" && priceText(e) ? `<div class="alert warn"><span class="ic">!</span><span><b>One more step: pay ${h(priceText(e))}.</b> Your place is confirmed once payment is received.${payUrl ? "" : " The WMF team will send you payment details."} Your reference: <b>${h(out.recordId)}</b></span></div>
     ${payUrl ? `<a class="btn primary big" href="${h(payUrl)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none">Pay ${h(priceText(e))} now ↗</a>` : ""}` : out.paymentStatus === "Paid" ? `<p><span class="badge good">Payment received</span></p>` : "";
-  res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
+  res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${e.apply_form ? (out.duplicate ? "You've already applied" : "Thank you, your application is in!") : out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
+    ${e.apply_form ? `<p class="lead">We'll read every story and contact the selected participants${e.apply_until ? " after " + fmtDate(e.apply_until) : ""}. Your reference: <b>${h(out.recordId)}</b></p>` : ""}
     <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}
-    ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
+    ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, evOpts(e)));
 }));
 
 // ======================= members =======================
@@ -666,6 +677,7 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
 
 // ======================= rides & events (see events.js, rides.js) =======================
 require("./events")(app, { need, page, setFlash, actor, user, wrap });
+require("./rideforward")(app, { need, page, actor, wrap, limit, qrPng, qrDataUrl });
 require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn, qrSend, qrDataUrl });
 
 // ======================= WMF monthly export =======================
