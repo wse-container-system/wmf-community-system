@@ -539,13 +539,15 @@ test("cycling development hub", async (t) => {
     assert.match((await pub("/ride-it-forward/review/" + tok, { method: "POST", form: { who: "Lynsey", tagline: "Manager tagline", approve: "1" } })).text, /approved/);
     assert.match((await pub("/ride-it-forward")).text, /Manager tagline/);
     assert.match((await admin("/ride-it-forward/manage")).text, /Approved by Lynsey/);
-    // event day: "I'm attending" right on the page, and ticked on the donation form
-    assert.match((await pub("/ride-it-forward")).text, /I&#39;m attending|I'm attending/);
-    let r2 = await pub("/ride-it-forward/attend", { method: "POST", form: { full_name: "Day Rider", mobile: "0501230000", waiver_consent: "1" } });
+    // event day: someone new gives name + mobile once; someone who donated just taps
+    const fresh = client();
+    let r2 = await fresh("/ride-it-forward/attend", { method: "POST", form: { full_name: "Day Rider", mobile: "0501230000" } });
     assert.equal(r2.location, "/ride-it-forward?going=yes#day");
-    assert.match((await pub("/ride-it-forward?going=yes")).text, /on the list/);
-    await pub("/ride-it-forward/attend", { method: "POST", form: { full_name: "Day Rider", mobile: "0501230000", waiver_consent: "1" } });
-    await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Gia Ver", mobile: "0501230011", items: "Gloves", condition: "1", attend_day: "1" } });
+    assert.match((await fresh("/ride-it-forward")).text, /on the list, Day/);
+    const donor = client();
+    await donor("/ride-it-forward/donate", { method: "POST", form: { full_name: "Gia Ver", mobile: "0501230011", items: "Gloves", condition: "1" } });
+    assert.match((await donor("/ride-it-forward")).text, /As Gia Ver/);
+    assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: {} })).location, "/ride-it-forward?going=yes#day");
     assert.equal((await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND voided_at IS NULL")).rows[0].n, 2);
     // closed after the last day to apply: donations stay open
     await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);

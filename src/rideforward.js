@@ -59,6 +59,20 @@ async function markAttending(c, f, source) {
     activityType: d.activity_type || "Event Registration", status: "Registered", source, dedupeKey: `event|${m.member_id}|${DAY}` }, "public");
   return true;
 }
+// ---------- remember who this is (after they apply, donate or attend), so "I'm attending" is one tap ----------
+const SECRET = process.env.SESSION_SECRET || "dev-only-secret";
+const sig = (v) => crypto.createHmac("sha256", SECRET).update("rif|" + v).digest("base64url").slice(0, 16);
+function rememberMe(res, f, going) {
+  const v = Buffer.from(JSON.stringify({ n: R.clean(f.full_name), m: R.clean(f.mobile), e: R.normEmail(f.email) || "", g: going ? 1 : 0 })).toString("base64url");
+  res.cookie("rif_me", v + "." + sig(v), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 365 * 864e5, path: "/" });
+}
+function whoAmI(req) {
+  const raw = String(req.get("cookie") || "").split(/;\s*/).find((c) => c.startsWith("rif_me="));
+  if (!raw) return null;
+  const [v, s2] = raw.slice(7).split(".");
+  if (!v || !s2 || s2.length !== 16 || !crypto.timingSafeEqual(Buffer.from(s2), Buffer.from(sig(v)))) return null;
+  try { const o = JSON.parse(Buffer.from(v, "base64url").toString()); return o && o.n && o.m ? o : null; } catch (e) { return null; }
+}
 const attendBox = (label) => `<label class="check"><input type="checkbox" name="attend_day" value="1"> <span>${label}</span></label>`;
 
 async function applyOpen() {
@@ -96,13 +110,16 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
   app.post("/ride-it-forward/attend", limit("attend", 10, 60 * 60e3), wrap(async (req, res) => {
     const b = req.body || {};
     if (b.website) return res.redirect("/ride-it-forward");
-    if (!R.clean(b.full_name) || R.normPhone(b.mobile).length < 9 || !b.waiver_consent) return res.redirect("/ride-it-forward?going=check#day");
-    const ok = await tx((c) => markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile) }, "Ride It Forward Day"));
+    const me = whoAmI(req);
+    const f = me && !b.full_name ? { full_name: me.n, mobile: me.m, email: me.e } : { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile) };
+    if (!R.clean(f.full_name) || R.normPhone(f.mobile).length < 9) return res.redirect("/ride-it-forward?going=check#day");
+    const ok = await tx((c) => markAttending(c, f, "Ride It Forward Day"));
+    if (ok) rememberMe(res, f, true);
     res.redirect("/ride-it-forward?going=" + (ok ? "yes" : "closed") + "#day");
   }));
   app.get("/ride-it-forward", wrap(async (req, res) => {
     const { e, open } = await applyOpen();
-    const t = await loadText();
+    const t = await loadText(), me = whoAmI(req);
     const day = (await pool.query("SELECT 1 FROM activities WHERE activity_id = $1 AND registration_open AND status = 'Active' AND (event_date IS NULL OR event_date >= $2::date)", [DAY, R.todayLocal()])).rows[0];
     res.send(pub(req, "Ride It Forward", `<div class="rif">
       <section class="rif-hero">
@@ -127,14 +144,18 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
       </div>
       <section class="rif-day" id="day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
         <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p>
-        ${req.query.going === "yes" ? `<p class="rif-going">✓ You're on the list. See you on the day!</p>`
-          : day ? `<form class="form rif-attend" method="post" action="/ride-it-forward/attend">
-            ${req.query.going === "check" ? `<p class="flash err" role="alert" style="margin:0">Please add your name and mobile, and tick the box.</p>` : ""}
+        ${req.query.going === "yes" || (me && me.g) ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}. See you on the day!</p>`
+          : !day ? "" : me ? `<form class="rif-attend" method="post" action="/ride-it-forward/attend">
+            <button class="btn primary">I'm attending</button>
+            <span class="rif-note">As ${h(me.n)}. By tapping, you ride at your own risk and follow the ride leader.</span></form>`
+          : `<details class="rif-attend-new" ${req.query.going === "check" ? "open" : ""}><summary class="btn primary">I'm attending</summary>
+            <form class="form rif-attend" method="post" action="/ride-it-forward/attend">
+            ${req.query.going === "check" ? `<p class="flash err" role="alert" style="margin:0">Please add your name and mobile.</p>` : ""}
             <div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
               <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>
-            <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>I ride at my own risk and follow the ride leader.</span></label>
             <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-            <button class="btn primary">I'm attending</button></form>` : ""}</div></section>
+            <button class="btn primary">Confirm</button>
+            <span class="rif-note">By confirming, you ride at your own risk and follow the ride leader.</span></form></details>`}</div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
           <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
@@ -166,6 +187,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
       if (b.attend_day) await markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile), email }, "Ride It Forward Day");
       return r;
     });
+    rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, !!b.attend_day);
     const t = await loadText();
     res.send(pub(req, "Thank you", `<div class="rif"><section class="rif-hero"><h2>Thank you for riding it forward!</h2>
       <p class="rif-sub">Your gear will help a beginner start her cycling journey. ${para(t.dropoff)}</p>
@@ -262,3 +284,4 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
 module.exports.EVENT = EVENT;
 module.exports.markAttending = markAttending;
 module.exports.attendBox = attendBox;
+module.exports.rememberMe = rememberMe;
