@@ -4,6 +4,7 @@ const { pool, tx, audit } = require("./db");
 const { syncHeldEvents } = require("./activations");
 const R = require("./rules");
 const { h, fmtDate, fmtTs } = require("./views");
+const APPLY = require("./apply");
 
 const LOCS = ["Abu Dhabi", "Dubai", "Other"];
 const money = (n) => (Number(n) > 0 ? "AED " + Number(n).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "Free");
@@ -21,6 +22,7 @@ function readEvent(b, a = {}) {
     registration_open: !!b.registration_open, notes: R.clean(b.notes) || null, price_aed: price > 0 ? price : null, payment_url: url || null,
     status: b.status === "Inactive" ? "Inactive" : "Active", strava_url: strava || null,
     partners: String(b.partners || "").split(",").map(R.clean).filter(Boolean).join(", ") || null,
+    apply_form: !!b.apply_form, apply_until: /^\d{4}-\d{2}-\d{2}$/.test(b.apply_until || "") ? b.apply_until : null,
     category: CATEGORIES.includes(b.category) ? b.category : a.category && CATEGORIES.includes(a.category) ? a.category : "Themed Community Rides",
   } };
 }
@@ -38,6 +40,9 @@ function eventFields(a = {}) {
       <div class="row2"><label>Price in AED <span class="hint">(blank or 0 = free)</span><input type="number" min="0" step="0.01" name="price_aed" value="${h(a.price_aed || "")}"></label>
         <label>Payment link <span class="hint">(Ziina, Stripe, bank page… must start with https://)</span><input type="url" name="payment_url" maxlength="400" value="${h(a.payment_url)}"></label></div>
       <p class="hint" style="margin:6px 0 0">After signing up, people see a “Pay now” button that opens this link. Mark each person as Paid on the sign-up list when the money arrives.</p></fieldset>
+    <fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px"><legend style="font-weight:600;color:var(--ink-2);font-size:14px">Applications (e.g. Ride It Forward)</legend>
+      <label class="check"><input type="checkbox" name="apply_form" value="1" ${a.apply_form ? "checked" : ""}> <span>People apply with their story and the gear they need; the team selects who takes part</span></label>
+      <label>Last day to apply <span class="hint">(blank = until sign-up is closed)</span><input type="date" name="apply_until" value="${h(a.apply_until || "")}"></label></fieldset>
     <label class="check"><input type="checkbox" name="registration_open" value="1" ${a.registration_open ? "checked" : ""}> <span>Public sign-up open</span></label>`;
 }
 
@@ -54,7 +59,7 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
     const core = r.rows.filter((a) => a.core), evs = r.rows.filter((a) => a.kind === "event"), old = r.rows.filter((a) => a.kind !== "event" && !a.core);
     const today = R.todayLocal();
     const upcoming = evs.filter((e) => !e.event_date || e.event_date >= today), past = evs.filter((e) => e.event_date && e.event_date < today);
-    const evRow = (e) => `<tr><td><a href="/activities/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a>${e.status !== "Active" ? ' <span class="badge">Inactive</span>' : ""}${e.strava_url ? ' <span class="badge">Strava</span>' : ""}
+    const evRow = (e) => `<tr><td><a href="/activities/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a>${e.status !== "Active" ? ' <span class="badge">Inactive</span>' : ""}${e.strava_url ? ' <span class="badge">Strava</span>' : ""}${e.apply_form ? ' <span class="badge">Applications</span>' : ""}
         <br><a class="btn tblbtn" href="/activities/${encodeURIComponent(e.activity_id)}">Edit</a>${e.activation_id ? ` <a class="btn tblbtn" href="/activations/${e.activation_id}">Activation</a>` : ""}</td>
       <td>${fmtDate(e.event_date)}</td><td>${h(money(e.price_aed))}</td>
       <td class="n"><a href="/activities/${encodeURIComponent(e.activity_id)}/signups">${e.n}${e.capacity ? " / " + e.capacity : ""}</a>${Number(e.price_aed) > 0 ? `<br><span class="muted">${e.paid} paid</span>` : ""}</td>
@@ -127,32 +132,40 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
     const paid = Number(a.price_aed) > 0;
     const count = (s) => rows.filter((r) => (r.payment_status || "") === s).length;
     const collected = count("Paid") * Number(a.price_aed || 0);
+    const ap = !!a.apply_form, sel = (s) => rows.filter((r) => (r.selection || "") === s).length;
     res.send(page(req, "Sign-ups", `<section class="card">
       <div class="card-head"><div><h2>${h(a.name)}</h2><p class="lead">${fmtDate(a.event_date)} · ${h(money(a.price_aed))}${a.capacity ? ` · capacity ${a.capacity}` : ""}</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}">Event settings</a><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}/signups.csv">Download list (CSV)</a></div></div>
       <div class="tiles" style="margin:6px 0 14px">
-        <div class="tile"><span class="lbl">Signed up</span><span class="val">${rows.length}</span></div>
+        <div class="tile"><span class="lbl">${ap ? "Applications" : "Signed up"}</span><span class="val">${rows.length}</span></div>
+        ${ap ? `<div class="tile"><span class="lbl">Selected</span><span class="val">${sel("Selected")}</span></div>
+        <div class="tile ${sel("") ? "attn" : ""}"><span class="lbl">To review</span><span class="val">${sel("")}</span></div>` : ""}
         <div class="tile"><span class="lbl">Came</span><span class="val">${rows.filter((r) => r.status === "Attended").length}</span></div>
         ${paid ? `<div class="tile"><span class="lbl">Paid</span><span class="val">${count("Paid")}</span></div>
         <div class="tile ${count("Unpaid") ? "attn" : ""}"><span class="lbl">Not paid yet</span><span class="val">${count("Unpaid")}</span></div>
         <div class="tile"><span class="lbl">Collected</span><span class="val">${h(money(collected))}</span><span class="note">Paid × fee</span></div>` : ""}
       </div>
       <p class="lead" style="margin:0 0 8px">After the event, tick who came: the attendance goes to the activation report.</p>
-      <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Contact</th><th>Signed up</th><th>Came</th>${paid ? "<th>Payment</th>" : ""}</tr></thead><tbody>
+      <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Contact</th>${ap ? "<th>Application</th><th>Selection</th>" : ""}<th>Signed up</th><th>Came</th>${paid ? "<th>Payment</th>" : ""}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/members/${encodeURIComponent(r.member_id || "")}">${h(r.full_name || r.member_name || "—")}</a><br><span class="muted">${h(r.member_id || "")} · ${h(r.record_id || "")}</span></td>
-        <td>${h(R.maskEmail(r.primary_email || r.member_email) || "—")}<br><span class="muted">${h(R.maskPhone(r.mobile || r.phone))}</span></td><td>${fmtDate(r.record_date)}</td>
+        <td>${h(R.maskEmail(r.primary_email || r.member_email) || "—")}<br><span class="muted">${h(R.maskPhone(r.mobile || r.phone))}</span></td>
+        ${ap ? `<td style="min-width:240px">${APPLY.summary(r.answers)}</td><td><form method="post" action="/participation/${r.id}/selection" class="toolbar" style="margin:0;align-items:center">
+          <select class="inp" name="selection" style="width:auto;min-height:32px;font-size:14px"><option value="">To review</option>${APPLY.SELECTION.map((s) => `<option ${r.selection === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+          <button class="btn tblbtn">Save</button></form></td>` : ""}<td>${fmtDate(r.record_date)}</td>
         <td><form method="post" action="/participation/${r.id}/attended" style="margin:0"><button class="btn tblbtn ${r.status === "Attended" ? "primary" : ""}" name="came" value="${r.status === "Attended" ? "0" : "1"}" aria-pressed="${r.status === "Attended"}">${r.status === "Attended" ? "✓ Came" : "Mark came"}</button></form></td>
         ${paid ? `<td><form method="post" action="/participation/${r.id}/payment" class="toolbar" style="margin:0;align-items:center">
           <select class="inp" name="status" style="width:auto;min-height:32px;font-size:14px">${PAY.map((s) => `<option ${(r.payment_status || "Unpaid") === s ? "selected" : ""}>${s}</option>`).join("")}</select>
           <input class="inp" name="note" value="${h(r.payment_note || "")}" placeholder="Ref / note" style="max-width:140px;min-height:32px;font-size:13px">
-          <button class="btn tblbtn">Save</button></form>${r.paid_at ? `<span class="muted" style="font-size:12px">Paid ${fmtTs(r.paid_at)}</span>` : ""}</td>` : ""}</tr>`).join("") || `<tr><td colspan="5" class="muted">No sign-ups yet.</td></tr>`}
+          <button class="btn tblbtn">Save</button></form>${r.paid_at ? `<span class="muted" style="font-size:12px">Paid ${fmtTs(r.paid_at)}</span>` : ""}</td>` : ""}</tr>`).join("") || `<tr><td colspan="8" class="muted">No sign-ups yet.</td></tr>`}
       </tbody></table></div></section>`, { active: "/activities" }));
   }));
   app.get("/activities/:id/signups.csv", STAFF, wrap(async (req, res) => {
     const rows = await signups(req.params.id);
+    const ap = rows.some((r) => r.answers);
     const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-    const csv = [["Reference", "Member ID", "Name", "Signed up", "Payment", "Payment note"].map(q).join(",")]
-      .concat(rows.map((r) => [r.record_id, r.member_id, r.full_name || r.member_name, String(r.record_date).slice(0, 16).replace("T", " "), r.payment_status || "", r.payment_note || ""].map(q).join(",")));
+    const csv = [["Reference", "Member ID", "Name", "Signed up", "Payment", "Payment note", ...(ap ? ["Selection", ...APPLY.csvCols] : [])].map(q).join(",")]
+      .concat(rows.map((r) => [r.record_id, r.member_id, r.full_name || r.member_name, String(r.record_date).slice(0, 16).replace("T", " "), r.payment_status || "", r.payment_note || "",
+        ...(ap ? [r.selection || "To review", ...APPLY.csvRow(r.answers || {})] : [])].map(q).join(",")));
     await audit(pool, actor(req), "signups.download", "activity", req.params.id, null, { rows: rows.length }, null);
     res.type("text/csv").set("Content-Disposition", `attachment; filename="signups-${req.params.id}.csv"`).send("﻿" + csv.join("\r\n"));
   }));
@@ -164,6 +177,17 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
       await c.query("UPDATE participation SET status = $2 WHERE id = $1", [p.id, status]);
       await audit(c, actor(req), "event.attended", "participation", p.record_id, { status: p.status }, { status });
     });
+    res.redirect("/activities/" + encodeURIComponent(p.activity_id) + "/signups");
+  }));
+  app.post("/participation/:id/selection", STAFF, wrap(async (req, res) => {
+    const p = (await pool.query("SELECT * FROM participation WHERE id = $1 AND voided_at IS NULL", [+req.params.id])).rows[0];
+    if (!p) return res.redirect("/activities");
+    const selection = APPLY.SELECTION.includes(req.body.selection) ? req.body.selection : null;
+    await tx(async (c) => {
+      await c.query("UPDATE participation SET selection = $2 WHERE id = $1", [p.id, selection]);
+      await audit(c, actor(req), "application.selection", "participation", p.record_id, { selection: p.selection }, { selection });
+    });
+    setFlash(req, "ok", `${p.member_name || p.record_id}: ${selection || "to review"}.`);
     res.redirect("/activities/" + encodeURIComponent(p.activity_id) + "/signups");
   }));
   app.post("/participation/:id/payment", STAFF, wrap(async (req, res) => {

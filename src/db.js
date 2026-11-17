@@ -522,6 +522,16 @@ ALTER TABLE report_notes ADD COLUMN IF NOT EXISTS mgmt JSONB;
 ALTER TABLE report_links ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'marketing';
 ALTER TABLE report_links ADD COLUMN IF NOT EXISTS can_edit BOOLEAN NOT NULL DEFAULT false; -- a management link that can also edit the words (e.g. for the manager)
 UPDATE report_links SET kind = 'marketing' WHERE kind = 'mkinput'; -- one marketing link: input links became marketing links
+-- events that take applications (story + gear needed) instead of a plain sign-up, e.g. Ride It Forward
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS apply_form BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS apply_until DATE; -- last day to apply
+ALTER TABLE participation ADD COLUMN IF NOT EXISTS answers JSONB;  -- the application answers
+ALTER TABLE participation ADD COLUMN IF NOT EXISTS selection TEXT; -- Selected / Not selected (blank = to review)
+INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, registration_open, apply_form, apply_until, notes)
+  VALUES ('ACT-RIDE-IT-FORWARD', 'Ride It Forward', 'Event Registration', 'Campaigns & Challenges', 'event', 'Abu Dhabi', 'Active', TRUE, TRUE,
+    (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
+    'Share your gear. Support someone''s cycling journey. Apply to receive donated cycling essentials and start riding with a supportive community.')
+  ON CONFLICT (activity_id) DO NOTHING;
 `;
 
 const DEFAULT_SETTINGS = {

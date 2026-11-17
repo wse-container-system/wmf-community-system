@@ -10,6 +10,7 @@ const { pool, migrate, tx, audit, getSettings } = require("./db");
 const R = require("./rules");
 const { h, layout, ROLE_TEXT, fmtDate, fmtTs } = require("./views");
 const { buildData, anonymise } = require("./snapshot");
+const APPLY = require("./apply");
 
 const app = express();
 const PROD = process.env.NODE_ENV === "production";
@@ -426,9 +427,9 @@ app.post("/join", limit("join", 8, 60 * 60e3), wrap(async (req, res) => {
 
 // ======================= public: event sign-up =======================
 app.get("/events", wrap(async (req, res) => {
-  const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
+  const r = await pool.query("SELECT * FROM activities WHERE registration_open AND kind = 'event' AND status = 'Active' AND (event_date IS NULL OR event_date >= $1::date) AND (apply_until IS NULL OR apply_until >= $1::date) ORDER BY event_date NULLS LAST, name", [R.todayLocal()]);
   res.send(page(req, "Events", `<section class="card"><h2>Upcoming WMF events</h2><p class="lead">Choose an event to sign up.</p>
-    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${priceText(e) ? " · " + h(priceText(e)) : " · Free"}${e.strava_url ? " · on Strava" : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
+    ${r.rows.length ? `<ul class="log">${r.rows.map((e) => `<li><a href="/events/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a><span class="muted">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.apply_form ? (e.apply_until ? " · Apply by " + fmtDate(e.apply_until) : " · Applications open") : priceText(e) ? " · " + h(priceText(e)) : " · Free"}${e.strava_url ? " · on Strava" : ""}</span></li>`).join("")}</ul>` : `<p class="muted">No events are open for sign-up right now.</p>`}
     <p style="margin-top:14px"><a href="/calendar">See the full WMF calendar</a> · <a href="/join">New to WMF? Register here</a></p></section>`, { wide: false }));
 }));
 const priceText = (e) => (Number(e.price_aed) > 0 ? "AED " + Number(e.price_aed).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "");
@@ -436,8 +437,9 @@ const stravaBtn = (e, text = "Join on Strava ↗") => (e.strava_url && /^https:\
   ? `<a class="btn strava" href="${h(e.strava_url)}" target="_blank" rel="noopener noreferrer">${h(text)}</a>` : "");
 const safePayUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch (err) { return ""; } };
 function eventForm(e, v = {}, err) {
-  return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${e.event_date ? fmtDate(e.event_date) : ""}${e.location ? " · " + h(e.location) : ""}${e.notes ? "<br>" + h(e.notes) : ""}</p>
+  return `<section class="card"><h2>${h(e.name)}</h2><p class="lead">${[e.event_date ? fmtDate(e.event_date) : "", e.location ? h(e.location) : ""].filter(Boolean).join(" · ")}${e.notes ? "<br>" + h(e.notes) : ""}</p>
     ${priceText(e) ? `<div class="alert info"><span class="ic">i</span><span><b>Fee: ${h(priceText(e))}.</b> After you sign up you'll be taken to the payment page. Your place is confirmed once payment is received.</span></div>` : ""}
+    ${e.apply_form ? `<div class="alert info"><span class="ic">i</span><span><b>This is an application.</b> Tell us your story below. ${e.apply_until ? `Applications close on <b>${fmtDate(e.apply_until)}</b>. ` : ""}The WMF team will contact the selected participants.</span></div>` : ""}
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     ${e.strava_url ? `<p class="hint" style="margin:0 0 8px">This event is also on Strava. Sign up here first, then ${stravaBtn(e, "join it on Strava ↗")} so your ride is part of it.</p>` : ""}
     <form class="form" method="post">
@@ -445,13 +447,14 @@ function eventForm(e, v = {}, err) {
       <label>Full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel"></label></div>
+      ${e.apply_form ? APPLY.fields(v) : ""}
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-      <button class="btn primary big">Sign up</button></form></section>`;
+      <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form></section>`;
 }
 async function openEvent(id) {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'event'", [id])).rows[0];
-  return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) ? e : null;
+  return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) && (!e.apply_until || e.apply_until >= R.todayLocal()) ? e : null;
 }
 app.get("/events/:id", wrap(async (req, res) => {
   const e = await openEvent(req.params.id);
@@ -466,6 +469,8 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   const email = R.normEmail(b.email);
   if (!R.clean(b.full_name) || !R.EMAIL_RE.test(email) || R.normPhone(b.mobile).length < 9 || !b.waiver_consent)
     return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), { wide: false }));
+  const ap = e.apply_form ? APPLY.read(b) : {};
+  if (ap.err) return res.send(page(req, e.name, eventForm(e, b, ap.err), { wide: false }));
   const out = await tx(async (c) => {
     await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["event|" + e.activity_id]);
     // the Member ID only counts when it belongs to the same email, so nobody can sign up as someone else
@@ -483,6 +488,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     const r = await R.addParticipation(c, { member, recordType: "Event Registration", date: R.nowLocal(), activityId: e.activity_id, activityName: e.name,
       activityType: e.activity_type || "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: `event|${member.member_id}|${e.activity_id}` }, "public");
     let paymentStatus = r.row.payment_status;
+    if (!r.duplicate && ap.answers) await c.query("UPDATE participation SET answers = $2 WHERE id = $1", [r.row.id, JSON.stringify(ap.answers)]);
     if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
@@ -492,7 +498,8 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   const payUrl = safePayUrl(e.payment_url);
   const pay = out.paymentStatus === "Unpaid" && priceText(e) ? `<div class="alert warn"><span class="ic">!</span><span><b>One more step: pay ${h(priceText(e))}.</b> Your place is confirmed once payment is received.${payUrl ? "" : " The WMF team will send you payment details."} Your reference: <b>${h(out.recordId)}</b></span></div>
     ${payUrl ? `<a class="btn primary big" href="${h(payUrl)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none">Pay ${h(priceText(e))} now ↗</a>` : ""}` : out.paymentStatus === "Paid" ? `<p><span class="badge good">Payment received</span></p>` : "";
-  res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
+  res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${e.apply_form ? (out.duplicate ? "You've already applied" : "Thank you, your application is in!") : out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
+    ${e.apply_form ? `<p class="lead">We'll read every story and contact the selected participants${e.apply_until ? " after " + fmtDate(e.apply_until) : ""}. Your reference: <b>${h(out.recordId)}</b></p>` : ""}
     <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}
     ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
 }));

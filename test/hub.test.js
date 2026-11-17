@@ -503,6 +503,27 @@ test("cycling development hub", async (t) => {
     assert.match(lcsv.text, /Approved/);
   });
 
+  await t.test("WMF Ride It Forward: applications with story and gear, selection, CSV", async () => {
+    const pub = client(), id = "ACT-RIDE-IT-FORWARD";
+    assert.match(ok200(await pub("/events"), "events").text, /Ride It Forward/);
+    assert.match(ok200(await pub("/events/" + id), "apply form").text, /Your story/);
+    const form = { full_name: "Ana Rider", email: "ana.rider@example.org", mobile: "0501239876", waiver_consent: "1", experience: "I'm learning to ride", has_bike: "No" };
+    assert.match((await pub("/events/" + id, { method: "POST", form: { ...form, story: "short" } })).text, /a few sentences/);
+    const body = new URLSearchParams({ ...form, story: "I want to ride with my daughter and build my confidence on the road.", share_story: "1" });
+    body.append("gear", "Helmet"); body.append("gear", "Bike");
+    assert.match((await pub("/events/" + id, { method: "POST", multipart: body.toString(), headers: { "content-type": "application/x-www-form-urlencoded" } })).text, /application is in/);
+    const p = (await pool.query("SELECT * FROM participation WHERE activity_id = $1", [id])).rows[0];
+    assert.deepEqual(p.answers.gear, ["Helmet", "Bike"]);
+    const list = ok200(await admin(`/activities/${id}/signups`), "applications").text;
+    assert.match(list, /build my confidence/); assert.match(list, /To review/);
+    await admin(`/participation/${p.id}/selection`, { method: "POST", form: { selection: "Selected" } });
+    assert.equal((await pool.query("SELECT selection FROM participation WHERE id = $1", [p.id])).rows[0].selection, "Selected");
+    assert.match((await admin(`/activities/${id}/signups.csv`)).text, /Selected.*Helmet; Bike/);
+    // closed after the last day to apply
+    await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);
+    assert.equal((await pub("/events/" + id)).status, 404);
+  });
+
   await t.test("WMF: held event becomes an activation, survey, social growth, report", async () => {
     const H = E.helpers, past = H.addDays(today, -5), m = past.slice(0, 7);
     // an event with a Strava link and a partner
