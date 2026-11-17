@@ -503,25 +503,35 @@ test("cycling development hub", async (t) => {
     assert.match(lcsv.text, /Approved/);
   });
 
-  await t.test("WMF Ride It Forward: applications with story and gear, selection, CSV", async () => {
+  await t.test("WMF Ride It Forward: landing page, donations, applications with sizes, selection, CSV", async () => {
     const pub = client(), id = "ACT-RIDE-IT-FORWARD";
-    assert.match(ok200(await pub("/events"), "events").text, /Ride It Forward/);
-    assert.match(ok200(await pub("/events/" + id), "apply form").text, /Your story/);
-    const form = { full_name: "Ana Rider", email: "ana.rider@example.org", mobile: "0501239876", waiver_consent: "1", experience: "I'm learning to ride", has_bike: "No" };
-    assert.match((await pub("/events/" + id, { method: "POST", form: { ...form, story: "short" } })).text, /a few sentences/);
-    const body = new URLSearchParams({ ...form, story: "I want to ride with my daughter and build my confidence on the road.", share_story: "1" });
-    body.append("gear", "Helmet"); body.append("gear", "Bike");
-    assert.match((await pub("/events/" + id, { method: "POST", multipart: body.toString(), headers: { "content-type": "application/x-www-form-urlencoded" } })).text, /application is in/);
+    const land = ok200(await pub("/ride-it-forward"), "landing").text;
+    assert.match(land, /Donate gear/); assert.match(land, /Apply now/);
+    // donation
+    assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", condition: "1" } })).text, /tick what you/);
+    assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", items: "Helmet", details: "M", condition: "1" } })).text, /RIF-0001/);
+    const man = ok200(await admin("/ride-it-forward/manage"), "manage").text;
+    assert.match(man, /Dee Nor/); assert.match(man, /Download QR code/);
+    const did = (await pool.query("SELECT id FROM gear_donations")).rows[0].id;
+    await admin(`/ride-it-forward/donations/${did}`, { method: "POST", form: { received: "1" } });
+    assert.equal((await pool.query("SELECT received FROM gear_donations")).rows[0].received, true);
+    assert.equal((await admin("/ride-it-forward/qr.png")).type, "image/png");
+    // application
+    const formPage = ok200(await pub("/events/" + id), "apply form").text;
+    assert.match(formPage, /Bib shorts size/); assert.doesNotMatch(formPage, /Member ID/);
+    const form = { full_name: "Ana Rider", email: "ana.rider@example.org", mobile: "0501239876", waiver_consent: "1", experience: "I'm learning to ride", has_bike: "No", jersey_size: "M", bib_size: "S" };
+    assert.match((await pub("/events/" + id, { method: "POST", form: { ...form, story: "short" } })).text, /share a few sentences/);
+    assert.match((await pub("/events/" + id, { method: "POST", form: { ...form, story: "I want to ride with my daughter and build my confidence on the road.", share_story: "1" } })).text, /application is in/);
     const p = (await pool.query("SELECT * FROM participation WHERE activity_id = $1", [id])).rows[0];
-    assert.deepEqual(p.answers.gear, ["Helmet", "Bike"]);
+    assert.equal(p.answers.bib_size, "S");
     const list = ok200(await admin(`/activities/${id}/signups`), "applications").text;
     assert.match(list, /build my confidence/); assert.match(list, /To review/);
     await admin(`/participation/${p.id}/selection`, { method: "POST", form: { selection: "Selected" } });
-    assert.equal((await pool.query("SELECT selection FROM participation WHERE id = $1", [p.id])).rows[0].selection, "Selected");
-    assert.match((await admin(`/activities/${id}/signups.csv`)).text, /Selected.*Helmet; Bike/);
-    // closed after the last day to apply
+    assert.match((await admin(`/activities/${id}/signups.csv`)).text, /"Selected".*"M","S"/);
+    // closed after the last day to apply: donations stay open
     await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);
     assert.equal((await pub("/events/" + id)).status, 404);
+    assert.match((await pub("/ride-it-forward")).text, /Applications are closed/);
   });
 
   await t.test("WMF: held event becomes an activation, survey, social growth, report", async () => {

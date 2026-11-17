@@ -199,6 +199,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       ${tile("/scan", "Ride check-ins today", s.today, fmtDate(today))}
       ${tile("/members?sort=new", "New members, last 30 days", s.new30, "Registrations")}
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
+      ${tile("/ride-it-forward/manage", "Ride It Forward", "Open", "Gear donations, applications, QR code")}
       ${tile("/rides", "Attendance per ride", "Check", "Spot riders you forgot to scan")}
       ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
@@ -208,6 +209,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link, and the calendar shows every ride and event.</p>
       <dl class="kv"><dt>Registration</dt><dd><a href="/join">${h(req.protocol + "://" + req.get("host"))}/join</a></dd>
       <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd>
+      <dt>Ride It Forward</dt><dd><a href="/ride-it-forward">${h(req.protocol + "://" + req.get("host"))}/ride-it-forward</a> · <a href="/ride-it-forward/manage">QR code</a></dd>
       <dt>Ride calendar</dt><dd><a href="/calendar">${h(req.protocol + "://" + req.get("host"))}/calendar</a> · <a href="/calendar/manage">Share it (WhatsApp, QR code)</a></dd></dl></section>`, { active: "/wmf" }));
 }));
 
@@ -443,15 +445,17 @@ function eventForm(e, v = {}, err) {
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     ${e.strava_url ? `<p class="hint" style="margin:0 0 8px">This event is also on Strava. Sign up here first, then ${stravaBtn(e, "join it on Strava ↗")} so your ride is part of it.</p>` : ""}
     <form class="form" method="post">
-      <label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>
+      ${e.apply_form ? "" : `<label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>`}
       <label>Full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel"></label></div>
       ${e.apply_form ? APPLY.fields(v) : ""}
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-      <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form></section>`;
+      <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form>
+    ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? `<p style="margin:12px 0 0"><a href="/ride-it-forward">Back to Ride It Forward</a></p>` : ""}</section>`;
 }
+const evOpts = (e) => ({ wide: false, ...(e.activity_id === "ACT-RIDE-IT-FORWARD" ? { active: "/ride-it-forward" } : {}) });
 async function openEvent(id) {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'event'", [id])).rows[0];
   return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) && (!e.apply_until || e.apply_until >= R.todayLocal()) ? e : null;
@@ -459,7 +463,7 @@ async function openEvent(id) {
 app.get("/events/:id", wrap(async (req, res) => {
   const e = await openEvent(req.params.id);
   if (!e) return res.status(404).send(page(req, "Event", `<section class="card"><h2>Sign-up is closed</h2><p class="lead"><a href="/events">See open events</a></p></section>`, { wide: false }));
-  res.send(page(req, e.name, eventForm(e), { wide: false }));
+  res.send(page(req, e.name, eventForm(e), evOpts(e)));
 }));
 app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => {
   const b = req.body || {};
@@ -468,9 +472,9 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   if (!e) return res.redirect("/events");
   const email = R.normEmail(b.email);
   if (!R.clean(b.full_name) || !R.EMAIL_RE.test(email) || R.normPhone(b.mobile).length < 9 || !b.waiver_consent)
-    return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), { wide: false }));
+    return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), evOpts(e)));
   const ap = e.apply_form ? APPLY.read(b) : {};
-  if (ap.err) return res.send(page(req, e.name, eventForm(e, b, ap.err), { wide: false }));
+  if (ap.err) return res.send(page(req, e.name, eventForm(e, b, ap.err), evOpts(e)));
   const out = await tx(async (c) => {
     await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["event|" + e.activity_id]);
     // the Member ID only counts when it belongs to the same email, so nobody can sign up as someone else
@@ -492,7 +496,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
-  if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), { wide: false }));
+  if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), evOpts(e)));
   let qr = "";
   if (out.created) { const img = await qrDataUrl(out.member.qr_value); qr = `<p class="lead">You're also now a WMF member. This is your personal QR code for rides:</p><div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(out.member.member_id)}</span></div><a class="btn" href="${img}" download="${h(out.member.member_id)}-WMF-QR.png">Download QR code</a>`; }
   const payUrl = safePayUrl(e.payment_url);
@@ -501,7 +505,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${e.apply_form ? (out.duplicate ? "You've already applied" : "Thank you, your application is in!") : out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
     ${e.apply_form ? `<p class="lead">We'll read every story and contact the selected participants${e.apply_until ? " after " + fmtDate(e.apply_until) : ""}. Your reference: <b>${h(out.recordId)}</b></p>` : ""}
     <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}
-    ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, { wide: false }));
+    ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, evOpts(e)));
 }));
 
 // ======================= members =======================
@@ -673,6 +677,7 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
 
 // ======================= rides & events (see events.js, rides.js) =======================
 require("./events")(app, { need, page, setFlash, actor, user, wrap });
+require("./rideforward")(app, { need, page, actor, wrap, limit, qrPng, qrDataUrl });
 require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn, qrSend, qrDataUrl });
 
 // ======================= WMF monthly export =======================

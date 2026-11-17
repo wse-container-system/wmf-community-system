@@ -532,6 +532,11 @@ INSERT INTO activities (activity_id, name, activity_type, category, kind, locati
     (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
     'Share your gear. Support someone''s cycling journey. Apply to receive donated cycling essentials and start riding with a supportive community.')
   ON CONFLICT (activity_id) DO NOTHING;
+-- Ride It Forward gear donations ("Give Your Gear a New Home")
+CREATE TABLE IF NOT EXISTS gear_donations (
+  id SERIAL PRIMARY KEY, ref TEXT UNIQUE, full_name TEXT NOT NULL, mobile TEXT, email TEXT, items TEXT[] NOT NULL DEFAULT '{}', details TEXT,
+  received BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 const DEFAULT_SETTINGS = {

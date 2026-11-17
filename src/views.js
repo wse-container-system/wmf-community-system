@@ -12,7 +12,7 @@ const SECTIONS = [
   { key: "reports", label: "Reports", home: "/report/management", roles: ["admin", "coordinator", "viewer"], scoped: false, match: /^\/report(\/|\.|$)/, links: [
     ["/report/management", "Management", ["admin", "coordinator", "viewer"]], ["/report", "Performance report", ["admin", "coordinator", "viewer"]],
     ["/corporate/management", "Corporate report", ["admin", "coordinator", "viewer"]]] },
-  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
+  { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|ride-it-forward|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
