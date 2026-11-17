@@ -549,6 +549,9 @@ test("cycling development hub", async (t) => {
     assert.match((await donor("/ride-it-forward")).text, /As Gia Ver/);
     assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: {} })).location, "/ride-it-forward?going=yes#day");
     assert.equal((await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND voided_at IS NULL")).rows[0].n, 2);
+    // member page: send the personal QR code on WhatsApp (to the member's number, with the QR link)
+    const mp = ok200(await admin("/members/" + encodeURIComponent(p.member_id)), "member").text;
+    assert.match(mp, /href="https:\/\/wa\.me\/9715\d+\?text=[^"]*%2Fq%2FWMF-\d{6}\./);
     // on the WMF calendar, Sign up opens the Ride It Forward page
     const cal = JSON.parse((await pub("/api/calendar.json")).text);
     assert.ok(JSON.stringify(cal).includes("/ride-it-forward#day"));
