@@ -6,14 +6,14 @@ const R = require("./rules");
 const { h, fmtDate, fmtTs } = require("./views");
 
 const EVENT = "ACT-RIDE-IT-FORWARD";
+const DAY = "ACT-RIDE-IT-FORWARD-DAY"; // plain sign-up for the event day (community ride)
 const ITEMS = ["Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoes", "Lights", "Water bottle", "Other"];
 const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses and water bottles", "Lights, reflectors, saddle bags and basic tools", "Other clean, safe and usable cycling accessories"];
 
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
 const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
-  ["intro", "Intro", "A WMF initiative that opens the road for women taking their first pedal strokes. Beginners receive donated essentials and a community that rides beside them, while riders give their pre-loved gear a new home and start someone's cycling story.", 500],
-  ["aim", "Our aim", "To help more women begin their cycling journey by providing donated cycling essentials, building confidence and connecting them with a supportive cycling community.", 400],
+  ["intro", "Intro", "Remember your first ride? Someone believed in you, lent you gear, rode beside you. Now it's your turn to pass it on. Together, let's help a woman find her wheels, her courage and her community.", 500],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
@@ -82,6 +82,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
   app.get("/ride-it-forward", wrap(async (req, res) => {
     const { e, open } = await applyOpen();
     const t = await loadText();
+    const day = (await pool.query("SELECT 1 FROM activities WHERE activity_id = $1 AND registration_open AND status = 'Active' AND (event_date IS NULL OR event_date >= $2::date)", [DAY, R.todayLocal()])).rows[0];
     res.send(pub(req, "Ride It Forward", `<div class="rif">
       <section class="rif-hero">
         <p class="rif-kicker">WMN Moving FWD</p>
@@ -89,8 +90,6 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <p class="rif-tag">${para(t.tagline)}</p>
         <p class="rif-sub">${para(t.intro)}</p>
       </section>
-      <section class="rif-aim"><h2>Our aim</h2><p>${para(t.aim)}</p>
-        <div class="rif-pills"><span>🎁 Essentials</span><span>💪 Confidence</span><span>🤝 Community</span></div></section>
       <div class="rif-choices">
         <a class="rif-choice" href="/ride-it-forward/donate">
           <span class="rif-ic" aria-hidden="true">🎁</span>
@@ -106,7 +105,8 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
       <section class="rif-day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
-        <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p></div></section>
+        <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p>
+        ${day ? `<a class="btn primary" href="/events/${DAY}" style="margin-top:12px">I'm coming: sign up</a>` : ""}</div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
           <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
@@ -147,6 +147,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
   // ---------- staff: QR code, link, donations ----------
   app.get("/ride-it-forward/manage", STAFF, wrap(async (req, res) => {
     const d = (await pool.query("SELECT * FROM gear_donations ORDER BY created_at DESC")).rows;
+    const daysign = (await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = $1 AND voided_at IS NULL", [DAY])).rows[0].n;
     const apps = (await pool.query("SELECT count(*)::int n, count(*) FILTER (WHERE selection = 'Selected')::int s FROM participation WHERE activity_id = $1 AND voided_at IS NULL", [EVENT])).rows[0];
     const img = await qrDataUrl(link(req));
     const t = await loadText(), tok = await reviewToken();
@@ -159,7 +160,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <p><a href="/ride-it-forward">${h(link(req))}</a></p>
         <a class="btn primary" href="/ride-it-forward/qr.png">Download QR code</a></section>
       <section class="card c8"><div class="card-head"><div><h2>Donations</h2></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${EVENT}/signups">Applications (${apps.n}, ${apps.s} selected)</a><a class="btn" href="/activities/${EVENT}">Event settings</a></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${EVENT}/signups">Applications (${apps.n}, ${apps.s} selected)</a><a class="btn" href="/activities/${DAY}/signups">Event day sign-ups (${daysign})</a><a class="btn" href="/activities/${EVENT}">Event settings</a></div></div>
         <div class="tiles" style="margin:6px 0 14px"><div class="tile"><span class="lbl">Donations</span><span class="val">${d.length}</span></div>
           <div class="tile"><span class="lbl">Received</span><span class="val">${d.filter((x) => x.received).length}</span></div></div>
         <div class="tw"><table><thead><tr><th>Donor</th><th>Items</th><th>Date</th><th>Received</th></tr></thead><tbody>

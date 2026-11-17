@@ -539,6 +539,9 @@ test("cycling development hub", async (t) => {
     assert.match((await pub("/ride-it-forward/review/" + tok, { method: "POST", form: { who: "Lynsey", tagline: "Manager tagline", approve: "1" } })).text, /approved/);
     assert.match((await pub("/ride-it-forward")).text, /Manager tagline/);
     assert.match((await admin("/ride-it-forward/manage")).text, /Approved by Lynsey/);
+    // event day sign-up
+    assert.match((await pub("/ride-it-forward")).text, /I'm coming: sign up|I&#39;m coming/);
+    assert.match((await pub("/events/ACT-RIDE-IT-FORWARD-DAY", { method: "POST", form: { full_name: "Day Rider", email: "day.rider@example.org", mobile: "0501230000", waiver_consent: "1" } })).text, /signed up/);
     // closed after the last day to apply: donations stay open
     await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);
     assert.equal((await pub("/events/" + id)).status, 404);

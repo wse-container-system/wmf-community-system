@@ -532,6 +532,10 @@ INSERT INTO activities (activity_id, name, activity_type, category, kind, locati
     (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
     'Share your gear. Support someone''s cycling journey. Apply to receive donated cycling essentials and start riding with a supportive community.')
   ON CONFLICT (activity_id) DO NOTHING;
+INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, registration_open, event_date, notes)
+  VALUES ('ACT-RIDE-IT-FORWARD-DAY', 'Ride It Forward Day', 'Event Registration', 'Community Gatherings', 'event', 'Abu Dhabi', 'Active', TRUE, '2026-12-06',
+    'Women-only community ride, then the final of the Hudayriyat Women''s Races series. All women are invited!')
+  ON CONFLICT (activity_id) DO NOTHING;
 -- Ride It Forward gear donations ("Give Your Gear a New Home")
 CREATE TABLE IF NOT EXISTS gear_donations (
   id SERIAL PRIMARY KEY, ref TEXT UNIQUE, full_name TEXT NOT NULL, mobile TEXT, email TEXT, items TEXT[] NOT NULL DEFAULT '{}', details TEXT,
