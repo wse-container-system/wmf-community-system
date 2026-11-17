@@ -509,7 +509,7 @@ test("cycling development hub", async (t) => {
     assert.match(land, /Donate gear/); assert.match(land, /Apply now/);
     // donation
     assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", condition: "1" } })).text, /tick what you/);
-    assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", items: "Shoes, sunglasses and water bottles", details: "Shoes 39", condition: "1" } })).text, /RIF-0001/);
+    assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", items: "Cycling shoes", details: "Shoes 39", condition: "1" } })).text, /RIF-0001/);
     const man = ok200(await admin("/ride-it-forward/manage"), "manage").text;
     assert.match(man, /Dee Nor/); assert.match(man, /Download QR code/);
     const did = (await pool.query("SELECT id FROM gear_donations")).rows[0].id;
