@@ -10,8 +10,8 @@ const ITEMS = ["Bike", "Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoe
 
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
 const TEXT = [
-  ["tagline", "Tagline", "Share your gear. Support someone's cycling journey.", 160],
-  ["intro", "Intro", "Every rider started somewhere. The helmet in your cupboard or the jersey you no longer wear could be what gives a woman the confidence to take her first ride.", 500],
+  ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
+  ["intro", "Intro", "We help women who are new to cycling get started, with donated essentials, confidence and a supportive community to ride with. In parallel, we invite our community to share their used cycling gear and give it a new home.", 500],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
