@@ -453,9 +453,9 @@ function eventForm(e, v = {}, err) {
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form>
-    ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? `<p style="margin:12px 0 0"><a href="/ride-it-forward">Back to Ride It Forward</a></p>` : ""}</section>`;
+    ${e.activity_id.startsWith("ACT-RIDE-IT-FORWARD") ? `<p style="margin:12px 0 0"><a href="/ride-it-forward">Back to Ride It Forward</a></p>` : ""}</section>`;
 }
-const evOpts = (e) => ({ wide: false, ...(e.activity_id === "ACT-RIDE-IT-FORWARD" ? { active: "/ride-it-forward" } : {}) });
+const evOpts = (e) => ({ wide: false, ...(e.activity_id.startsWith("ACT-RIDE-IT-FORWARD") ? { active: "/ride-it-forward" } : {}) });
 async function openEvent(id) {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1 AND kind = 'event'", [id])).rows[0];
   return e && e.registration_open && e.status === "Active" && (!e.event_date || e.event_date >= R.todayLocal()) && (!e.apply_until || e.apply_until >= R.todayLocal()) ? e : null;
