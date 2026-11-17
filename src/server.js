@@ -607,7 +607,15 @@ app.get("/members/:id", need(...STAFF), browseLimit, wrap(async (req, res) => {
           <button class="btn primary">Save changes</button></form></section>
       <section class="card c4"><h2>QR code</h2><p class="lead">Same code as the one already sent: it holds ${h(m.qr_value || m.member_id)}.</p>
         <div class="qrbox"><img src="${img}" alt="QR code"><span class="id">${h(m.qr_value || m.member_id)}</span></div>
-        <p style="margin-top:10px"><a class="btn" href="/members/${encodeURIComponent(m.member_id)}/qr.png">Download PNG</a></p>
+        ${(() => {
+          if (m.merged_into) return `<p style="margin-top:10px"><a class="btn" href="/members/${encodeURIComponent(m.member_id)}/qr.png">Download PNG</a></p>`;
+          const x = qrSend(req, m);
+          const msg = `Hi ${x.first}, here is your personal WMN Moving FWD QR code for our rides: ${x.qrUrl}\nPlease save it and show it to the ride leader at every ride.`;
+          return `<div class="toolbar" style="margin-top:10px"><a class="btn primary" href="https://wa.me/${x.phone ? encodeURIComponent(x.phone) : ""}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a>
+            <a class="btn" href="/members/${encodeURIComponent(m.member_id)}/qr.png">Download PNG</a>
+            <button class="btn" type="button" data-copy="${h(x.qrUrl)}">Copy QR link</button></div>
+            <p class="hint" style="margin:6px 0 0">${x.phone ? "Opens WhatsApp with her number and a message holding her QR link." : "No mobile on file: WhatsApp opens so you can pick the contact."}</p>`;
+        })()}
         ${isAdmin && !m.merged_into ? `<h2 style="margin-top:18px">Merge a duplicate</h2><p class="lead">Moves the other record's activity here and keeps its email as an alternative. The other Member ID's QR code keeps working.</p>
         <form class="form" method="post" action="/members/${encodeURIComponent(m.member_id)}/merge">
           <label>Duplicate Member ID<input name="other" required placeholder="WMF-000123"></label>
