@@ -16,7 +16,7 @@ const TEXT = [
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
   ["day_when", "Event day: date", "Sunday, 6 December 2026", 120],
-  ["day_text", "Event day: text", "Everyone is invited! Join our community ride, then watch the final of the Hudayriyat Women's Races series and cheer on amazing, strong women to look up to.", 600],
+  ["day_text", "Event day: text", "All women are invited! Join our women-only community ride, then watch the final of the Hudayriyat Women's Races series and cheer on amazing, strong women to look up to.", 600],
   ["dropoff", "Where to drop donations", "Drop your items at the Ride It Forward donation point, or bring them to a WMF ride.", 300],
 ];
 async function loadText() {
