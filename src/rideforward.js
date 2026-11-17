@@ -6,12 +6,14 @@ const R = require("./rules");
 const { h, fmtDate, fmtTs } = require("./views");
 
 const EVENT = "ACT-RIDE-IT-FORWARD";
-const ITEMS = ["Bike", "Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoes", "Lights", "Water bottle", "Other"];
+const ITEMS = ["Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoes", "Lights", "Water bottle", "Other"];
+const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses and water bottles", "Lights, reflectors, saddle bags and basic tools", "Other clean, safe and usable cycling accessories"];
 
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
 const TEXT = [
-  ["tagline", "Tagline", "Share your gear. Support someone's cycling journey.", 160],
-  ["intro", "Intro", "Every rider started somewhere. The helmet in your cupboard or the jersey you no longer wear could be what gives a woman the confidence to take her first ride.", 500],
+  ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
+  ["intro", "Intro", "A WMF initiative that opens the road for women taking their first pedal strokes. Beginners receive donated essentials and a community that rides beside them, while riders give their pre-loved gear a new home and start someone's cycling story.", 500],
+  ["aim", "Our aim", "To help more women begin their cycling journey by providing donated cycling essentials, building confidence and connecting them with a supportive cycling community.", 400],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
@@ -63,8 +65,8 @@ function donateForm(v = {}, err) {
       <div class="row2"><label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel" inputmode="tel"></label>
         <label>Email <span class="hint">(optional)</span><input name="email" type="email" maxlength="160" value="${h(v.email)}" autocomplete="email"></label></div>
       <fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px"><legend style="font-weight:600;color:var(--ink-2);font-size:14px">What are you donating?</legend>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px 12px">${ITEMS.map((g) => `<label class="check"><input type="checkbox" name="items" value="${h(g)}" ${items.includes(g) ? "checked" : ""}> <span>${h(g)}</span></label>`).join("")}</div></fieldset>
-      <label>Sizes and details <span class="hint">(e.g. jersey M, bib shorts S, helmet 54–58 cm)</span><textarea name="details" maxlength="600" rows="3">${h(v.details)}</textarea></label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:4px 12px">${ITEMS.map((g) => `<label class="check"><input type="checkbox" name="items" value="${h(g)}" ${items.includes(g) ? "checked" : ""}> <span>${h(g)}</span></label>`).join("")}</div></fieldset>
+      <label>Sizes and details <span class="hint">(e.g. jersey M, bib shorts S, shoes 39)</span><textarea name="details" maxlength="600" rows="3">${h(v.details)}</textarea></label>
       <label class="check"><input type="checkbox" name="condition" value="1" required ${v.condition ? "checked" : ""}> <span>My items are clean and in good condition.</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">Donate my gear</button>
@@ -87,6 +89,8 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <p class="rif-tag">${para(t.tagline)}</p>
         <p class="rif-sub">${para(t.intro)}</p>
       </section>
+      <section class="rif-aim"><h2>Our aim</h2><p>${para(t.aim)}</p>
+        <div class="rif-pills"><span>🎁 Essentials</span><span>💪 Confidence</span><span>🤝 Community</span></div></section>
       <div class="rif-choices">
         <a class="rif-choice" href="/ride-it-forward/donate">
           <span class="rif-ic" aria-hidden="true">🎁</span>
@@ -109,7 +113,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <li><b>Apply</b><span>Beginners share their story during the one-week application period.</span></li>
           <li><b>Ride</b><span>Selected women receive their gear on ${h(t.day_title)} (${h(t.day_when)}) and ride with a community cheering them on.</span></li>
         </ol>
-        <p class="muted" style="margin:10px 0 0">We collect: bikes, helmets, jerseys, bib shorts, gloves, cycling shoes, lights and bottles.</p></section>
+        <p style="margin:12px 0 4px"><b>What we collect</b></p><ul class="muted" style="margin:0;padding-left:20px">${COLLECT.map((i) => `<li>${h(i)}</li>`).join("")}</ul></section>
     </div>`));
   }));
 
