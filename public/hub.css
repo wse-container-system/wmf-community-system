@@ -723,3 +723,7 @@ a.btn.done { opacity: .7; }
 .rif-note { font-size: 13px; color: var(--ink-2); }
 .rif-steps { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
 .rif-steps li span { display: block; color: var(--ink-2); }
+.rif-day { display: flex; gap: 14px; align-items: flex-start; border-radius: 14px; padding: 18px; background: var(--accent-wash, #eef0fd); border: 1px solid var(--brand-lavender); }
+.rif-day h2 { margin: 2px 0 6px; font-size: 22px; }
+.rif-day p { margin: 0; line-height: 1.5; }
+.rif-day .rif-kicker { color: var(--accent, #4a4fb5); }

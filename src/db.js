@@ -527,8 +527,8 @@ ALTER TABLE activities ADD COLUMN IF NOT EXISTS apply_form BOOLEAN NOT NULL DEFA
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS apply_until DATE; -- last day to apply
 ALTER TABLE participation ADD COLUMN IF NOT EXISTS answers JSONB;  -- the application answers
 ALTER TABLE participation ADD COLUMN IF NOT EXISTS selection TEXT; -- Selected / Not selected (blank = to review)
-INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, registration_open, apply_form, apply_until, notes)
-  VALUES ('ACT-RIDE-IT-FORWARD', 'Ride It Forward', 'Event Registration', 'Campaigns & Challenges', 'event', 'Abu Dhabi', 'Active', TRUE, TRUE,
+INSERT INTO activities (activity_id, name, activity_type, category, kind, location, status, registration_open, apply_form, event_date, apply_until, notes)
+  VALUES ('ACT-RIDE-IT-FORWARD', 'Ride It Forward', 'Event Registration', 'Campaigns & Challenges', 'event', 'Abu Dhabi', 'Active', TRUE, TRUE, '2026-12-06',
     (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
     'Share your gear. Support someone''s cycling journey. Apply to receive donated cycling essentials and start riding with a supportive community.')
   ON CONFLICT (activity_id) DO NOTHING;

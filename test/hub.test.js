@@ -528,6 +528,17 @@ test("cycling development hub", async (t) => {
     assert.match(list, /build my confidence/); assert.match(list, /To review/);
     await admin(`/participation/${p.id}/selection`, { method: "POST", form: { selection: "Selected" } });
     assert.match((await admin(`/activities/${id}/signups.csv`)).text, /"Selected".*"M","S"/);
+    // event day on the page; team edits text; manager edits and approves through the review link
+    assert.match(ok200(await pub("/ride-it-forward"), "landing").text, /6 December 2026[\s\S]*Hudayriyat/);
+    await admin("/ride-it-forward/text", { method: "POST", form: { tagline: "Team tagline" } });
+    assert.match((await pub("/ride-it-forward")).text, /Team tagline/);
+    const tok = (await pool.query("SELECT value FROM settings WHERE key = 'rideItForward'")).rows[0].value.token;
+    assert.match(ok200(await admin("/ride-it-forward/manage"), "manage").text, /Waiting for approval/);
+    assert.equal((await pub("/ride-it-forward/review/wrong-token")).status, 404);
+    assert.match(ok200(await pub("/ride-it-forward/review/" + tok), "review").text, /Save &amp; approve|Save & approve/);
+    assert.match((await pub("/ride-it-forward/review/" + tok, { method: "POST", form: { who: "Lynsey", tagline: "Manager tagline", approve: "1" } })).text, /approved/);
+    assert.match((await pub("/ride-it-forward")).text, /Manager tagline/);
+    assert.match((await admin("/ride-it-forward/manage")).text, /Approved by Lynsey/);
     // closed after the last day to apply: donations stay open
     await pool.query("UPDATE activities SET apply_until = current_date - 1 WHERE activity_id = $1", [id]);
     assert.equal((await pub("/events/" + id)).status, 404);
