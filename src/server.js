@@ -11,6 +11,7 @@ const R = require("./rules");
 const { h, layout, ROLE_TEXT, fmtDate, fmtTs } = require("./views");
 const { buildData, anonymise } = require("./snapshot");
 const APPLY = require("./apply");
+const RIF = require("./rideforward");
 
 const app = express();
 const PROD = process.env.NODE_ENV === "production";
@@ -450,6 +451,7 @@ function eventForm(e, v = {}, err) {
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel"></label></div>
       ${e.apply_form ? APPLY.fields(v) : ""}
+      ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? RIF.attendBox("I'm attending Ride It Forward Day on 6 December.") : ""}
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form>
@@ -492,6 +494,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     const r = await R.addParticipation(c, { member, recordType: "Event Registration", date: R.nowLocal(), activityId: e.activity_id, activityName: e.name,
       activityType: e.activity_type || "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: `event|${member.member_id}|${e.activity_id}` }, "public");
     let paymentStatus = r.row.payment_status;
+    if (e.activity_id === "ACT-RIDE-IT-FORWARD" && b.attend_day) await RIF.markAttending(c, { full_name: b.full_name, email, mobile: b.mobile }, "Ride It Forward Day");
     if (!r.duplicate && ap.answers) await c.query("UPDATE participation SET answers = $2 WHERE id = $1", [r.row.id, JSON.stringify(ap.answers)]);
     if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };

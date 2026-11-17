@@ -729,3 +729,8 @@ a.btn.done { opacity: .7; }
 .rif-day .rif-kicker { color: var(--accent, #4a4fb5); }
 .rif-date { flex: none; width: 56px; border-radius: 10px; background: var(--brand-grad-deep); color: #fff; text-align: center; font-size: 26px; font-weight: 700; line-height: 1; padding: 8px 0 10px; }
 .rif-date small { display: block; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 4px; opacity: .9; }
+.rif-attend { display: grid; gap: 8px; margin-top: 12px; }
+.rif-attend-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rif-attend .btn { justify-self: start; }
+.rif-attend .check { font-size: 14px; }
+.rif-going { margin: 12px 0 0 !important; font-weight: 700; color: var(--accent, #4a4fb5); }
