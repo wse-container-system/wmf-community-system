@@ -734,3 +734,8 @@ a.btn.done { opacity: .7; }
 .rif-attend .btn { justify-self: start; }
 .rif-attend .check { font-size: 14px; }
 .rif-going { margin: 12px 0 0 !important; font-weight: 700; color: var(--accent, #4a4fb5); }
+.rif-attend-new { margin-top: 12px; }
+.rif-attend-new > summary { list-style: none; display: inline-flex; cursor: pointer; }
+.rif-attend-new > summary::-webkit-details-marker { display: none; }
+.rif-attend-new[open] > summary { display: none; }
+form.rif-attend:not(.form) { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }

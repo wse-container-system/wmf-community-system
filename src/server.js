@@ -500,6 +500,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
   if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), evOpts(e)));
+  if (e.activity_id === "ACT-RIDE-IT-FORWARD") RIF.rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, !!b.attend_day);
   let qr = "";
   if (out.created) { const img = await qrDataUrl(out.member.qr_value); qr = `<p class="lead">You're also now a WMF member. This is your personal QR code for rides:</p><div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(out.member.member_id)}</span></div><a class="btn" href="${img}" download="${h(out.member.member_id)}-WMF-QR.png">Download QR code</a>`; }
   const payUrl = safePayUrl(e.payment_url);
