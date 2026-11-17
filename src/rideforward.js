@@ -12,7 +12,7 @@ const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
 const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
-  ["intro", "Intro", "Every rider remembers her first ride: the nerves, the wobble, the joy. Ride It Forward helps women who are new to cycling begin with the right gear and a community cheering them on. Give your gear a new home and help her ride.", 500],
+  ["intro", "Intro", "Ride It Forward is a WMF initiative that helps women begin their cycling journey. Beginners apply to receive donated cycling essentials and join a community that rides beside them. At the same time, riders give their clean, good-condition gear a new home, so every item becomes someone's first step on the bike.", 500],
   ["aim", "Our aim", "To help more women begin their cycling journey by providing donated cycling essentials, building confidence and connecting them with a supportive cycling community.", 400],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
