@@ -101,7 +101,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I want to start riding</b>
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
-      <section class="rif-day"><span class="rif-ic" aria-hidden="true">📅</span><div>
+      <section class="rif-day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
         <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p></div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
