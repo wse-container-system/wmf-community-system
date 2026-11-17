@@ -13,7 +13,7 @@ const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
 const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
-  ["intro", "Intro", "Remember your first ride? Someone believed in you, lent you gear, rode beside you. Now it's your turn to pass it on. Together, let's help a woman find her wheels, her courage and her community.", 500],
+  ["intro", "Intro", "Every cyclist started with a first ride. Ride It Forward helps women take theirs, with donated gear, a little courage and a community cheering them on. Share your gear, share the road, and help someone begin.", 500],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
   ["apply", "“I want to start riding” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
@@ -48,6 +48,19 @@ function textForm(t, action, extra = "", buttons = `<button class="btn primary">
 const readText = (b) => Object.fromEntries(TEXT.map(([k, , d, max]) => [k, String(b[k] == null ? "" : b[k]).replace(/\r/g, "").trim().slice(0, max) || d]));
 const para = (s) => h(s).replace(/\n/g, "<br>");
 
+/** Add someone to the event day list (finds or creates the WMF member). Returns false if the day is closed. */
+async function markAttending(c, f, source) {
+  const d = (await c.query("SELECT * FROM activities WHERE activity_id = $1 AND registration_open AND status = 'Active' AND (event_date IS NULL OR event_date >= $2::date)", [DAY, R.todayLocal()])).rows[0];
+  if (!d) return false;
+  const email = R.normEmail(f.email);
+  let m = (email && await R.findMember(c, { email })) || await R.findMember(c, { phone: f.mobile });
+  if (!m) m = await R.createMember(c, { full_name: f.full_name, email, mobile: f.mobile, waiver_consent: true }, "public", source);
+  await R.addParticipation(c, { member: m, recordType: "Event Registration", date: R.nowLocal(), activityId: DAY, activityName: d.name,
+    activityType: d.activity_type || "Event Registration", status: "Registered", source, dedupeKey: `event|${m.member_id}|${DAY}` }, "public");
+  return true;
+}
+const attendBox = (label) => `<label class="check"><input type="checkbox" name="attend_day" value="1"> <span>${label}</span></label>`;
+
 async function applyOpen() {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1", [EVENT])).rows[0];
   const today = R.todayLocal();
@@ -68,6 +81,7 @@ function donateForm(v = {}, err) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:4px 12px">${ITEMS.map((g) => `<label class="check"><input type="checkbox" name="items" value="${h(g)}" ${items.includes(g) ? "checked" : ""}> <span>${h(g)}</span></label>`).join("")}</div></fieldset>
       <label>Sizes and details <span class="hint">(e.g. jersey M, bib shorts S, shoes 39)</span><textarea name="details" maxlength="600" rows="3">${h(v.details)}</textarea></label>
       <label class="check"><input type="checkbox" name="condition" value="1" required ${v.condition ? "checked" : ""}> <span>My items are clean and in good condition.</span></label>
+      ${attendBox("I'm attending Ride It Forward Day on 6 December (I ride at my own risk and follow the ride leader).")}
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">Donate my gear</button>
     </form><p style="margin:12px 0 0"><a href="/ride-it-forward">Back</a></p></section>`;
@@ -79,6 +93,13 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
   const link = (req) => `${req.protocol}://${req.get("host")}/ride-it-forward`;
 
   // ---------- public landing page ----------
+  app.post("/ride-it-forward/attend", limit("attend", 10, 60 * 60e3), wrap(async (req, res) => {
+    const b = req.body || {};
+    if (b.website) return res.redirect("/ride-it-forward");
+    if (!R.clean(b.full_name) || R.normPhone(b.mobile).length < 9 || !b.waiver_consent) return res.redirect("/ride-it-forward?going=check#day");
+    const ok = await tx((c) => markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile) }, "Ride It Forward Day"));
+    res.redirect("/ride-it-forward?going=" + (ok ? "yes" : "closed") + "#day");
+  }));
   app.get("/ride-it-forward", wrap(async (req, res) => {
     const { e, open } = await applyOpen();
     const t = await loadText();
@@ -104,9 +125,16 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I want to start riding</b>
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
-      <section class="rif-day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
+      <section class="rif-day" id="day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
         <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p>
-        ${day ? `<a class="btn primary" href="/events/${DAY}" style="margin-top:12px">I'm coming: sign up</a>` : ""}</div></section>
+        ${req.query.going === "yes" ? `<p class="rif-going">✓ You're on the list. See you on the day!</p>`
+          : day ? `<form class="form rif-attend" method="post" action="/ride-it-forward/attend">
+            ${req.query.going === "check" ? `<p class="flash err" role="alert" style="margin:0">Please add your name and mobile, and tick the box.</p>` : ""}
+            <div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
+              <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>
+            <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>I ride at my own risk and follow the ride leader.</span></label>
+            <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
+            <button class="btn primary">I'm attending</button></form>` : ""}</div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
           <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
@@ -135,12 +163,13 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
       const r = "RIF-" + String(await nextNumber(c, "RIF")).padStart(4, "0");
       await c.query("INSERT INTO gear_donations (ref, full_name, mobile, email, items, details) VALUES ($1,$2,$3,$4,$5,$6)",
         [r, R.clean(b.full_name), R.clean(b.mobile), email || null, items, String(b.details || "").trim().slice(0, 600) || null]);
+      if (b.attend_day) await markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile), email }, "Ride It Forward Day");
       return r;
     });
     const t = await loadText();
     res.send(pub(req, "Thank you", `<div class="rif"><section class="rif-hero"><h2>Thank you for riding it forward!</h2>
       <p class="rif-sub">Your gear will help a beginner start her cycling journey. ${para(t.dropoff)}</p>
-      <p class="rif-sub">Your reference: <b>${h(ref)}</b></p></section>
+      <p class="rif-sub">Your reference: <b>${h(ref)}</b></p>${b.attend_day ? `<p class="rif-sub">✓ You're on the list for Ride It Forward Day. See you on 6 December!</p>` : ""}</section>
       <p style="text-align:center"><a href="/ride-it-forward">Back to Ride It Forward</a></p></div>`));
   }));
 
@@ -231,3 +260,5 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
   }));
 };
 module.exports.EVENT = EVENT;
+module.exports.markAttending = markAttending;
+module.exports.attendBox = attendBox;
