@@ -484,6 +484,15 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     const byId = R.memberIdFromScan(b.member_id) ? await R.findMember(c, { memberId: R.memberIdFromScan(b.member_id) }) : null;
     if (byId && [byId.primary_email, ...String(byId.alt_emails || "").split(/[;,\s]+/)].map(R.normEmail).includes(email)) member = byId;
     if (!member) member = await R.findMember(c, { email });
+    // same mobile, no email yet (signed up with a mobile only, e.g. Ride It Forward "I'm attending" or a gear donation): same person, add her email
+    if (!member) {
+      const byPhone = await R.findMember(c, { phone: b.mobile });
+      if (byPhone && !byPhone.primary_email) {
+        await c.query("UPDATE members SET primary_email = $2 WHERE member_id = $1", [byPhone.member_id, email]);
+        await audit(c, "public", "member.email_added", "member", byPhone.member_id, { primary_email: null }, { primary_email: email }, "WMF App Event Registration");
+        member = { ...byPhone, primary_email: email };
+      }
+    }
     let created = false;
     if (!member) { member = await R.createMember(c, { ...b, email, waiver_consent: true }, "public", "WMF App Event Registration"); created = true; }
     if (e.capacity) {
