@@ -549,6 +549,12 @@ test("cycling development hub", async (t) => {
     assert.match((await donor("/ride-it-forward")).text, /As Gia Ver/);
     assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: {} })).location, "/ride-it-forward?going=yes#day");
     assert.equal((await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND voided_at IS NULL")).rows[0].n, 2);
+    // she said "I'm attending" with her mobile only, then applies with her email: still one member, now with the email
+    const dayRider = (await pool.query("SELECT member_id FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND member_name = 'Day Rider'")).rows[0].member_id;
+    assert.match((await fresh("/events/" + id, { method: "POST", form: { ...form, full_name: "Day Rider", email: "day.rider@example.org", mobile: "+971 50 123 0000",
+      story: "I said I'm attending and now I'd love some gear to start riding properly." } })).text, /application is in/);
+    assert.equal((await pool.query("SELECT member_id FROM participation WHERE activity_id = $1 AND member_name = 'Day Rider'", [id])).rows[0].member_id, dayRider);
+    assert.equal((await pool.query("SELECT primary_email FROM members WHERE member_id = $1", [dayRider])).rows[0].primary_email, "day.rider@example.org");
     // member page: send the personal QR code on WhatsApp (to the member's number, with the QR link)
     const mp = ok200(await admin("/members/" + encodeURIComponent(p.member_id)), "member").text;
     assert.match(mp, /href="https:\/\/wa\.me\/9715\d+\?text=[^"]*%2Fq%2FWMF-\d{6}\./);
