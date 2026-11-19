@@ -31,6 +31,8 @@ app.use((req, res, next) => {
 });
 // wake-up address for a free "keep awake" service: answers without touching the database, so Neon can still sleep
 app.get("/ping", (req, res) => res.set("Cache-Control", "no-store").type("text").send("ok"));
+// race watch: whenever the app is awake, check the race pages if the last check was more than 20 hours ago
+if (PROD) app.use((req, res, next) => { require("./racewatch").maybeRun(); next(); });
 app.get("/healthz", async (req, res) => { try { await pool.query("SELECT 1"); res.send("ok"); } catch (e) { res.status(503).send("db unavailable"); } });
 app.use(express.static(path.join(__dirname, "..", "public"), { index: false, maxAge: PROD ? "1h" : 0,
   // scripts and styles: always check for a newer copy, so a phone never keeps an old scanner after an update
@@ -188,12 +190,14 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       (SELECT count(*) FROM members WHERE merged_into IS NULL) AS members,
       (SELECT count(*) FROM participation WHERE voided_at IS NULL AND record_date::date = $1::date AND record_type = 'Attendance') AS today,
       (SELECT count(*) FROM members WHERE first_seen::date >= ($1::date - 30) AND merged_into IS NULL) AS new30,
-      (SELECT count(*) FROM activities WHERE registration_open) AS openEvents`, [today]);
+      (SELECT count(*) FROM activities WHERE registration_open) AS openEvents,
+      (SELECT count(*) FROM race_watch_seen rw JOIN calendar_items ci ON ci.id = rw.calendar_item_id WHERE rw.seen_at > now() - interval '7 days' AND ci.status = 'Tentative') AS newraces`, [today]);
   const s = q.rows[0];
   const empty = Number(s.members) === 0;
   const tile = (href, label, val, note) => `<a class="tile" href="${href}" style="text-decoration:none;color:inherit"><span class="lbl">${h(label)}</span><span class="val">${h(val)}</span><span class="note">${h(note)}</span></a>`;
   res.send(page(req, "Home", `
     ${empty ? `<div class="alert warn"><span class="ic">!</span><span><b>The database is empty.</b> ${u.role === "admin" ? `<a href="/admin/import">Import the WMF workbook</a> to bring in members, their Member IDs and the history.` : "Ask an administrator to import the workbook."}</span></div>` : ""}
+    ${Number(s.newraces) ? `<div class="alert info"><span class="ic">+</span><span><b>${s.newraces} new race${Number(s.newraces) > 1 ? "s" : ""} found this week</b> and added to the WMF calendar as Tentative. <a href="/calendar/races">Review them</a></span></div>` : ""}
     <div class="tiles">
       ${tile("/scan", "Scan ride attendance", "Open scanner", "Uses the QR codes already sent to members")}
       ${tile("/members", "Members", Number(s.members).toLocaleString("en-GB"), "Unique member records")}

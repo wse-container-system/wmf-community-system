@@ -120,6 +120,7 @@ test("daily run", { skip: !DB && "set TEST_DATABASE_URL" }, async (t) => {
   assert.deepEqual([item[0].status, item[0].start_date, item[0].location], ["Tentative", y(5), "Ajman"]);
 
   assert.equal((await W.run({ load, notify: false })).added.length, 0, "nothing new the second time");
+  assert.equal(await W.maybeRun(), null, "the app's own check waits 20 hours after the last one");
   await pool.query("DELETE FROM calendar_items WHERE id = $1", [item[0].id]);
   po += card("Test Duathlon", y(9), "Al Ain, UAE", "Duathlon");
   const r3 = await W.run({ load, notify: false });
