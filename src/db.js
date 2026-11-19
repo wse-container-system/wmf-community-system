@@ -557,6 +557,32 @@ CREATE TABLE IF NOT EXISTS race_watch_seen (
   key TEXT PRIMARY KEY, source TEXT, title TEXT NOT NULL, start_date DATE NOT NULL,
   calendar_item_id INTEGER REFERENCES calendar_items(id) ON DELETE SET NULL, seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- event projects: the task board behind each WMF event (owner, team, due date, status, progress), with comments and files
+CREATE TABLE IF NOT EXISTS project_tasks (
+  id SERIAL PRIMARY KEY, activity_id TEXT NOT NULL REFERENCES activities(activity_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  title TEXT NOT NULL, notes TEXT, owner TEXT, team TEXT, due_date DATE,
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','review','done')),
+  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100), priority TEXT NOT NULL DEFAULT 'Normal',
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS project_tasks_activity ON project_tasks (activity_id);
+-- comments, and one-line events ("moved it to Done") that show in the task's activity
+CREATE TABLE IF NOT EXISTS project_notes (
+  id SERIAL PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','event')), author TEXT, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS project_notes_task ON project_notes (task_id);
+CREATE TABLE IF NOT EXISTS project_files (
+  id SERIAL PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE, note_id INTEGER REFERENCES project_notes(id) ON DELETE SET NULL,
+  name TEXT NOT NULL, mime TEXT NOT NULL, bytes INTEGER NOT NULL, data BYTEA NOT NULL, uploaded_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS project_files_task ON project_files (task_id);
+-- an event's project shared with another department (no sign-in): contribute or view only
+CREATE TABLE IF NOT EXISTS project_links (
+  id SERIAL PRIMARY KEY, activity_id TEXT NOT NULL REFERENCES activities(activity_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  token TEXT UNIQUE NOT NULL, team TEXT NOT NULL, can_edit BOOLEAN NOT NULL DEFAULT TRUE, active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used TIMESTAMPTZ
+);
 `;
 
 const DEFAULT_SETTINGS = {

@@ -5,6 +5,7 @@ const { syncHeldEvents } = require("./activations");
 const R = require("./rules");
 const { h, fmtDate, fmtTs } = require("./views");
 const APPLY = require("./apply");
+const PROJECT = require("./projects");
 
 const LOCS = ["Abu Dhabi", "Dubai", "Other"];
 const money = (n) => (Number(n) > 0 ? "AED " + Number(n).toLocaleString("en-GB", { maximumFractionDigits: 2 }) : "Free");
@@ -56,15 +57,16 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
         (SELECT count(*) FROM participation p WHERE p.activity_id = a.activity_id AND p.voided_at IS NULL AND p.payment_status = 'Paid') AS paid,
         (SELECT min(id) FROM activations x WHERE x.activity_id = a.activity_id) AS activation_id
       FROM activities a ORDER BY a.core DESC, a.sort_order, a.event_date DESC NULLS LAST, a.name`);
+    const prog = await PROJECT.progressByEvent();
     const core = r.rows.filter((a) => a.core), evs = r.rows.filter((a) => a.kind === "event"), old = r.rows.filter((a) => a.kind !== "event" && !a.core);
     const today = R.todayLocal();
     const upcoming = evs.filter((e) => !e.event_date || e.event_date >= today), past = evs.filter((e) => e.event_date && e.event_date < today);
     const evRow = (e) => `<tr><td><a href="/activities/${encodeURIComponent(e.activity_id)}"><b>${h(e.name)}</b></a>${e.status !== "Active" ? ' <span class="badge">Inactive</span>' : ""}${e.strava_url ? ' <span class="badge">Strava</span>' : ""}${e.apply_form ? ' <span class="badge">Applications</span>' : ""}
-        <br><a class="btn tblbtn" href="/activities/${encodeURIComponent(e.activity_id)}">Edit</a>${e.activation_id ? ` <a class="btn tblbtn" href="/activations/${e.activation_id}">Activation</a>` : ""}</td>
-      <td>${fmtDate(e.event_date)}</td><td>${h(money(e.price_aed))}</td>
+        <br><a class="btn tblbtn" href="/activities/${encodeURIComponent(e.activity_id)}/project">Project</a> <a class="btn tblbtn" href="/activities/${encodeURIComponent(e.activity_id)}">Edit</a>${e.activation_id ? ` <a class="btn tblbtn" href="/activations/${e.activation_id}">Activation</a>` : ""}</td>
+      <td>${fmtDate(e.event_date)}</td><td>${prog[e.activity_id] ? `<a class="pj-mini" href="/activities/${encodeURIComponent(e.activity_id)}/project" title="${prog[e.activity_id].done} of ${prog[e.activity_id].total} tasks done"><span class="pj-bar"><i style="width:${prog[e.activity_id].pct}%"></i></span><small>${prog[e.activity_id].pct}%${prog[e.activity_id].late ? ` · <b>${prog[e.activity_id].late} late</b>` : ""}</small></a>` : `<a class="muted" href="/activities/${encodeURIComponent(e.activity_id)}/project">Plan it</a>`}</td><td>${h(money(e.price_aed))}</td>
       <td class="n"><a href="/activities/${encodeURIComponent(e.activity_id)}/signups">${e.n}${e.capacity ? " / " + e.capacity : ""}</a>${Number(e.price_aed) > 0 ? `<br><span class="muted">${e.paid} paid</span>` : ""}</td>
       <td>${e.registration_open ? `<span class="badge good">Open</span> <a href="/events/${encodeURIComponent(e.activity_id)}">Public page</a>` : `<span class="badge">Closed</span>`}</td></tr>`;
-    const evTable = (rows) => `<div class="tw"><table><thead><tr><th>Event</th><th>Date</th><th>Fee</th><th class="n">Sign-ups</th><th>Sign-up</th></tr></thead><tbody>${rows.map(evRow).join("") || `<tr><td colspan="5" class="muted">None.</td></tr>`}</tbody></table></div>`;
+    const evTable = (rows) => `<div class="tw"><table><thead><tr><th>Event</th><th>Date</th><th>Project</th><th>Fee</th><th class="n">Sign-ups</th><th>Sign-up</th></tr></thead><tbody>${rows.map(evRow).join("") || `<tr><td colspan="6" class="muted">None.</td></tr>`}</tbody></table></div>`;
     res.send(page(req, "Events & rides", `<div class="grid">
       <section class="card c8"><h2>Upcoming events</h2><p class="lead">Edit an event to change its date, fee, Strava link or partners. The sign-up count opens the list of people: tick who came. Once the date has passed, the event moves to <a href="/activations">Activations</a> by itself with its sign-ups, attendance and partners.</p>${evTable(upcoming)}
         <details style="margin-top:12px"><summary><b>Past events (${past.length})</b></summary>${evTable(past)}</details></section>
@@ -98,9 +100,10 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
     const a = (await pool.query("SELECT * FROM activities WHERE activity_id = $1", [req.params.id])).rows[0];
     if (!a || a.kind !== "event") return res.redirect("/activities");
     const act = (await pool.query("SELECT id FROM activations WHERE activity_id = $1 ORDER BY id LIMIT 1", [a.activity_id])).rows[0];
-    res.send(page(req, a.name, `<section class="card"><div class="card-head"><div><h2>${h(a.name)}</h2><p class="lead">${h(a.activity_id)}</p></div>
+    const counts = (await pool.query("SELECT (SELECT count(*)::int FROM project_tasks WHERE activity_id = $1) AS tasks, (SELECT count(*)::int FROM participation WHERE activity_id = $1 AND voided_at IS NULL) AS signups", [a.activity_id])).rows[0];
+    res.send(page(req, a.name, `${PROJECT.eventTabs(a, "details", counts)}<section class="card" style="max-width:820px"><div class="card-head"><div><h2>Event details</h2><p class="lead">${h(a.activity_id)}</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}/signups">Sign-ups</a>${act ? `<a class="btn" href="/activations/${act.id}">Activation report</a>` : ""}${a.registration_open ? `<a class="btn" href="/events/${encodeURIComponent(a.activity_id)}">Public page</a>` : ""}</div></div>
-      <form class="form" method="post" action="/activities/${encodeURIComponent(a.activity_id)}">${eventFields(a)}<button class="btn primary">Save</button></form></section>`, { active: "/activities", wide: false }));
+      <form class="form" method="post" action="/activities/${encodeURIComponent(a.activity_id)}">${eventFields(a)}<button class="btn primary">Save</button></form></section>`, { active: "/activities" }));
   }));
   app.post("/activities/:id", STAFF, wrap(async (req, res) => {
     const back = "/activities/" + encodeURIComponent(req.params.id);
@@ -133,7 +136,8 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
     const count = (s) => rows.filter((r) => (r.payment_status || "") === s).length;
     const collected = count("Paid") * Number(a.price_aed || 0);
     const ap = !!a.apply_form, sel = (s) => rows.filter((r) => (r.selection || "") === s).length;
-    res.send(page(req, "Sign-ups", `<section class="card">
+    const tasks = (await pool.query("SELECT count(*)::int AS n FROM project_tasks WHERE activity_id = $1", [a.activity_id])).rows[0].n;
+    res.send(page(req, "Sign-ups", `${a.kind === "event" ? PROJECT.eventTabs(a, "signups", { tasks, signups: rows.length }) : ""}<section class="card">
       <div class="card-head"><div><h2>${h(a.name)}</h2><p class="lead">${fmtDate(a.event_date)} · ${h(money(a.price_aed))}${a.capacity ? ` · capacity ${a.capacity}` : ""}</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}">Event settings</a><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}/signups.csv">Download list (CSV)</a></div></div>
       <div class="tiles" style="margin:6px 0 14px">

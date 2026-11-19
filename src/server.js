@@ -86,7 +86,7 @@ const STAFF = ["admin", "coordinator"];
 const takeFlash = (req) => { const f = req.session.flash; delete req.session.flash; return f; };
 const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
 // shared links (management, marketing, Dubai lead, surveys) always look the way their audience sees them: no hub menus, even for someone signed in
-const SHARED = /^\/(g|m|mk|l|f|fs|ride|shop)\//;
+const SHARED = /^\/(g|m|mk|l|f|fs|ride|shop|pj)\//;
 const page = (req, title, body, opts = {}) => SHARED.test(req.path)
   ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
   : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
@@ -693,6 +693,7 @@ app.post("/participation/:id/void", need("admin"), wrap(async (req, res) => {
 
 // ======================= rides & events (see events.js, rides.js) =======================
 require("./events")(app, { need, page, setFlash, actor, user, wrap });
+require("./projects")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./rideforward")(app, { need, page, actor, wrap, limit, qrPng, qrDataUrl });
 require("./rides")(app, { need, page, setFlash, actor, user, wrap, checkIn, qrSend, qrDataUrl });
 
