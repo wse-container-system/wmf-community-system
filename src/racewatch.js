@@ -209,7 +209,7 @@ async function run({ actor = "race-watch", load = fetchPage, notify = true } = {
   }
   const added = await tx(async (c) => {
     const out = [];
-    for (const r of found.values()) {
+    for (const r of [...found.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
       const seen = await c.query("INSERT INTO race_watch_seen (key, source, title, start_date) VALUES ($1,$2,$3,$4) ON CONFLICT (key) DO NOTHING RETURNING key", [r.key, r.source, r.title, r.date]);
       if (!seen.rows[0]) continue; // already found before (even if staff deleted it from the calendar since)
       const end = r.end && r.end >= r.date ? r.end : r.date;
