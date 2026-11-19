@@ -40,6 +40,20 @@ counts below 5 as "<5".
   Set `HR_FEED_TOKEN` in Render to switch on CSV feeds (`/api/hr/attendance.csv`, `/api/hr/leave.csv`) that an HR system,
   Power Automate or Excel “Get data from web” can pull.
 
+## Race watch (external races on the WMF calendar)
+- Every morning (07:00 Dubai) the *Race watch* GitHub Action reads the UAE race listing pages and posts the new
+  **cycling, triathlon and duathlon** races on the GitHub issue "Race watch: new UAE races", assigned to the repository
+  owner, so GitHub notifies them by email and in the GitHub app. Nothing to set up.
+- The same Action wakes the app, and the app (whenever it is awake, at most once every 20 hours) adds the new races to the
+  WMF calendar as **External race · Tentative**, with a link to the race page. WMF home shows "N new races found this week".
+- Pages watched: my.raceresult.com (UAE events), premieronline.com, hopasports.com and the Abu Dhabi Sports Council events page.
+  On **Calendar → Race watch** staff change the app's list, see every race found and run **Check now**. Any page that publishes
+  schema.org Event data, or an `.ics` link, also works; other sites need a reader in `src/racesources.js`.
+- A race staff delete is not added again.
+- Optional: email from the app (needs the SMTP settings; goes to the Race watch page address, else `RACE_NOTIFY_EMAIL`, else
+  `ADMIN_EMAIL`), `RACE_WATCH_TOKEN` (Render + repository secret) for `POST /api/race-watch/run`, and a repository variable
+  `APP_URL` if the app's address changes from https://wmf-community.onrender.com.
+
 ---
 
 # WMF Community System

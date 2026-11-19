@@ -40,7 +40,7 @@
         for (let d = a.s < from ? from : a.s; d <= (a.e > to ? to : a.e); d = add(d, 1)) put(d, o);
       }
     }
-    const rank = { track_closure: -1, wmf_event: 0, generic_event: 1, wmf_ride: 2 };
+    const rank = { track_closure: -1, wmf_event: 0, generic_event: 1, external_race: 1, wmf_ride: 2 };
     for (const k in map) map[k].sort((x, y) => ((x.end > x.date ? 0 : 1) - (y.end > y.date ? 0 : 1)) || ((x.a.st || "99") < (y.a.st || "99") ? -1 : (x.a.st || "99") > (y.a.st || "99") ? 1 : 0) || rank[x.a.c] - rank[y.a.c]);
     return map;
   }

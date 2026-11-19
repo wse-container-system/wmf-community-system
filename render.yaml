@@ -28,4 +28,9 @@ services:
       # optional: switches on the HR CSV feed (Department → HR export). Any long random text; give it only to HR.
       - key: HR_FEED_TOKEN
         sync: false
-
+      # optional: lets the GitHub Action run the race watch on demand (POST /api/race-watch/run). The race watch works without it.
+      - key: RACE_WATCH_TOKEN
+        sync: false
+      # optional: who gets the "new races" email (default: ADMIN_EMAIL). Can also be set on the Race watch page.
+      - key: RACE_NOTIFY_EMAIL
+        sync: false

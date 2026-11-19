@@ -545,6 +545,18 @@ CREATE TABLE IF NOT EXISTS gear_donations (
   id SERIAL PRIMARY KEY, ref TEXT UNIQUE, full_name TEXT NOT NULL, mobile TEXT, email TEXT, items TEXT[] NOT NULL DEFAULT '{}', details TEXT,
   received BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- race watch: external cycling and triathlon races go on the WMF calendar as 'external_race'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calendar_items_category_check' AND pg_get_constraintdef(oid) LIKE '%external_race%') THEN
+    ALTER TABLE calendar_items DROP CONSTRAINT IF EXISTS calendar_items_category_check;
+    ALTER TABLE calendar_items ADD CONSTRAINT calendar_items_category_check CHECK (category IN ('wmf_ride','wmf_event','generic_event','track_closure','external_race'));
+  END IF;
+END $$;
+-- every race the watch has found, so a race staff deleted is not added again
+CREATE TABLE IF NOT EXISTS race_watch_seen (
+  key TEXT PRIMARY KEY, source TEXT, title TEXT NOT NULL, start_date DATE NOT NULL,
+  calendar_item_id INTEGER REFERENCES calendar_items(id) ON DELETE SET NULL, seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 const DEFAULT_SETTINGS = {
