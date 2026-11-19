@@ -156,12 +156,14 @@ app.get("/", need(), wrap(async (req, res) => {
       (SELECT count(DISTINCT staff_id) FROM dept_shifts WHERE work_date = $1 AND start_time IS NOT NULL) inn`, [today]) : null,
     isStaff ? pool.query("SELECT 1 FROM dept_staff WHERE lower(email) = lower($1) AND active", [u.email]) : null,
   ]);
+  const rideBanner = isStaff ? await require("./ridereminder").banner(req) : "";
   const W = w.rows[0], K = corp.k, D = dept && dept.rows[0];
   const stat = (v, l) => `<div><b>${Number(v || 0).toLocaleString("en-GB")}</b><span>${h(l)}</span></div>`;
   const links = (arr) => `<div class="links">${arr.map(([href, l]) => `<a href="${href}">${h(l)}</a>`).join(" · ")}</div>`;
   res.send(page(req, "Hub", `
     <section class="hub-intro"><h2>Good ${+R.nowLocal().slice(11, 13) < 12 ? "morning" : +R.nowLocal().slice(11, 13) < 17 ? "afternoon" : "evening"}${u.name && u.name !== "Administrator" ? ", " + h(u.name.split(" ")[0]) : ""}</h2>
       <p class="muted" style="margin:4px 0 0">Cycling Development department hub · ${fmtDate(today)} · figures are ${today.slice(0, 4)} year to date</p></section>
+    ${rideBanner}
     <div class="hub-cards">
       <a class="hub-card band-wmf" href="${isStaff ? "/wmf" : "/overview"}"><span class="eyebrow">Community programme</span><h3>WMN Moving FWD</h3>
         <div class="stats">${stat(W.members, "members")}${stat(W.rides, "ride check-ins")}${stat(W.events, "event sign-ups")}</div>
@@ -194,9 +196,11 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       (SELECT count(*) FROM race_watch_seen rw JOIN calendar_items ci ON ci.id = rw.calendar_item_id WHERE rw.seen_at > now() - interval '7 days' AND ci.status = 'Tentative') AS newraces`, [today]);
   const s = q.rows[0];
   const empty = Number(s.members) === 0;
+  const rideBanner = await require("./ridereminder").banner(req);
   const tile = (href, label, val, note) => `<a class="tile" href="${href}" style="text-decoration:none;color:inherit"><span class="lbl">${h(label)}</span><span class="val">${h(val)}</span><span class="note">${h(note)}</span></a>`;
   res.send(page(req, "Home", `
     ${empty ? `<div class="alert warn"><span class="ic">!</span><span><b>The database is empty.</b> ${u.role === "admin" ? `<a href="/admin/import">Import the WMF workbook</a> to bring in members, their Member IDs and the history.` : "Ask an administrator to import the workbook."}</span></div>` : ""}
+    ${rideBanner}
     ${Number(s.newraces) ? `<div class="alert info"><span class="ic">+</span><span><b>${s.newraces} new race${Number(s.newraces) > 1 ? "s" : ""} found this week</b> and added to the WMF calendar as Tentative. <a href="/calendar/races">Review them</a></span></div>` : ""}
     <div class="tiles">
       ${tile("/scan", "Scan ride attendance", "Open scanner", "Uses the QR codes already sent to members")}
@@ -207,6 +211,7 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       ${tile("/ride-it-forward/manage", "Ride It Forward", "Open", "Gear donations, applications, QR code")}
       ${tile("/rides", "Attendance per ride", "Check", "Spot riders you forgot to scan")}
       ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
+      ${tile("/wmf/ride-reminder", "WhatsApp ride reminder", "Open", "Monday & Wednesday message, weather, sign-ups")}
       ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
       ${tile("/dashboard#performance", "Monthly export", "Excel", "Attendance per month: rides, events, impact")}
     </div>
@@ -717,6 +722,7 @@ require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });
 require("./teamcal")(app, { need, page, setFlash, actor, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
 require("./racewatch")(app, { need, page, setFlash, actor, user, wrap });
+require("./ridereminder")(app, { need, page, setFlash, actor, user, wrap, limit, qrDataUrl, consentText });
 require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
 require("./overview")(app, { need, page, setFlash, actor, user, wrap });

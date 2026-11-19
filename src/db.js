@@ -557,6 +557,11 @@ CREATE TABLE IF NOT EXISTS race_watch_seen (
   key TEXT PRIMARY KEY, source TEXT, title TEXT NOT NULL, start_date DATE NOT NULL,
   calendar_item_id INTEGER REFERENCES calendar_items(id) ON DELETE SET NULL, seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- riders who put their name down for a regular ride from the WhatsApp reminder's sign-up link
+CREATE TABLE IF NOT EXISTS ride_signups (
+  id SERIAL PRIMARY KEY, ride_date DATE NOT NULL, member_id TEXT NOT NULL, full_name TEXT NOT NULL, email TEXT, mobile TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE (ride_date, member_id)
+);
 `;
 
 const DEFAULT_SETTINGS = {
