@@ -7,6 +7,9 @@
 .sub-nav a { padding: 9px 12px; border-bottom: 2px solid transparent; color: var(--ink-2); font-weight: 600; font-size: 14px; white-space: nowrap; text-decoration: none; }
 .sub-nav a:hover { color: var(--ink); }
 .sub-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.sub-nav2 { border-bottom: 0; margin-top: 0; gap: 6px; padding: 8px 0 2px; }
+.sub-nav2 a { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+.sub-nav2 a[aria-current="page"] { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent); }
 
 /* hub landing */
 .hub-intro h2 { font-size: 26px; }

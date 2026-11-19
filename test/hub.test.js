@@ -115,7 +115,7 @@ test("cycling development hub", async (t) => {
     assert.ok(out.checkins > 300);
     const r = ok200(await admin("/corporate?period=all"), "corporate dashboard");
     assert.match(r.text, /L&#39;IMAD|L'IMAD/);
-    for (const p of ["/corporate/attendance?company=LIMAD&period=year&p=2025", "/corporate/events?period=all", "/corporate/participants?company=NMDC", "/corporate/qr", "/corporate/scan",
+    for (const p of ["/corporate/attendance?company=LIMAD&period=year&p=2025", "/corporate/rides?kind=other&period=all", "/corporate/participants?company=NMDC", "/corporate/qr", "/corporate/scan",
       "/corporate/report?period=all", "/corporate/report?company=NMDC&period=year&p=2026", "/corporate/qr/NMDC/poster", "/corporate/qr/LIMAD/cards"]) ok200(await admin(p), p);
     const x = await admin("/corporate/report.xlsx?period=all", { raw: true }); assert.equal(x.status, 200);
     const wb = await xlsx(x.text); assert.ok(wb.getWorksheet("Monthly"));
@@ -158,7 +158,8 @@ test("cycling development hub", async (t) => {
     // an event with a headcount
     const ev = await admin("/corporate/sessions", { method: "POST", form: { company: "AURORA", title: "Aurora Bike Fit Workshop", session_date: today, kind: "Workshop", status: "Held", headcount: "11" } });
     assert.equal(ev.status, 302);
-    const evp = ok200(await admin("/corporate/events"), "events");
+    const old = await admin("/corporate/events"); assert.equal(old.status, 302); assert.match(old.location, /^\/corporate\/rides\?.*kind=other/, "old Events link opens Rides & events");
+    const evp = ok200(await admin("/corporate/rides?kind=other&period=all"), "events");
     assert.match(evp.text, /Aurora Bike Fit Workshop/);
   });
 
@@ -829,6 +830,20 @@ test("cycling development hub", async (t) => {
     const rp = ok200(await admin("/report/management?period=year"), "report").text;
     assert.match(rp, /Performance report<\/a>/); assert.doesNotMatch(rp, /">Marketing<\/a>/, "one report: marketing works through the management report");
     assert.match(ok200(await admin("/wmf"), "wmf").text, /href="\/report"[^>]*>Reports</);
+    // Corporate: five tabs; grouped tabs open a second row, so every page stays one click away
+    const nav = (t) => [...(t.match(/<nav class="sub-nav" aria-label="Corporate">([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
+    const row2 = (t) => [...(t.match(/<nav class="sub-nav sub-nav2"[^>]*>([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
+    assert.deepEqual(nav(ok200(await admin("/corporate"), "corp dashboard").text), ["Dashboard", "Rides &amp; events", "Participants", "Check-in", "Reports"]);
+    const sch = ok200(await admin("/corporate/schedule"), "schedule").text;
+    assert.deepEqual(row2(sch), ["All rides &amp; events", "Schedule", "Attendance register", "Sign-ups &amp; bikes"]);
+    assert.match(sch, /<a href="\/corporate\/rides" aria-current="page">Rides &amp; events/);
+    assert.deepEqual(row2(ok200(await admin("/corporate/qr"), "qr").text), ["Scan", "QR codes &amp; posters"]);
+    assert.deepEqual(row2(ok200(await admin("/corporate/report?period=all"), "figures").text), ["Sponsor report", "Figures &amp; Excel"]);
+    // the old Events page now opens Rides & events, filtered to events and other activities
+    await admin("/corporate/sessions", { method: "POST", form: { company: co, title: "Bike Fit Workshop", session_date: d, kind: "Workshop", status: "Held", headcount: "11" } });
+    const old = await admin(`/corporate/events?company=${co}`); assert.equal(old.status, 302); assert.match(old.location, /^\/corporate\/rides\?.*kind=other/);
+    const evp = ok200(await admin(old.location), "events").text;
+    assert.match(evp, /Bike Fit Workshop/); assert.doesNotMatch(evp, /Yas Marina Circuit/);
   });
 
   await t.test("Marketing: one link to see the report and add posts; other events; shows on the management report", async () => {
