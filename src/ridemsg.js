@@ -82,17 +82,20 @@ function nextRides(n = 1, { schedule: sch, skip, now = nowDubai(), withSkipped =
  * Forecast at the ride's start, from Open-Meteo (free, no key). Returns { temp, sky } or null.
  * Kept for 30 minutes per ride; `fetcher` replaces fetch in tests.
  */
+/** Where the wind comes from, as a compass point (N, NE, E …). */
+const compass = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round((((deg % 360) + 360) % 360) / 45) % 8];
 const cache = new Map();
 async function weather(ride, { fetcher = fetch, timeoutMs = 4000 } = {}) {
   const [lat, lon] = coordsFor(ride.location), key = `${ride.date}|${ride.time}|${lat},${lon}`, hit = cache.get(key);
   if (hit && Date.now() - hit.at < 30 * 60e3) return hit.w;
   let w = null;
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FDubai&start_date=${ride.date}&end_date=${ride.date}`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&timezone=Asia%2FDubai&start_date=${ride.date}&end_date=${ride.date}`;
     const r = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "wmf-ride-reminder" } });
     if (r.ok) {
       const j = await r.json(), hr = j.hourly || {}, at = `${ride.date}T${ride.time.slice(0, 2)}:00`, i = (hr.time || []).indexOf(at);
-      if (i >= 0 && hr.temperature_2m[i] != null) w = { temp: Math.round(hr.temperature_2m[i]), sky: SKY[hr.weather_code && hr.weather_code[i]] || "", wind: hr.wind_speed_10m ? Math.round(hr.wind_speed_10m[i]) : null };
+      if (i >= 0 && hr.temperature_2m[i] != null) w = { temp: Math.round(hr.temperature_2m[i]), sky: SKY[hr.weather_code && hr.weather_code[i]] || "", wind: hr.wind_speed_10m && hr.wind_speed_10m[i] != null ? Math.round(hr.wind_speed_10m[i]) : null,
+        dir: hr.wind_direction_10m && hr.wind_direction_10m[i] != null ? compass(hr.wind_direction_10m[i]) : "" };
     }
   } catch (e) { w = null; }
   if (w) cache.set(key, { at: Date.now(), w });
@@ -107,6 +110,7 @@ function message(ride, { weather: w, signupUrl, note } = {}) {
     `⏰ ${time12(ride.time)}`,
     `📍 ${ride.location}`,
     w ? `🌡️ ${w.temp}°C${w.sky ? ", " + w.sky : ""}` : null,
+    w && w.wind != null ? `💨 ${w.wind} km/h${w.dir ? " " + w.dir : ""}` : null,
     signupUrl ? `🔗 Register here: ${signupUrl}` : null,
     note ? "\n" + String(note).trim() : null,
     "",
@@ -116,4 +120,4 @@ function message(ride, { weather: w, signupUrl, note } = {}) {
 const whatsappLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
 const signupPath = (date) => `/join-ride/${date}`;
 
-module.exports = { DEFAULT_SCHEDULE, DAY_NAMES, schedule, rideOn, nextRides, weather, message, whatsappLink, signupPath, longDate, time12, coordsFor, addDays, nowDubai, _cache: cache };
+module.exports = { DEFAULT_SCHEDULE, DAY_NAMES, schedule, rideOn, nextRides, weather, message, whatsappLink, signupPath, compass, longDate, time12, coordsFor, addDays, nowDubai, _cache: cache };

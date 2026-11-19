@@ -47,7 +47,7 @@ async function banner(req) {
     const today = now.slice(0, 10);
     if (!(r.date === today && now.slice(11, 16) <= r.time) && !(r.date === M.addDays(today, 1) && now.slice(11, 16) >= "18:00")) return "";
     const x = await reminder(r, cfg, baseUrl(req));
-    return `<div class="alert info rr-banner"><span class="ic">🚴</span><span><b>${h(r.day)} ride reminder is ready</b> (${h(M.time12(r.time))}, ${h(r.location)}${x.weather ? `, ${x.weather.temp}°C` : ""}). Send it to the WMF WhatsApp group:
+    return `<div class="alert info rr-banner"><span class="ic">🚴</span><span><b>${h(r.day)} ride reminder is ready</b> (${h(M.time12(r.time))}, ${h(r.location)}${x.weather ? `, ${x.weather.temp}°C${x.weather.wind != null ? `, wind ${x.weather.wind} km/h` : ""}` : ""}). Send it to the WMF WhatsApp group:
       <span class="rr-actions"><a class="btn primary" href="${h(x.whatsapp)}" target="_blank" rel="noopener">Share on WhatsApp</a>
       <a class="btn" href="/wmf/ride-reminder">Preview</a>
       <form method="post" action="/wmf/ride-reminder/${r.date}/sent" style="display:inline"><button class="btn">Mark as sent</button></form></span></span></div>`;
@@ -56,7 +56,7 @@ async function banner(req) {
 
 function signupForm(ride, w, v = {}, err, consentText) {
   return `<section class="card"><span class="eyebrow">WMN Moving FWD</span><h2>${h(ride.title)}</h2>
-    <p class="lead">📅 ${h(M.longDate(ride.date))}<br>⏰ ${h(M.time12(ride.time))}<br>📍 ${h(ride.location)}${w ? `<br>🌡️ ${w.temp}°C${w.sky ? ", " + h(w.sky) : ""}${w.wind != null ? ` · wind ${w.wind} km/h` : ""}` : ""}</p>
+    <p class="lead">📅 ${h(M.longDate(ride.date))}<br>⏰ ${h(M.time12(ride.time))}<br>📍 ${h(ride.location)}${w ? `<br>🌡️ ${w.temp}°C${w.sky ? ", " + h(w.sky) : ""}${w.wind != null ? `<br>💨 ${w.wind} km/h${w.dir ? " " + h(w.dir) : ""}` : ""}` : ""}</p>
     ${err ? `<div class="flash err" role="alert">${h(err)}</div>` : ""}
     <form class="form" method="post">
       <label>Member ID <span class="hint">(optional, on your QR code, e.g. WMF-000123)</span><input name="member_id" maxlength="20" value="${h(v.member_id)}"></label>

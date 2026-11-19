@@ -17,7 +17,7 @@ const M = require("../src/ridemsg");
 const forecast = (date, temp = 23.6, code = 0) => async (url) => {
   assert.match(url, /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=24\.432&longitude=54\.336&/, "Hudayriyat's coordinates");
   const hours = [...Array(24).keys()], at6 = (v, other) => hours.map((x) => (x === 6 || x === 23 ? v : other));
-  return { ok: true, json: async () => ({ hourly: { time: hours.map((x) => `${date}T${String(x).padStart(2, "0")}:00`), temperature_2m: at6(temp, 21.1), weather_code: at6(code, 1), wind_speed_10m: at6(12.4, 9) } }) };
+  return { ok: true, json: async () => ({ hourly: { time: hours.map((x) => `${date}T${String(x).padStart(2, "0")}:00`), temperature_2m: at6(temp, 21.1), weather_code: at6(code, 1), wind_speed_10m: at6(12.4, 9), wind_direction_10m: at6(310, 90) } }) };
 };
 
 test("ride days: Monday and Wednesday at 6 AM by default", () => {
@@ -36,9 +36,9 @@ test("the WhatsApp message", async () => {
   M._cache.clear();
   const ride = M.rideOn("2026-11-23");
   const w = await M.weather(ride, { fetcher: forecast("2026-11-23") });
-  assert.deepEqual(w, { temp: 24, sky: "Clear skies", wind: 12 }, "the forecast at the ride's start");
+  assert.deepEqual(w, { temp: 24, sky: "Clear skies", wind: 12, dir: "NW" }, "the forecast at the ride's start");
   const text = M.message(ride, { weather: w, signupUrl: "https://wmf.example/join-ride/2026-11-23" });
-  assert.equal(text, "🚴 *WMF Community Ride — Monday*\n📅 Monday, 23 Nov 2026\n⏰ 6:00 AM\n📍 Hudayriyat Island\n🌡️ 24°C, Clear skies\n🔗 Register here: https://wmf.example/join-ride/2026-11-23\n\nSee you on the ride!");
+  assert.equal(text, "🚴 *WMF Community Ride — Monday*\n📅 Monday, 23 Nov 2026\n⏰ 6:00 AM\n📍 Hudayriyat Island\n🌡️ 24°C, Clear skies\n💨 12 km/h NW\n🔗 Register here: https://wmf.example/join-ride/2026-11-23\n\nSee you on the ride!");
   assert.equal(M.whatsappLink("a b\n&"), "https://wa.me/?text=a%20b%0A%26");
   // no weather (the service is down): the line is left out, the rest still goes
   M._cache.clear();
@@ -47,6 +47,7 @@ test("the WhatsApp message", async () => {
   assert.doesNotMatch(M.message(ride, { weather: none }), /°C/);
   assert.match(M.message(ride, { note: "Lights on, please." }), /Lights on, please\.\n\nSee you on the ride!$/);
   assert.equal(M.time12("18:05"), "6:05 PM");
+  assert.deepEqual([0, 22, 23, 180, 359].map(M.compass), ["N", "N", "NE", "S", "N"]);
 });
 
 test("banner, sign-up link and staff page", { skip: !DB && "set TEST_DATABASE_URL" }, async (t) => {
@@ -72,7 +73,7 @@ test("banner, sign-up link and staff page", { skip: !DB && "set TEST_DATABASE_UR
   const j = await (await fetch(`${base}/api/ride-reminder.json?date=${today}`)).json();
   assert.equal(j.ride.date, today);
   assert.equal(j.signupUrl, `${base}/join-ride/${today}`);
-  assert.match(j.message, /🌡️ 25°C, Partly cloudy/);
+  assert.match(j.message, /🌡️ 25°C, Partly cloudy\n💨 12 km\/h NW\n/);
   assert.ok(j.whatsapp.startsWith("https://wa.me/?text="));
   assert.equal(decodeURIComponent(j.whatsapp.slice(20)), j.message);
 
