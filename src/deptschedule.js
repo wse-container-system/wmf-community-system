@@ -149,8 +149,6 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
   }
   const shareShell = (title, body, l) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${h(title)} · Cycling Development</title><meta name="robots" content="noindex">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/hub.css"><link rel="icon" type="image/png" href="/brand/favicon.png"></head>
 <body><div class="app"><header class="top"><div class="brand"><span class="cd-mark" aria-hidden="true"><svg viewBox="0 0 40 40" width="30" height="30"><circle cx="11" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="29" cy="26" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M11 26 L18 13 L26 13 M18 13 L23 26 L29 26 M24 9 h5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
 <div class="brand-name"><h1>Cycling Development</h1><p class="sub">Department · ${l && l.staff_name ? h(l.staff_name) : "view only"}</p></div></div>

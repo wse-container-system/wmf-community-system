@@ -25,10 +25,8 @@ function shell(title, body, { scripts = "", manifest = "" } = {}) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${h(title)}</title><meta name="robots" content="noindex">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/hub.css">
-<link rel="icon" type="image/png" href="/brand/favicon.png"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="theme-color" content="#4d5ac2">
+<link rel="icon" type="image/png" href="/brand/favicon.png"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="theme-color" content="#4a5bc4">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Scanner">
 ${manifest ? `<link rel="manifest" href="${manifest}">` : ""}
 </head><body class="scanner-app"><main id="main" class="sc-wrap">${body}</main>${scripts}</body></html>`;
@@ -106,7 +104,7 @@ module.exports = function scanner(app, { need, page, setFlash, actor, wrap, limi
   }));
   app.get("/s/:token/manifest.webmanifest", wrap(async (req, res) => {
     const l = await linkByToken(req.params.token); if (!l) return res.status(404).end();
-    res.type("application/manifest+json").send(JSON.stringify({ name: "Attendance scanner", short_name: "Scanner", start_url: `/s/${l.token}`, scope: `/s/${l.token}`, display: "standalone", background_color: "#f7f6fb", theme_color: "#4d5ac2",
+    res.type("application/manifest+json").send(JSON.stringify({ name: "Attendance scanner", short_name: "Scanner", start_url: `/s/${l.token}`, scope: `/s/${l.token}`, display: "standalone", background_color: "#fbf7f4", theme_color: "#4a5bc4",
       icons: [{ src: "/brand/apple-touch-icon.png", sizes: "180x180", type: "image/png" }] }));
   }));
 
