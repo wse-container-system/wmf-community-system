@@ -40,6 +40,16 @@ counts below 5 as "<5".
   Set `HR_FEED_TOKEN` in Render to switch on CSV feeds (`/api/hr/attendance.csv`, `/api/hr/leave.csv`) that an HR system,
   Power Automate or Excel “Get data from web” can pull.
 
+## Race watch (external races on the WMF calendar)
+- Every morning (07:00 Dubai) the app reads the race listing pages set on **Calendar → Race watch** and adds the upcoming
+  **UAE cycling, triathlon and duathlon** races it hasn't seen before to the WMF calendar as **External race · Tentative**,
+  with a link to the race page. Then it emails the list (to the address on that page, else `RACE_NOTIFY_EMAIL`, else `ADMIN_EMAIL`).
+- Watched by default: my.raceresult.com (UAE events), premieronline.com, hopasports.com and the Abu Dhabi Sports Council events page.
+  Any page that publishes schema.org Event data, or an `.ics` calendar link, can be added too; other sites need a reader in `src/racewatch.js`.
+- A race staff delete is not added again. **Check now** on the Race watch page runs it straight away.
+- Switch it on: set `RACE_WATCH_TOKEN` (long random text) on Render, and add the GitHub repository secrets `RACE_WATCH_TOKEN`
+  (same value) and `APP_URL` (the Render address). The *Race watch* GitHub Action then calls the app daily. Email needs the SMTP settings.
+
 ---
 
 # WMF Community System

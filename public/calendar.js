@@ -3,7 +3,7 @@
   "use strict";
   const K = window.WMFCalendar;
   const $ = (s) => document.querySelector(s);
-  const CAT = { wmf_ride: "WMF Ride", wmf_event: "WMF Event", generic_event: "Other event / key date", track_closure: "Track closure" };
+  const CAT = { wmf_ride: "WMF Ride", wmf_event: "WMF Event", generic_event: "Other event / key date", track_closure: "Track closure", external_race: "External race" };
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const pad = (n) => String(n).padStart(2, "0");
@@ -108,7 +108,7 @@
   $("#wc-grid").innerHTML = '<div class="empty" style="grid-column:1/-1">Loading…</div>';
   fetch("/api/calendar.json", { credentials: "same-origin" }).then((r) => r.json()).then((j) => {
     DATA = j.items || [];
-    if (!DATA.some((a) => a.c === "track_closure")) { const ch = document.querySelector(".wc-chip.c-track_closure"); if (ch) ch.remove(); }
+    for (const c of ["track_closure", "external_race"]) if (!DATA.some((a) => a.c === c)) { const ch = document.querySelector(".wc-chip.c-" + c); if (ch) ch.remove(); }
     render();
   }).catch(() => { $("#wc-grid").innerHTML = '<div class="empty" style="grid-column:1/-1">The calendar could not load. Refresh the page.</div>'; });
 })();

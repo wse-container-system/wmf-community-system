@@ -712,6 +712,7 @@ require("./department")(app, { need, page, setFlash, actor, user, wrap });
 require("./deptschedule")(app, { need, page, setFlash, actor, user, wrap });
 require("./teamcal")(app, { need, page, setFlash, actor, wrap });
 require("./calendar")(app, { need, page, setFlash, actor, user, wrap });
+require("./racewatch")(app, { need, page, setFlash, actor, user, wrap });
 require("./dupes")(app, { need, page, setFlash, actor, user, wrap });
 require("./activations")(app, { need, page, setFlash, actor, user, wrap });
 require("./overview")(app, { need, page, setFlash, actor, user, wrap });

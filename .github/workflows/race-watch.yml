@@ -1,0 +1,25 @@
+# Race watch: once a day, ask the app to check the race listing pages and add new UAE cycling and triathlon races
+# to the WMF calendar (see src/racewatch.js). The free Render plan sleeps, so this request also wakes it up.
+# Needs two repository secrets: APP_URL (e.g. https://wmf-community.onrender.com) and RACE_WATCH_TOKEN (same value as on Render).
+name: Race watch
+on:
+  schedule:
+    - cron: "0 3 * * *" # 07:00 Dubai time
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check race pages
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          RACE_WATCH_TOKEN: ${{ secrets.RACE_WATCH_TOKEN }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$RACE_WATCH_TOKEN" ]; then echo "Set the APP_URL and RACE_WATCH_TOKEN repository secrets first."; exit 1; fi
+          # wake the app (a sleeping free instance takes up to a minute to start)
+          curl -sS -o /dev/null --retry 5 --retry-delay 15 --retry-all-errors --max-time 90 "${APP_URL%/}/healthz" || true
+          curl -fsS --retry 3 --retry-delay 20 --retry-all-errors --max-time 180 -X POST \
+            -H "Authorization: Bearer $RACE_WATCH_TOKEN" "${APP_URL%/}/api/race-watch/run" | tee result.json
+          echo
+          node -e 'const r=require("./result.json"); console.log(`${r.added.length} new race(s) added; ${r.errors.length} page(s) could not be read.`); r.added.forEach(a=>console.log(" - "+a.date+" "+a.title)); r.errors.forEach(e=>console.log(" ! "+e.url+": "+e.error))'

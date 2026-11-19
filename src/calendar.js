@@ -10,7 +10,7 @@ const R = require("./rules");
 const C = require("../public/calendar-core");
 const { h, fmtDate } = require("./views");
 
-const CATS = { wmf_ride: "WMF Ride", wmf_event: "WMF Event", generic_event: "Other event / key date", track_closure: "Track closure" };
+const CATS = { wmf_ride: "WMF Ride", wmf_event: "WMF Event", generic_event: "Other event / key date", track_closure: "Track closure", external_race: "External race" };
 const STATUSES = ["Confirmed", "Tentative", "Cancelled", "Completed"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -94,11 +94,11 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
         <header class="wc-top">
           <div><div class="wc-eyebrow">Community ride calendar</div>
             <div class="wc-monthrow"><button class="wc-nav" id="wc-prev" aria-label="Previous month">‹</button><h2 class="wc-month" id="wc-month" aria-live="polite"></h2><button class="wc-nav" id="wc-next" aria-label="Next month">›</button><button class="wc-today" id="wc-today">This month</button></div></div>
-          <div class="wc-legend"><span class="wc-chip c-wmf_ride"><i></i>WMF Ride</span><span class="wc-chip c-wmf_event"><i></i>WMF Event</span><span class="wc-chip c-generic_event"><i></i>Other events &amp; key dates</span><span class="wc-chip c-track_closure"><i></i>Track closures</span></div>
+          <div class="wc-legend"><span class="wc-chip c-wmf_ride"><i></i>WMF Ride</span><span class="wc-chip c-wmf_event"><i></i>WMF Event</span><span class="wc-chip c-generic_event"><i></i>Other events &amp; key dates</span><span class="wc-chip c-track_closure"><i></i>Track closures</span><span class="wc-chip c-external_race"><i></i>External races</span></div>
         </header>
         <div class="wc-cal"><div class="wc-dow"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
           <div class="wc-grid" id="wc-grid"></div><div class="wc-agenda" id="wc-agenda"></div></div>
-        <p class="muted" style="font-size:13px;margin:10px 0 0">Outlined = time or date to be confirmed. Plans can change, so check before you ride.${req.session.user && ["admin", "coordinator"].includes(req.session.user.role) ? ` · <b>Editing on:</b> click an entry to edit, cancel a date or delete it · + on a day adds one · <a href="/calendar/manage">List and share</a>` : ""}</p>
+        <p class="muted" style="font-size:13px;margin:10px 0 0">Outlined = time or date to be confirmed. Plans can change, so check before you ride.${req.session.user && ["admin", "coordinator"].includes(req.session.user.role) ? ` · <b>Editing on:</b> click an entry to edit, cancel a date or delete it · + on a day adds one · <a href="/calendar/manage">List and share</a> · <a href="/calendar/races">Race watch</a>` : ""}</p>
       </section>
       <div class="wc-pop" id="wc-pop" hidden role="dialog" aria-modal="true" aria-labelledby="wc-pop-title"><div class="wc-scrim" data-close></div>
         <div class="wc-card"><div class="wc-head" id="wc-pop-head"><button class="wc-x" data-close aria-label="Close">×</button><div class="wc-eyebrow" id="wc-pop-cat"></div><h2 id="wc-pop-title"></h2></div>
@@ -123,7 +123,7 @@ module.exports = function calendar(app, { need, page, setFlash, actor, wrap }) {
         <img src="${qr}" alt="QR code for the calendar link" width="150" height="150"></section>
       <section class="card">
       <div class="card-head"><div><h2>WMF calendar</h2><p class="lead">WMF rides tell the scanner which ride is on each day. WMF events get a sign-up page you can open from here.</p></div>
-        <div style="display:flex;gap:8px"><a class="btn" href="/calendar">View calendar</a><a class="btn primary" href="/calendar/items/new">Add entry</a></div></div>
+        <div style="display:flex;gap:8px"><a class="btn" href="/calendar">View calendar</a><a class="btn" href="/calendar/races">Race watch</a><a class="btn primary" href="/calendar/items/new">Add entry</a></div></div>
       <div class="tw"><table><thead><tr><th>When</th><th>Entry</th><th>Type</th><th>Scanner ride / sign-up</th><th>Status</th></tr></thead><tbody>
       ${r.rows.map((x) => `<tr><td>${fmtDate(x.start_date)}${x.end_date !== x.start_date ? " – " + fmtDate(x.end_date) : ""}${x.start_time ? "<br><span class='muted'>" + h(x.start_time) + "</span>" : ""}</td>
         <td><a href="/calendar/items/${x.id}"><b>${h(x.title)}</b></a>${x.location ? "<br><span class='muted'>" + h(x.location) + "</span>" : ""}${x.recur ? "<br><span class='muted'>" + h(repeat(x)) + "</span>" : ""}</td>

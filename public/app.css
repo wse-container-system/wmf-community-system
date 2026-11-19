@@ -270,9 +270,11 @@ body::before { content: ""; display: block; height: 4px; background: var(--brand
 
 /* ---------- WMF calendar (ported from the WMF Community Calendar page) ---------- */
 :root { --ride: #5aa3f0; --ride-bg: #e5f1ff; --ride-ink: #163d6b; --event: #e2709f; --event-bg: #fde7f0; --event-ink: #7a2049;
-  --gen: #f0896a; --gen-bg: #ffece4; --gen-ink: #7f3418; --closure: #6b7890; --closure-bg: #e9ecf2; --closure-ink: #232c3d; }
+  --gen: #f0896a; --gen-bg: #ffece4; --gen-ink: #7f3418; --closure: #6b7890; --closure-bg: #e9ecf2; --closure-ink: #232c3d;
+  --race: #2aa57a; --race-bg: #e2f6ee; --race-ink: #134a36; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ride: #7db0f2; --ride-bg: #2c5592; --ride-ink: #f0f6ff; --event: #f497bf; --event-bg: #8a2f5a; --event-ink: #fff0f6;
-  --gen: #f8a874; --gen-bg: #984222; --gen-ink: #fff1ea; --closure: #aab5c8; --closure-bg: #4a5468; --closure-ink: #f3f6fa; } }
+  --gen: #f8a874; --gen-bg: #984222; --gen-ink: #fff1ea; --closure: #aab5c8; --closure-bg: #4a5468; --closure-ink: #f3f6fa;
+  --race: #5fcfa3; --race-bg: #1f6a50; --race-ink: #eafff6; } }
 .wc-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 28px; margin-bottom: 16px; }
 .wc-eyebrow { font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
 .wc-monthrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
@@ -288,6 +290,7 @@ body::before { content: ""; display: block; height: 4px; background: var(--brand
 .c-wmf_event { background: var(--event-bg); color: var(--event-ink); } .c-wmf_event i { background: var(--event); }
 .c-generic_event { background: var(--gen-bg); color: var(--gen-ink); } .c-generic_event i { background: var(--gen); }
 .c-track_closure { background-color: var(--closure-bg); color: var(--closure-ink); background-image: repeating-linear-gradient(135deg, transparent 0 7px, rgba(107, 120, 144, .16) 7px 9px); } .c-track_closure i { background: var(--closure); }
+.c-external_race { background: var(--race-bg); color: var(--race-ink); } .c-external_race i { background: var(--race); }
 .wc-cal { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
 .wc-dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--accent-wash); border-bottom: 1px solid var(--line); }
 .wc-dow div { padding: 10px 12px; font-size: 11px; letter-spacing: .14em; font-weight: 700; color: var(--muted); }
@@ -307,7 +310,7 @@ body::before { content: ""; display: block; height: 4px; background: var(--brand
 .wc-pill.tbc { background: transparent !important; box-shadow: inset 0 0 0 1.5px currentColor; }
 .wc-pill.cancel { opacity: .6; text-decoration: line-through; }
 .wc-pill.c-wmf_ride { border-left: 3px solid var(--ride); } .wc-pill.c-wmf_event { border-left: 3px solid var(--event); }
-.wc-pill.c-generic_event { border-left: 3px solid var(--gen); } .wc-pill.c-track_closure { border-left: 3px solid var(--closure); }
+.wc-pill.c-generic_event { border-left: 3px solid var(--gen); } .wc-pill.c-track_closure { border-left: 3px solid var(--closure); } .wc-pill.c-external_race { border-left: 3px solid var(--race); }
 .wc-agenda { display: none; flex-direction: column; gap: 8px; padding: 12px; }
 .wc-day { display: flex; gap: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: var(--surface); }
 .wc-day.is-today { border-color: var(--accent); background: var(--accent-wash); }
