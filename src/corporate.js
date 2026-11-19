@@ -181,15 +181,8 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         <a class="btn noprint" href="/corporate/export.xlsx?${qs({ company: co.code })}">Download tracker (.xlsx)</a></div>
       ${periodControls(per, companySelect(sc, { all: false }))}
       <div class="grid">
-        <section class="card c8"><h2>Record a session</h2><p class="lead">Create the session, then tick who came. Staff can also check themselves in with the company QR code on ride days.</p>
-          <form class="form" method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}">
-            <div class="row2"><label>Date<input type="date" name="session_date" value="${today}" required></label>
-              <label>Activity<select name="kind">${C.KINDS.map((k) => opt(k, k, C.RIDE)).join("")}</select></label></div>
-            <div class="row2"><label>Title <span class="hint">(optional, e.g. "Night ride at Yas")</span><input name="title" maxlength="120"></label>
-              <label>Status<select name="status">${opt("Held", "Held", "Held")}${opt("Scheduled", "Scheduled (future)", "")}${opt("Cancelled", "Cancelled", "")}</select></label></div>
-            <button class="btn primary">Create session</button></form></section>
-        <section class="card c4"><h2>Today</h2>${(await C.todaysSessions(pool, co)).map((s) => s.virtual ? `<p class="lead" style="margin:0 0 6px"><b>${h(label(s, co))}</b> is planned today; it opens at the first scan.</p><form method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${today}"><input type="hidden" name="kind" value="${h(s.kind)}"><input type="hidden" name="title" value="${h(s.title)}"><input type="hidden" name="status" value="Held"><button class="btn">Open it to tick names</button></form>` : `<p>${sessLink(s, co)} ${stChip(s.status)}</p>`).join("") || `<p class="muted">No session today. <a href="/corporate/schedule">Schedule</a></p>`}
-          <p class="muted" style="font-size:13px">Self check-in link: <a href="/corporate/qr">QR codes</a></p></section>
+        <section class="card c12"><h2>Today</h2>${(await C.todaysSessions(pool, co)).map((s) => s.virtual ? `<p class="lead" style="margin:0 0 6px"><b>${h(label(s, co))}</b> is planned today; it opens at the first scan.</p><form method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${today}"><input type="hidden" name="kind" value="${h(s.kind)}"><input type="hidden" name="title" value="${h(s.title)}"><input type="hidden" name="status" value="Held"><button class="btn">Open it to tick names</button></form>` : `<p>${sessLink(s, co)} ${stChip(s.status)}</p>`).join("") || `<p class="muted">No session today. <a href="/corporate/schedule">Schedule</a></p>`}
+          <p class="muted" style="font-size:13px;margin-bottom:0">To add a past or one-off session, use <a href="/corporate/rides?${qs({ company: co.code })}">All rides &amp; events</a>. Scanning: <a href="/corporate/scan">Check-in</a>.</p></section>
         <section class="card c12"><h2>${h(per.label)}</h2><p class="lead">${sess.filter((s) => s.status === "Held").length} sessions held, ${sess.filter((s) => s.status === "Cancelled").length} cancelled. — means cancelled. Columns with a total but no ticks are headcount-only sessions.</p>${reg}</section>
       </div>`, { active: "/corporate/attendance" }));
   }));
@@ -213,10 +206,10 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
   app.get("/corporate/rides", S, wrap(async (req, res) => {
     const sc = await scope(req), today = R.todayLocal();
     const per = C.periodFromQuery({ period: "month", ...req.query });
-    const kind = C.KINDS.includes(req.query.kind) ? req.query.kind : "";
+    const kind = C.KINDS.includes(req.query.kind) || req.query.kind === "other" ? req.query.kind : "";
     const sess = (await pool.query(`SELECT s.*, s.session_date::text AS d, (SELECT count(*) FROM corp_attendance a WHERE a.session_id = s.id)::int AS named
-      FROM corp_sessions s WHERE s.company = ANY($1) AND s.session_date BETWEEN $2 AND $3 ${kind ? "AND s.kind = $4" : ""} ORDER BY s.session_date DESC, s.id DESC`,
-    kind ? [sc.codes, per.start, per.end, kind] : [sc.codes, per.start, per.end])).rows;
+      FROM corp_sessions s WHERE s.company = ANY($1) AND s.session_date BETWEEN $2 AND $3 ${kind ? `AND s.kind ${kind === "other" ? "<>" : "="} $4` : ""} ORDER BY s.session_date DESC, s.id DESC`,
+    kind ? [sc.codes, per.start, per.end, kind === "other" ? C.RIDE : kind] : [sc.codes, per.start, per.end])).rows;
     const att = (s) => (s.status === "Cancelled" ? 0 : s.named || s.headcount || 0);
     const held = sess.filter((s) => s.status === "Held"), people = held.reduce((a, s) => a + att(s), 0);
     const fresh = held.reduce((a, s) => a + (s.headcount_new || 0), 0);
@@ -226,9 +219,9 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const dupKey = (s) => `${s.company}|${s.d}|${s.kind}`, seen = new Map();
     for (const s of sess) seen.set(dupKey(s), (seen.get(dupKey(s)) || 0) + 1);
     const co0 = sc.sel || sc.list[0];
-    res.send(page(req, "Corporate rides", `
-      <div class="card-head"><div><h2 style="font-size:22px">Rides${sc.sel ? " · " + coChip(sc.sel) : ""}</h2><p class="muted" style="margin:2px 0 0">Every corporate ride and session with its turnout. Open one to tick names, change it or delete it.</p></div></div>
-      ${periodControls(per, companySelect(sc) + `<label class="f"><span>Activity</span><select class="inp" name="kind" data-autosubmit>${opt("", "All activities", kind)}${C.KINDS.map((k) => opt(k, k, kind)).join("")}</select></label>`)}
+    res.send(page(req, "Corporate rides & events", `
+      <div class="card-head"><div><h2 style="font-size:22px">Rides &amp; events${sc.sel ? " · " + coChip(sc.sel) : ""}</h2><p class="muted" style="margin:2px 0 0">Every corporate ride, activity and event with its turnout. Add one below; open one to tick names, change it or delete it. Regular weekly sessions are set on Schedule.</p></div></div>
+      ${periodControls(per, companySelect(sc) + `<label class="f"><span>Activity</span><select class="inp" name="kind" data-autosubmit>${opt("", "All activities", kind)}${opt("other", "Events & other activities (not rides)", kind)}${C.KINDS.map((k) => opt(k, k, kind)).join("")}</select></label>`)}
       ${(() => {
         const cos = sc.list.filter((co) => sc.codes.includes(co.code));
         const rowCo = (f) => cos.map((co) => { const hs = held.filter((s) => s.company === co.code); return hs.length || sess.some((s) => s.company === co.code) ? [coChip(co), ...f(hs, co)] : null; }).filter(Boolean);
@@ -243,19 +236,19 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
         ], { cls: "tiles" });
       })()}
       <div class="grid">
-        <section class="card c5"><h2>+ Add a ride</h2><p class="lead">Record a ride or session, then tick who came on the next page (or type a headcount there).</p>
+        <section class="card c5"><h2>+ Add a ride or event</h2><p class="lead">Record a ride, activity or event (past, today, or ahead of time as Scheduled), then tick who came on the next page or type a headcount.</p>
           <form class="form" method="post" action="/corporate/sessions">
             <div class="row2"><label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, co0 ? co0.code : "")).join("")}</select></label>
               <label>Date<input type="date" name="session_date" value="${today}" required></label></div>
             <div class="row2"><label>Activity<select name="kind">${C.KINDS.map((k) => opt(k, k, C.RIDE)).join("")}</select></label>
               <label>Status<select name="status">${opt("Held", "Held", "Held")}${opt("Scheduled", "Scheduled (future)", "")}${opt("Cancelled", "Cancelled", "")}</select></label></div>
-            <div class="row2"><label>Title <span class="hint">(optional)</span><input name="title" maxlength="120" placeholder="e.g. Night ride at Yas"></label>
+            <div class="row2"><label>Title <span class="hint">(name events, e.g. Aurora Yoga)</span><input name="title" maxlength="120" placeholder="e.g. Night ride at Yas"></label>
               <label>Location <span class="hint">(optional)</span><input name="location" maxlength="80" placeholder="e.g. Al Hudayriyat Island"></label></div>
             <label>Headcount <span class="hint">(optional: only if you won't tick names)</span><input type="number" name="headcount" min="0" max="999"></label>
-            <button class="btn primary">Add the ride</button></form></section>
+            <button class="btn primary">Add</button></form></section>
         <section class="card c7"><h2>By company</h2>${byCo.length ? `<div class="hbars">${byCo.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.co.name)}</span><span class="hbar-t"><span style="width:${(x.people / x.n / maxCo) * 100}%;background:${h(x.co.color || "var(--accent)")}"></span></span>
             <span class="hbar-v"><b>${nf(Math.round(x.people / x.n))}</b> <span class="muted">avg · ${x.n} session${x.n === 1 ? "" : "s"} · ${nf(x.people)} total</span></span></div>`).join("")}</div>` : '<p class="muted">No sessions held in this period.</p>'}</section>
-        <section class="card c12"><h2>Every ride · ${h(per.label)}</h2>
+        <section class="card c12"><h2>Every ride &amp; event · ${h(per.label)}</h2>
           <div class="tw"><table><thead><tr><th>Date</th><th>Company</th><th>Activity</th><th>Location</th><th>Status</th><th class="n">Attendance</th><th></th></tr></thead><tbody>
           ${sess.map((s) => { const co = sc.byCode[s.company] || { name: s.company }; const dup = seen.get(dupKey(s)) > 1;
             return `<tr${dup ? ' class="rd-dupe"' : ""}><td style="white-space:nowrap">${fmtDate(s.d)} <span class="muted">${R.weekdayOf(s.d).slice(0, 3)}</span></td><td>${coChip(co)}</td>
@@ -367,34 +360,13 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     res.redirect(back.startsWith("/corporate/") ? back : "/corporate/attendance?company=" + L.co.code);
   }));
 
-  // ===================================================== event tracker
-  app.get("/corporate/events", S, wrap(async (req, res) => {
-    const sc = await scope(req), per = C.periodFromQuery(req.query);
-    const kind = C.KINDS.includes(req.query.kind) ? req.query.kind : "";
-    const rows = (await pool.query(`SELECT s.*, (SELECT count(*) FROM corp_attendance a WHERE a.session_id = s.id)::int AS named FROM corp_sessions s
-      WHERE company = ANY($1) AND kind <> $2 AND session_date BETWEEN $3 AND $4 ${kind ? "AND kind = $5" : ""} ORDER BY session_date DESC`, [sc.codes, C.RIDE, per.start, per.end, ...(kind ? [kind] : [])])).rows;
-    const up = (await pool.query(`SELECT * FROM corp_sessions WHERE company = ANY($1) AND kind <> $2 AND session_date > $3 ORDER BY session_date`, [sc.codes, C.RIDE, R.todayLocal()])).rows;
-    const att = (s) => s.status === "Cancelled" ? 0 : s.named || s.headcount || 0;
-    const held = rows.filter((s) => s.status === "Held");
-    const byKind = C.KINDS.filter((k) => k !== C.RIDE).map((k) => ({ name: k, value: held.filter((s) => s.kind === k).reduce((a, s) => a + att(s), 0), n: held.filter((s) => s.kind === k).length })).filter((x) => x.n);
-    res.send(page(req, "Corporate events", `
-      <div class="card-head"><div><h2 style="font-size:22px">Event tracker</h2><p class="muted" style="margin:2px 0 0">Running, yoga, workshops and one-off events with each partner. Weekly rides are on the Attendance page.</p></div></div>
-      ${periodControls(per, companySelect(sc) + `<label class="f"><span>Activity</span><select class="inp" name="kind" data-autosubmit>${opt("", "All activities", kind)}${C.KINDS.filter((k) => k !== C.RIDE).map((k) => opt(k, k, kind)).join("")}</select></label>`)}
-      <div class="tiles">${tile("Events held", nf(held.length), h(per.label))}${tile("Event attendance", nf(held.reduce((a, s) => a + att(s), 0)), "Named check-ins or headcount")}${tile("Average per event", nf(held.length ? held.reduce((a, s) => a + att(s), 0) / held.length : null, 1), "")}${tile("Coming up", nf(up.length), "Scheduled")}</div>
-      <div class="grid">
-        <section class="card c8"><h2>Events</h2>${table(["Date", "Company", "Event", "Activity", "Status", "Attendance", "Remarks"], rows.map((s) => [fmtDate(s.session_date), raw(coChip(sc.byCode[s.company])), raw(sessLink(s, sc.byCode[s.company])), s.kind, raw(stChip(s.status)), s.status === "Held" ? att(s) : "—", s.remarks || ""]), { num: [5], empty: "No events in this period." })}
-          ${up.length ? `<h3 style="margin-top:14px;font-size:15px">Coming up</h3>${table(["Date", "Company", "Event", "Activity"], up.map((s) => [fmtDate(s.session_date), raw(coChip(sc.byCode[s.company])), raw(sessLink(s, sc.byCode[s.company])), s.kind]))}` : ""}</section>
-        <section class="card c4"><h2>Add an event</h2><p class="lead">Add it ahead of time as Scheduled. On the day, people can check in with the company QR code, or you tick names or enter a headcount.</p>
-          <form class="form" method="post" action="/corporate/sessions">
-            <label>Company<select name="company">${sc.list.map((c) => opt(c.code, c.name, sc.sel ? sc.sel.code : "")).join("")}</select></label>
-            <label>Event name<input name="title" required maxlength="120" placeholder="e.g. Aurora Yoga, Bike maintenance workshop"></label>
-            <div class="row2"><label>Date<input type="date" name="session_date" required></label><label>Activity<select name="kind">${C.KINDS.filter((k) => k !== C.RIDE).map((k) => opt(k, k, "Event")).join("")}</select></label></div>
-            <label>Location<input name="location" maxlength="120"></label>
-            <div class="row2"><label>Status<select name="status">${opt("Scheduled", "Scheduled", "Scheduled")}${opt("Held", "Held", "")}</select></label><label>Headcount <span class="hint">(if held, optional)</span><input type="number" min="0" name="headcount"></label></div>
-            <button class="btn primary">Add event</button></form>
-          <h2 style="margin-top:16px">By activity</h2>${hbars(byKind, { color: "var(--s3)", empty: "No events held in this period." })}</section>
-      </div>`, { active: "/corporate/events" }));
-  }));
+  // ===================================================== events: now part of Rides & events (old links keep working)
+  app.get("/corporate/events", S, (req, res) => {
+    const q = new URLSearchParams(Object.entries(req.query).filter(([k, v]) => ["company", "period", "p", "from", "to"].includes(k) && typeof v === "string"));
+    q.set("kind", C.KINDS.includes(req.query.kind) && req.query.kind !== C.RIDE ? req.query.kind : "other");
+    if (!q.has("period")) q.set("period", "ytd");
+    res.redirect("/corporate/rides?" + q.toString());
+  });
 
   // ===================================================== participants
   app.get("/corporate/participants", S, wrap(async (req, res) => {
@@ -876,7 +848,7 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     res.send(page(req, "Scan corporate QR", `
       <section class="card narrow"><h2>Scan personal QR codes</h2><p class="lead">Scan each staff member's personal code (it starts with CORP-) to record their attendance. For the WMF community, use <a href="/scan">WMF → Scan QR</a>.</p>
         ${options.length ? `<label class="f" style="display:grid;gap:4px"><span>Session today</span><select id="corpSession" class="inp">${options.map((o) => `<option value="${h(o.v)}" data-co="${h(o.co)}">${h(o.label)}</option>`).join("")}</select></label>`
-    : `<div class="alert info"><span class="ic">i</span><span>No corporate session today (${fmtDate(today)}). <a href="/corporate/attendance">Create one</a> to scan into it.</span></div>`}</section>
+    : `<div class="alert info"><span class="ic">i</span><span>No corporate session today (${fmtDate(today)}). Add it on the <a href="/corporate/schedule">Schedule</a> or <a href="/corporate/rides">Rides &amp; events</a> to scan into it.</span></div>`}</section>
       ${options.length ? `<section class="card narrow" style="display:grid;gap:12px"><div id="reader" aria-label="Camera"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="btn primary big" id="start">Start camera</button><button class="btn big" id="stop" hidden>Stop camera</button></div>
         <div id="result" class="scan-result" hidden aria-live="assertive"></div></section>
