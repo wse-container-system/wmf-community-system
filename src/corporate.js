@@ -170,20 +170,36 @@ module.exports = function corporate(app, { need, page, setFlash, actor, user, wr
     const parts = (await pool.query(`SELECT p.*, (SELECT count(*) FROM corp_attendance a WHERE a.participant_id = p.id)::int AS total FROM corp_participants p WHERE company = $1 ORDER BY status, full_name`, [co.code])).rows;
     const att = new Set((await pool.query("SELECT session_id, participant_id FROM corp_attendance WHERE session_id = ANY($1)", [sess.map((s) => s.id)])).rows.map((a) => a.session_id + "|" + a.participant_id));
     const show = parts.filter((p) => p.status === "Active" || sess.some((s) => att.has(s.id + "|" + p.id)));
-    const head = sess.map((s) => `<th class="d" title="${h(C.sessionName(s, co))}"><a href="/corporate/session/${s.id}">${h(fmtDate(s.session_date).replace(/ \d{4}$/, ""))}${s.kind !== C.RIDE ? " · " + h(s.kind) : ""}</a></th>`).join("");
-    const cell = (s, p) => s.status === "Cancelled" ? `<td class="x cx" title="${h(s.remarks || "Cancelled")}">—</td>` : att.has(s.id + "|" + p.id) ? `<td class="x y">1</td>` : `<td class="x"></td>`;
-    const reg = `<div class="tw"><table class="reg"><thead><tr><th>Name</th>${head}<th class="n">In range</th><th class="n">All time</th></tr></thead><tbody>
-      ${show.map((p) => `<tr><td class="name"><a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>${p.status === "Inactive" ? ' <span class="badge">Inactive</span>' : ""}</td>${sess.map((s) => cell(s, p)).join("")}<td class="n">${sess.filter((s) => att.has(s.id + "|" + p.id)).length}</td><td class="n">${p.total}</td></tr>`).join("") || `<tr><td class="muted" colspan="${sess.length + 3}">No participants yet.</td></tr>`}
-      </tbody><tfoot><tr><td class="name">Attendance</td>${sess.map((s) => `<td class="x">${s.status === "Cancelled" ? "—" : s.named || s.headcount || 0}</td>`).join("")}<td></td><td></td></tr></tfoot></table></div>`;
+    const on = (s, p) => att.has(s.id + "|" + p.id);
+    const held = sess.filter((s) => s.status !== "Cancelled"), cancelled = sess.length - held.length;
+    const inRange = new Map(show.map((p) => [p.id, sess.filter((s) => on(s, p)).length]));
+    const came = show.filter((p) => inRange.get(p.id) > 0).sort((a, b) => inRange.get(b.id) - inRange.get(a.id) || a.full_name.localeCompare(b.full_name));
+    const idle = show.filter((p) => !inRange.get(p.id));
+    const tot = (s) => s.named || s.headcount || 0, sum = held.reduce((n, s) => n + tot(s), 0);
+    const pLink = (p) => `<a href="/corporate/participants/${encodeURIComponent(p.pid)}">${h(p.full_name)}</a>`;
+    const head = sess.map((s) => {
+      const [d, m] = fmtDate(s.session_date).split(" ");
+      const cx = s.status === "Cancelled";
+      return `<th class="d${cx ? " cx" : ""}" title="${h(C.sessionName(s, co) + (cx ? " · cancelled" + (s.remarks ? ": " + s.remarks : "") : ""))}"><a href="/corporate/session/${s.id}"><b>${h(d)}</b><span>${h(m)}</span>${s.kind !== C.RIDE ? `<i>${h(s.kind)}</i>` : ""}</a></th>`;
+    }).join("");
+    const cell = (s, p) => s.status === "Cancelled" ? '<td class="x cx"></td>' : on(s, p) ? '<td class="x"><i class="dot on" role="img" aria-label="Attended"></i></td>' : '<td class="x"><i class="dot" aria-hidden="true"></i></td>';
+    const share = (n) => held.length ? Math.round((n / held.length) * 100) : 0;
+    const reg = !sess.length ? '<p class="muted">No sessions in this period. Pick a wider range above.</p>' : `<div class="tw"><table class="reg"><thead><tr><th class="name">Name</th>${head}<th class="n tot">Period</th><th class="n tot">All time</th></tr></thead><tbody>
+      ${came.map((p) => `<tr><td class="name">${pLink(p)}${p.status === "Inactive" ? ' <span class="badge">Inactive</span>' : ""}</td>${sess.map((s) => cell(s, p)).join("")}<td class="n tot"><span class="pc"><span class="bar" style="--w:${share(inRange.get(p.id))}%"></span><b>${inRange.get(p.id)}</b></span></td><td class="n tot muted">${p.total}</td></tr>`).join("") || `<tr><td class="muted" colspan="${sess.length + 3}">Nobody's names were ticked in this period.</td></tr>`}
+      </tbody><tfoot><tr><td class="name">Total</td>${sess.map((s) => s.status === "Cancelled" ? '<td class="x cx" title="Cancelled">–</td>' : `<td class="x${!s.named && s.headcount ? " hc" : ""}"${!s.named && s.headcount ? ' title="Headcount only, no names ticked"' : ""}>${tot(s)}</td>`).join("")}<td class="n tot">${nf(sum)}</td><td></td></tr></tfoot></table></div>`;
+    const idleList = idle.length ? `<details class="reg-idle"><summary>${idle.length} ${idle.length === 1 ? "person" : "people"} on the roster didn't come in this period</summary>
+      <ul>${idle.map((p) => `<li>${pLink(p)}<span>${p.total ? `${p.total} all time` : "never"}</span></li>`).join("")}</ul></details>` : "";
+    const summary = `<div class="reg-sum"><div><b>${held.length}</b><span>sessions held</span></div><div><b>${came.length}</b><span>people came</span></div><div><b>${nf(sum)}</b><span>total attendance</span></div><div><b>${nf(held.length ? sum / held.length : 0, 1)}</b><span>average per session</span></div>${cancelled ? `<div><b>${cancelled}</b><span>cancelled</span></div>` : ""}</div>`;
+    const legend = `<p class="reg-key"><span><i class="dot on"></i> attended</span>${cancelled ? '<span><i class="cxk"></i> cancelled</span>' : ""}${held.some((s) => !s.named && s.headcount) ? '<span><em>12</em> headcount only</span>' : ""}<span>Click a date to tick names or change it.</span></p>`;
     const today = R.todayLocal();
     res.send(page(req, "Corporate attendance", `
-      <div class="card-head"><div><h2 style="font-size:22px">Attendance register · ${coChip(co)}</h2><p class="muted" style="margin:2px 0 0">Same layout as the tracker: one row per person, one column per session. Click a date to tick names or change a session.</p></div>
+      <div class="card-head"><div><h2 style="font-size:22px">Attendance register · ${coChip(co)}</h2><p class="muted" style="margin:2px 0 0">Who came to each session. The download has the full tracker layout.</p></div>
         <a class="btn noprint" href="/corporate/export.xlsx?${qs({ company: co.code })}">Download tracker (.xlsx)</a></div>
       ${periodControls(per, companySelect(sc, { all: false }))}
       <div class="grid">
         <section class="card c12"><h2>Today</h2>${(await C.todaysSessions(pool, co)).map((s) => s.virtual ? `<p class="lead" style="margin:0 0 6px"><b>${h(label(s, co))}</b> is planned today; it opens at the first scan.</p><form method="post" action="/corporate/sessions"><input type="hidden" name="company" value="${h(co.code)}"><input type="hidden" name="session_date" value="${today}"><input type="hidden" name="kind" value="${h(s.kind)}"><input type="hidden" name="title" value="${h(s.title)}"><input type="hidden" name="status" value="Held"><button class="btn">Open it to tick names</button></form>` : `<p>${sessLink(s, co)} ${stChip(s.status)}</p>`).join("") || `<p class="muted">No session today. <a href="/corporate/schedule">Schedule</a></p>`}
           <p class="muted" style="font-size:13px;margin-bottom:0">To add a past or one-off session, use <a href="/corporate/rides?${qs({ company: co.code })}">All rides &amp; events</a>. Scanning: <a href="/corporate/scan">Check-in</a>.</p></section>
-        <section class="card c12"><h2>${h(per.label)}</h2><p class="lead">${sess.filter((s) => s.status === "Held").length} sessions held, ${sess.filter((s) => s.status === "Cancelled").length} cancelled. — means cancelled. Columns with a total but no ticks are headcount-only sessions.</p>${reg}</section>
+        <section class="card c12"><h2>${h(per.label)}</h2>${summary}${legend}${reg}${idleList}</section>
       </div>`, { active: "/corporate/attendance" }));
   }));
 
