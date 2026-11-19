@@ -26,7 +26,7 @@
 .hub-card .links a { font-size: 13px; font-weight: 600; }
 .band-wmf { --band: var(--brand-grad); }
 .band-corp { --band: linear-gradient(90deg, #2f7fd6, #1aa38a); }
-.band-dept { --band: linear-gradient(90deg, #7b62cf, #d9634f); }
+.band-dept { --band: linear-gradient(90deg, #8299eb, #d86a57); }
 
 /* company chips */
 .co { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
@@ -67,7 +67,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .st-Leave, .st-Pending, .st-Scheduled { background: var(--warn-wash); color: var(--warn-ink); }
 .st-Sick, .st-Absent, .st-Rejected, .st-Cancelled { background: var(--crit-wash); color: var(--crit-ink); }
 .st-Off, .st-Holiday { background: var(--line); color: var(--ink-2); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-Remote, :root:not([data-theme="light"]) .st-Field { background: #16283d; color: #80c0f9; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-Remote, :root:not([data-theme="light"]) .st-Field { background: #16283d; color: #6fd3b3; } }
 
 .month-grid td.c { text-align: center; padding: 3px 2px; font-size: 12px; font-weight: 700; min-width: 26px; }
 .month-grid th.c { text-align: center; padding: 3px 2px; font-size: 11.5px; min-width: 26px; }
@@ -78,7 +78,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .checklist input { width: 18px !important; height: 18px; min-height: 0 !important; flex-shrink: 0; }
 
 /* QR posters and cards */
-.poster { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 22px; border-radius: 16px; background: #fff; color: #111; border: 3px solid var(--co, #4d5ac2); }
+.poster { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 22px; border-radius: 16px; background: #fff; color: #111; border: 3px solid var(--co, #4a5bc4); }
 .poster h3 { font-size: 26px; color: #111; }
 .poster img { width: min(320px, 78vw); image-rendering: pixelated; }
 .poster p { margin: 0; color: #333; }
@@ -688,22 +688,22 @@ a.btn.done { opacity: .7; }
 .rs-dow span { font-size: 11px; color: var(--muted); font-weight: 600; }
 .rs-d { padding: 8px 0; border-radius: 10px; font-size: 14px; color: var(--ink-2, #555); text-decoration: none; }
 .rs-d.out, .rs-d.past { opacity: .35; }
-.rs-d.on { background: var(--accent-soft, #e8ecff); color: var(--accent, #4d5ac2); font-weight: 700; }
+.rs-d.on { background: var(--accent-soft, #eaeffc); color: var(--accent, #4a5bc4); font-weight: 700; }
 .rs-d.on.off { text-decoration: line-through; opacity: .6; }
-.rs-d.sel { outline: 2px solid var(--accent, #4d5ac2); }
+.rs-d.sel { outline: 2px solid var(--accent, #4a5bc4); }
 .rs-list { display: grid; gap: 6px; margin-top: 12px; }
 .rs-ride { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: inherit; font-size: 14px; }
-.rs-ride.sel { border-color: var(--accent, #4d5ac2); background: var(--accent-soft, #f1f3ff); }
+.rs-ride.sel { border-color: var(--accent, #4a5bc4); background: var(--accent-soft, #eaeffc); }
 .rs-ride.off { opacity: .55; }
 .rs-ride .muted { font-size: 12.5px; }
 .rs-bike { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
 .rs-bike legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
 .rs-who { margin: 14px 0 0; line-height: 1.6; }
 .rs-ref { background: #e8f6ee; color: #14532d; border-radius: 10px; padding: 10px 12px; }
-.rs-msg { white-space: pre-wrap; font-size: 13px; background: var(--surface-2, #f7f6fb); padding: 10px; border-radius: 10px; }
+.rs-msg { white-space: pre-wrap; font-size: 13px; background: var(--surface-2, #fbf7f4); padding: 10px; border-radius: 10px; }
 .rs-bike:has(input[name=rent][value="0"]:checked) .rs-h { display: none; }
 .rs-bike label.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
-.rs-bike input[type=radio] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4d5ac2); }
+.rs-bike input[type=radio] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4a5bc4); }
 .sh-size { display: flex; gap: 6px; align-items: center; } .sh-size .inp { width: 110px; min-height: 36px; }
 .sh-size .sh-type { width: 120px; }
 .sh-size .btn { white-space: nowrap; } .card:has(.sh-size) td:nth-child(2), .card:has(.sh-size) td:nth-child(3) { white-space: nowrap; }

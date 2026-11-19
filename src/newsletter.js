@@ -73,21 +73,21 @@ async function draftEvent(activityId, base) {
 /** The email itself: 600px, table layout and inline styles so it looks right in Outlook, Gmail and Mailchimp. */
 function renderEmail(n, base) {
   const esc = (s) => h(s).replace(/\n/g, "<br>");
-  const btn = (t, u) => (t && /^https?:\/\//.test(u || "") ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px"><tr><td style="border-radius:999px;background:#5b5fc7"><a href="${h(u)}" style="display:inline-block;padding:11px 22px;font:bold 15px Arial,sans-serif;color:#ffffff;text-decoration:none;border-radius:999px">${h(t)}</a></td></tr></table>` : "");
-  const sec = (s) => `<tr><td style="padding:22px 32px 4px;font:15px/1.55 Arial,sans-serif;color:#2b2840">
-      <h2 style="margin:0 0 8px;font:bold 19px Arial,sans-serif;color:#151320">${h(s.heading)}</h2><div>${esc(s.body)}</div>${btn(s.button_text, s.button_url)}</td></tr>`;
+  const btn = (t, u) => (t && /^https?:\/\//.test(u || "") ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 4px"><tr><td style="border-radius:999px;background:#4a5bc4"><a href="${h(u)}" style="display:inline-block;padding:11px 22px;font:bold 15px Arial,sans-serif;color:#ffffff;text-decoration:none;border-radius:999px">${h(t)}</a></td></tr></table>` : "");
+  const sec = (s) => `<tr><td style="padding:22px 32px 4px;font:15px/1.55 Arial,sans-serif;color:#3f4460">
+      <h2 style="margin:0 0 8px;font:bold 19px Arial,sans-serif;color:#14193a">${h(s.heading)}</h2><div>${esc(s.body)}</div>${btn(s.button_text, s.button_url)}</td></tr>`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${h(n.title)}</title></head>
-<body style="margin:0;padding:0;background:#f3f1f8">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f1f8"><tr><td align="center" style="padding:24px 12px">
+<body style="margin:0;padding:0;background:#fbf7f4">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fbf7f4"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden">
-  <tr><td style="height:6px;background:#979fe7;background-image:linear-gradient(90deg,#80c0f9,#979fe7,#be91b2,#f59082)"></td></tr>
+  <tr><td style="height:6px;background:#8299eb;background-image:linear-gradient(90deg,#6fd3b3,#8299eb,#d86a57)"></td></tr>
   <tr><td align="center" style="padding:26px 32px 6px"><img src="${h(base)}/brand/wmf-logo.png" width="260" alt="WMN Moving FWD" style="display:block;width:260px;max-width:80%;height:auto;border:0"></td></tr>
-  <tr><td style="padding:10px 32px 0;font:bold 26px/1.15 Arial,sans-serif;color:#151320;text-align:center">${h(n.title)}</td></tr>
-  ${n.intro ? `<tr><td style="padding:16px 32px 0;font:15px/1.55 Arial,sans-serif;color:#2b2840">${esc(n.intro)}</td></tr>` : ""}
+  <tr><td style="padding:10px 32px 0;font:bold 26px/1.15 Arial,sans-serif;color:#14193a;text-align:center">${h(n.title)}</td></tr>
+  ${n.intro ? `<tr><td style="padding:16px 32px 0;font:15px/1.55 Arial,sans-serif;color:#3f4460">${esc(n.intro)}</td></tr>` : ""}
   ${(n.sections || []).filter((s) => s.heading || s.body).map(sec).join("")}
-  <tr><td style="padding:26px 32px 30px;font:13px/1.5 Arial,sans-serif;color:#5f5a74;border-top:1px solid #e7e4f0">
+  <tr><td style="padding:26px 32px 30px;font:13px/1.5 Arial,sans-serif;color:#5a5e76;border-top:1px solid #ece6e0">
     See you on the road!<br><b>The WMF team</b><br><br>
-    <a href="${h(base)}/calendar" style="color:#4d5ac2">Calendar</a> · <a href="${h(base)}/events" style="color:#4d5ac2">Events</a> · <a href="${h(base)}/join" style="color:#4d5ac2">Register</a><br><br>
+    <a href="${h(base)}/calendar" style="color:#4a5bc4">Calendar</a> · <a href="${h(base)}/events" style="color:#4a5bc4">Events</a> · <a href="${h(base)}/join" style="color:#4a5bc4">Register</a><br><br>
     You're receiving this because you're part of the Women Moving Forward community and agreed to receive updates. To stop receiving these emails, reply with “unsubscribe”.</td></tr>
 </table></td></tr></table></body></html>`;
 }

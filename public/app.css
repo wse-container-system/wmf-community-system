@@ -1,41 +1,44 @@
 /* Layout: app shell — header, page nav, one filter row, then summary-before-detail cards on a 12-column grid.
-   Brand colours are placeholders until the approved WMF / UAE Team ADQ palette arrives. */
+   Colours and font follow the WMF Brand Guidelines (Nov 2026). */
+@font-face { font-family: "Mena Grotesk"; src: url("/fonts/MenaGrotesk-Regular.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root {
-  /* WMN Moving FWD brand: sky #80C0F9 → lavender #979FE7 → mauve #BE91B2 → coral #F59082.
+  /* WMF palette — core: mint #6FD3B3, periwinkle #8299EB, warm yellow #F3D987, coral #D86A57, burgundy #8B2622;
+     soft: mint #C5E9DF, periwinkle #CBD8F5, yellow #F9EEC8, coral #F2D1CA, rose #E3B6BE.
      The pure brand colours are too light for text on white, so text, controls and chart marks use deeper tones of the same hues. */
-  --brand-sky: #80c0f9; --brand-lavender: #979fe7; --brand-mauve: #be91b2; --brand-coral: #f59082;
-  --brand-grad: linear-gradient(90deg, #80c0f9 0%, #979fe7 38%, #be91b2 68%, #f59082 100%);
-  --brand-grad-deep: linear-gradient(90deg, #2f6fc0 0%, #6a55b8 55%, #b04a62 100%); /* white text ≥ 5:1 at every stop */
-  --bg: #f7f6fb;          /* page plane, faint lavender */
+  --brand-sky: #6fd3b3; --brand-lavender: #8299eb; --brand-mauve: #e3b6be; --brand-coral: #d86a57;
+  --brand-yellow: #f3d987; --brand-burgundy: #8b2622;
+  --brand-grad: linear-gradient(90deg, #6fd3b3 0%, #8299eb 50%, #d86a57 100%);
+  --brand-grad-deep: linear-gradient(90deg, #1b7259 0%, #4a5bc4 55%, #8b2622 100%); /* white text ≥ 5:1 at every stop */
+  --bg: #fbf7f4;          /* page plane, WMF warm off-white */
   --surface: #ffffff;     /* cards and chart surface */
-  --ink: #151320;         /* primary text */
-  --ink-2: #4a4660;       /* secondary text */
-  --muted: #5f5a74;       /* labels, axis text */
-  --line: #e7e4f0;        /* hairlines, gridlines */
-  --axis: #c9c4d8;
-  --accent: #4d5ac2;      /* controls, links, focus (deep lavender, 5.9:1) */
-  --accent-wash: #eef0fb;
-  --s1: #2f7fd6;          /* series 1: sky, deepened */
-  --s2: #d9634f;          /* series 2: coral, deepened */
-  --s3: #7b62cf;          /* series 3: lavender, deepened */
+  --ink: #14193a;         /* primary text, WMF navy */
+  --ink-2: #3f4460;       /* secondary text */
+  --muted: #5a5e76;       /* labels, axis text */
+  --line: #ece6e0;        /* hairlines, gridlines */
+  --axis: #d3cbc4;
+  --accent: #4a5bc4;      /* controls, links, focus (deep periwinkle, 5.9:1) */
+  --accent-wash: #eaeffc;
+  --s1: #4f68d8;          /* series 1: periwinkle, deepened */
+  --s2: #d86a57;          /* series 2: coral */
+  --s3: #2a9d7c;          /* series 3: mint, deepened */
   --good: #0ca30c; --good-ink: #006300; --warn: #fab219; --warn-ink: #7a5200; --crit: #d03b3b; --crit-ink: #a12727;
   --warn-wash: #fff6e0; --crit-wash: #fdecec; --good-wash: #e9f7e9;
   --shadow: 0 1px 2px rgba(16, 24, 40, .06);
-  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
-  --f-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-display: "Mena Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Mena Grotesk", "Helvetica Neue", Arial, sans-serif;
   --r: 10px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #12101a; --surface: #1c1a26; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
-    --accent: #979fe7; --accent-wash: #262744; --s1: #4a90de; --s2: #d9634f; --s3: #8a73da;
+    --bg: #11142a; --surface: #1b1f38; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
+    --accent: #8299eb; --accent-wash: #262744; --s1: #8299eb; --s2: #d9634f; --s3: #6fd3b3;
     --good-ink: #3fc23f; --warn-ink: #f5c04a; --crit-ink: #f08a8a; --warn-wash: #2e2510; --crit-wash: #331b1b; --good-wash: #13281a;
     --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #12101a; --surface: #1c1a26; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
-    --accent: #979fe7; --accent-wash: #262744; --s1: #4a90de; --s2: #d9634f; --s3: #8a73da;
+  --bg: #11142a; --surface: #1b1f38; --ink: #f3f1f8; --ink-2: #cbc6d9; --muted: #a29db3; --line: #2e2b3a; --axis: #403c50;
+    --accent: #8299eb; --accent-wash: #262744; --s1: #8299eb; --s2: #d9634f; --s3: #6fd3b3;
   --good-ink: #3fc23f; --warn-ink: #f5c04a; --crit-ink: #f08a8a; --warn-wash: #2e2510; --crit-wash: #331b1b; --good-wash: #13281a;
   --shadow: none; color-scheme: dark;
 }
@@ -43,7 +46,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
-h1, h2, h3 { font-family: var(--f-display); font-stretch: 87%; margin: 0; text-wrap: balance; letter-spacing: -.005em; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -.005em; }
 button, select, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 20; }
@@ -265,7 +268,7 @@ body::before { content: ""; display: block; height: 4px; background: var(--brand
 .hero-num { background: var(--brand-grad-deep); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .qrbox { border: 2px solid transparent; background: linear-gradient(#fff, #fff) padding-box, var(--brand-grad) border-box; }
 .welcome-band { height: 6px; border-radius: 6px; background: var(--brand-grad); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --brand-grad-deep: linear-gradient(90deg, #80c0f9 0%, #979fe7 50%, #f59082 100%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --brand-grad-deep: linear-gradient(90deg, #6fd3b3 0%, #8299eb 50%, #d86a57 100%); }
   :root:not([data-theme="light"]) .btn.primary { color: #12101a; } }
 
 /* ---------- WMF calendar (ported from the WMF Community Calendar page) ---------- */

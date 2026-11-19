@@ -59,10 +59,8 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true, b
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${h(title)} · ${isWmf ? "WMN Moving FWD" : "Cycling Development"}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87,500;87,600;87,700&family=Source+Sans+3:wght@400;600&display=swap">
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/hub.css">
-<link rel="icon" type="image/png" href="/brand/favicon.png"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="theme-color" content="#979fe7">
+<link rel="icon" type="image/png" href="/brand/favicon.png"><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png"><meta name="theme-color" content="#8299eb">
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
 <div class="app">
