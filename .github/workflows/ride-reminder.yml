@@ -1,0 +1,34 @@
+# WhatsApp ride reminder backup, at 04:00 Dubai time on Mondays and Wednesdays. Nothing to set up:
+# asks the app for the day's ride message (ride, time, place, weather, sign-up link) and posts it on the
+# "Ride reminder: WhatsApp message" issue, assigned to the repository owner, so GitHub notifies them by email and in the
+# GitHub app. The comment's link opens WhatsApp with the message filled in. Days off are skipped (WMF → WhatsApp ride reminder).
+# Optional: a repository variable APP_URL if the app's address isn't https://wmf-community.onrender.com.
+name: Ride reminder
+on:
+  schedule:
+    - cron: "0 0 * * 1,3"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Post the next ride's message now, even if today isn't a ride day"
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  issues: write
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Post the ride message on the Ride reminder issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RIDE_REMINDER_ASSIGNEE: ${{ github.repository_owner }}
+          APP_URL: ${{ vars.APP_URL || 'https://wmf-community.onrender.com' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: node scripts/ride-reminder-notify.js
