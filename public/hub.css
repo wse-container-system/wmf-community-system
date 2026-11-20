@@ -742,3 +742,18 @@ a.btn.done { opacity: .7; }
 .rif-attend-new > summary::-webkit-details-marker { display: none; }
 .rif-attend-new[open] > summary { display: none; }
 form.rif-attend:not(.form) { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }
+/* Management performance dashboard: calmer, more compact type scale (heading > numbers > labels > notes) */
+.md-head .wc-eyebrow { font-size: 10.5px; letter-spacing: .12em; }
+.md-head .ov-title { font-size: clamp(22px, 3.6vw, 30px); letter-spacing: .01em; margin-top: 2px; }
+.md-head .lead { font-size: 13.5px; color: var(--ink-2); }
+.md-head .mk-actions .btn, .md-head .mk-actions .seg a { font-size: 13px; min-height: 32px; padding: 5px 11px; }
+.md-head .mk-actions select.inp { font-size: 13px; min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
+.md-tiles .tile.big { padding: 12px 12px 10px; gap: 3px; }
+.md-tiles .tile.big .lbl { font-size: 12px; line-height: 1.25; }
+.md-tiles .tile.big .val { font-size: 24px; line-height: 1.1; margin-top: 2px; }
+.md-tiles .tile.big .note { font-size: 11px; line-height: 1.35; }
+.md-tiles .dt-ic::after { font-size: 10.5px; }
+.md-tiles .spark { height: 22px; }
+.md-k h2 { font-size: 13px; }
+.md-list { font-size: 13.5px; }
+@media (max-width: 560px) { .md-tiles .tile.big .val { font-size: 21px; } }
