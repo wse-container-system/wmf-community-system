@@ -1116,6 +1116,13 @@ test("cycling development hub", async (t) => {
     assert.match(lg, /Department League is on/); assert.match(lg, /Finance/);
     const L = await require("../src/limad").league();
     assert.equal(L.rows.find((r) => r.dept === "Finance").points, 20);
+    // departments are typed in; a different spelling of one already entered joins it, a new one is added
+    ok200(await pub("/corporate/limad/register", { method: "POST", form: { ...form, full_name: "Sam Second", email: "sam@limad.example", department: "  finance " } }), "second register");
+    ok200(await pub("/corporate/limad/register", { method: "POST", form: { ...form, full_name: "Tara Third", email: "tara@limad.example", department: "People & Culture" } }), "third register");
+    assert.equal((await pool.query("SELECT department FROM corp_participants WHERE email = 'sam@limad.example'")).rows[0].department, "Finance");
+    assert.match(ok200(await pub("/corporate/limad/register"), "form").text, /<datalist id="lm-depts"><option value="Finance"><option value="People &amp; Culture">/);
+    const L2 = await require("../src/limad").league();
+    assert.equal(L2.rows.find((r) => r.dept === "Finance").registered, 2); assert.ok(L2.rows.find((r) => r.dept === "People & Culture"));
     ok200(await admin("/corporate/limad/register/poster"), "poster");
     const x = await admin("/corporate/limad/registrations.xlsx", { raw: true }); assert.equal(x.status, 200);
     const ws = (await xlsx(x.text)).getWorksheet("Registrations"); assert.equal(ws.getRow(2).getCell(3).value, "Noor Test");

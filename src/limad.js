@@ -20,7 +20,8 @@ const LEVELS = [
   { n: 2, name: "Ride", quote: "I'd like to ride socially.", text: "Regular group rides at a predictable, social pace." },
   { n: 3, name: "Develop", quote: "I'm ready to progress.", text: "A structured pathway: skills, endurance and confidence." },
 ];
-const DEPARTMENTS = ["Operations", "Finance", "Marketing & Communications", "Human Resources", "Legal & Compliance", "Technology", "Strategy", "Investments", "Executive Office", "Other"];
+// Departments are typed in by people as they register; the form suggests the ones already entered so the same department is spelled the same way.
+const deptKey = (s) => R.clean(s).toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9\u0600-\u06ff]+/g, " ").trim();
 const DAYS = ["Tuesday evening", "Thursday", "Both", "Not sure yet"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 // Department League: points per activity, as in the 20 Nov proposal. Rides and sessions come from attendance; the last three are awarded by staff.
@@ -48,6 +49,12 @@ function seasonOf(today = R.todayLocal()) {
 const groupOf = (weekday) => (weekday === 2 ? { name: "Newer riders", levels: "Level 0–1" } : weekday === 4 ? { name: "Established riders", levels: "Level 2–3" } : null);
 
 async function company() { return (await pool.query("SELECT * FROM corp_companies WHERE code = $1", [CODE])).rows[0] || null; }
+/** Departments people have entered so far, one spelling each (the most used), A to Z. */
+async function departments(c = pool) {
+  const r = (await c.query("SELECT department d, count(*)::int n FROM corp_participants WHERE company = $1 AND coalesce(trim(department), '') <> '' GROUP BY 1 ORDER BY 2 DESC, 1", [CODE])).rows;
+  const by = new Map(); for (const x of r) { const k = deptKey(x.d); if (k && !by.has(k)) by.set(k, R.clean(x.d)); }
+  return [...by.values()].sort((a, b) => a.localeCompare(b));
+}
 async function leagueOn() { const r = (await pool.query("SELECT value FROM settings WHERE key = 'limadLeague'")).rows[0]; return !!(r && r.value && r.value.on); }
 const domains = (co) => String(co.email_domain || "").toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, "")).filter(Boolean);
 const domainOk = (co, email) => !domains(co).length || domains(co).some((d) => email.endsWith("@" + d));
@@ -66,7 +73,7 @@ async function overview(today = R.todayLocal()) {
     const first = ds[0], again = ds.find((d) => d > first && d <= addDays(first, 90));
     if (again) { base++; back++; } else if (addDays(first, 90) < today) base++;
   }
-  const depts = new Set(ps.map((p) => R.clean(p.department)).filter(Boolean));
+  const depts = new Set(ps.map((p) => deptKey(p.department)).filter(Boolean));
   const levels = LEVELS.map((l) => ({ ...l, count: ps.filter((p) => p.status === "Active" && p.cycling_level === l.n).length }));
   return { registered: ps.length, active: ps.filter((p) => p.status === "Active").length, activeMonth, retention: base ? back / base : null, retBase: base, retBack: back,
     depts: depts.size, levels, noLevel: ps.filter((p) => p.status === "Active" && p.cycling_level == null).length, everAttended: by.size };
@@ -75,7 +82,8 @@ async function overview(today = R.todayLocal()) {
 /** Department League for the programme year: points from attendance plus points awarded by staff. */
 async function league(se = seasonOf()) {
   const ps = (await pool.query("SELECT id, department FROM corp_participants WHERE company = $1", [CODE])).rows;
-  const dept = new Map(ps.map((p) => [p.id, R.clean(p.department) || ""]));
+  const names = new Map(); for (const d of await departments()) names.set(deptKey(d), d);
+  const dept = new Map(ps.map((p) => { const k = deptKey(p.department); return [p.id, k ? names.get(k) || R.clean(p.department) : ""]; }));
   const att = (await pool.query(`SELECT a.participant_id pid, s.session_date::text d, s.kind, s.title FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id
     WHERE s.company = $1 AND s.status = 'Held' AND s.session_date <= $2 ORDER BY s.session_date, s.id`, [CODE, se.end])).rows;
   const extra = (await pool.query(`SELECT cp.*, p.full_name, p.department FROM corp_points cp JOIN corp_participants p ON p.id = cp.participant_id
@@ -103,7 +111,7 @@ async function league(se = seasonOf()) {
 }
 
 /** Registration form (public and inside the dashboard). */
-function regForm(co, scheds, v = {}, err, { action = "/corporate/limad/register" } = {}) {
+function regForm(co, scheds, depts, v = {}, err, { action = "/corporate/limad/register" } = {}) {
   const tue = scheds.find((s) => s.weekday === 2), thu = scheds.find((s) => s.weekday === 4);
   const dayHint = { "Tuesday evening": tue ? `${t12(tue.start_time)} · newer riders, Level 0–1` : "newer riders, Level 0–1", Thursday: thu ? `${t12(thu.start_time)} · established riders, Level 2–3` : "established riders, Level 2–3", Both: "come to either ride", "Not sure yet": "we'll help you choose" };
   const radio = (name, value, label, hint, cur) => `<label class="lm-choice"><input type="radio" name="${name}" value="${h(value)}" ${String(cur) === String(value) ? "checked" : ""} required><span><b>${h(label)}</b>${hint ? `<small>${h(hint)}</small>` : ""}</span></label>`;
@@ -113,7 +121,8 @@ function regForm(co, scheds, v = {}, err, { action = "/corporate/limad/register"
       <label>Full name<input name="full_name" required maxlength="120" value="${h(v.full_name)}" autocomplete="name"></label>
       <div class="row2"><label>${h(co.name)} work email${domains(co).length ? ` <span class="hint">(ending ${h(domains(co).map((d) => "@" + d).join(" or "))})</span>` : ""}<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile / WhatsApp<input name="mobile" type="tel" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel" placeholder="+971 5x xxx xxxx"></label></div>
-      <label>Department<select name="department" required><option value="">Choose your department</option>${DEPARTMENTS.map((d) => opt(d, d, v.department)).join("")}</select></label></fieldset>
+      <label>Department <span class="hint">(type it, or pick one colleagues have already entered)</span><input name="department" required maxlength="80" list="lm-depts" value="${h(v.department)}" autocomplete="organization-title" placeholder="e.g. Finance"></label>
+      <datalist id="lm-depts">${depts.map((d) => `<option value="${h(d)}">`).join("")}</datalist></fieldset>
     <fieldset><legend>Your cycling experience</legend><div class="lm-choices">
       ${LEVELS.map((l) => radio("cycling_level", l.n, `Level ${l.n} · ${l.name}`, `“${l.quote}” ${l.text}`, v.cycling_level)).join("")}</div></fieldset>
     <fieldset><legend>Preferred riding day</legend><div class="lm-choices two">
@@ -221,7 +230,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
             ${named ? `<div class="toolbar" style="margin:12px 0 0"><a class="btn" href="/corporate/limad/registrations.xlsx">Download registrations (Excel)</a></div>` : ""}</section>
           ${named ? `<section class="card c12"><h2>Latest registrations</h2>${regs.length > 12 ? `<p class="lead">The 12 most recent. Everyone is in the Excel download and on the <a href="/corporate/participants?company=${CODE}">Participants</a> page.</p>` : ""}${table(["Registered", "Name", "Department", "Level", "Day", "Own bike", "T-shirt"], regs.slice(0, 12).map((r) => [fmtDate(new Date(r.registered_at).toISOString().slice(0, 10)),
             raw(`<a href="/corporate/participants/${encodeURIComponent(r.pid)}">${h(r.full_name)}</a>`), r.department || "—", r.cycling_level == null ? "—" : `${r.cycling_level} ${LEVELS[r.cycling_level].name}`, r.preferred_day || "—", r.has_own_bike == null ? "—" : r.has_own_bike ? "Yes" : "No", r.tshirt_size || "—"]), { empty: "No registrations yet." })}</section>` : ""}
-          <section class="card c12"><h2>What people see</h2><p class="lead">The form as it opens on a phone. Emergency contacts are kept for ride leads and are in the Excel download only.</p><div class="lm-preview" inert>${regForm(co, scheds, {}, null, { action: "#" })}</div></section>
+          <section class="card c12"><h2>What people see</h2><p class="lead">The form as it opens on a phone. Emergency contacts are kept for ride leads and are in the Excel download only.</p><div class="lm-preview" inert>${regForm(co, scheds, await departments(), {}, null, { action: "#" })}</div></section>
         </div>`;
     }
 
@@ -306,7 +315,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
     res.status(status).send(page(req, "Join L'imad Corporate Cycling", `<div class="lm" style="--lm:${h(co.color || "#2f7fd6")}"><section class="card lm-reg">
       <header class="lm-hero sm"><div><span class="lm-eyebrow">Corporate Cycling ${h(seasonOf().label)}</span><h2>Join L'imad Corporate Cycling</h2>
         <p>Rides with UAE Team L'imad coaches for every level, from never ridden to ready to race. Register once and you'll get your own QR code for ride check-in.</p></div></header>
-      ${regForm(co, scheds, v, err)}</section></div>`, { wide: false }));
+      ${regForm(co, scheds, await departments(), v, err)}</section></div>`, { wide: false }));
   };
   app.get("/corporate/limad/register", wrap(async (req, res) => regPage(req, res, {}, null)));
   app.post("/corporate/limad/register", limit("limadreg", 20, 60 * 60e3), wrap(async (req, res) => {
@@ -319,7 +328,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
     if (!R.EMAIL_RE.test(email)) return again("Please enter your work email.");
     if (!domainOk(co, email)) return again(`Please use your ${co.name} work email (ending ${domains(co).map((d) => "@" + d).join(" or ")}).`);
     if (R.clean(b.mobile).replace(/\D/g, "").length < 7) return again("Please enter your mobile or WhatsApp number.");
-    if (!DEPARTMENTS.includes(b.department)) return again("Please choose your department.");
+    if (R.clean(b.department).length < 2) return again("Please enter your department.");
     if (!(Number.isInteger(lvl) && lvl >= 0 && lvl <= 3) || b.cycling_level === "" || b.cycling_level == null) return again("Please choose your cycling experience level.");
     if (!DAYS.includes(b.preferred_day)) return again("Please choose your preferred riding day.");
     if (!["yes", "no"].includes(b.has_own_bike)) return again("Please say whether you have your own road bike.");
@@ -328,6 +337,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
     if (!b.consent) return again("Please tick the consent box to register.");
     const out = await tx(async (c) => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["limadreg"]);
+      const dk = deptKey(b.department), department = (await departments(c)).find((d) => deptKey(d) === dk) || R.clean(b.department).slice(0, 80);
       let p = await C.findParticipant(c, CODE, { email }), created = false;
       if (!p) {
         const byName = await C.findParticipant(c, CODE, { name: b.full_name });
@@ -337,7 +347,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
       if (!p) { p = await C.createParticipant(c, { company: CODE, full_name: b.full_name, email }, "public", "L'imad registration form"); created = true; }
       p = (await c.query(`UPDATE corp_participants SET email = $2, mobile = $3, department = $4, cycling_level = $5, preferred_day = $6, has_own_bike = $7, tshirt_size = $8,
         emergency_contact_name = $9, emergency_contact_phone = $10, registered_at = coalesce(registered_at, now()), status = 'Active', updated_at = now() WHERE id = $1 RETURNING *`,
-      [p.id, email, R.clean(b.mobile), b.department, lvl, b.preferred_day, b.has_own_bike === "yes", b.tshirt_size, R.clean(b.emergency_contact_name), R.clean(b.emergency_contact_phone)])).rows[0];
+      [p.id, email, R.clean(b.mobile), department, lvl, b.preferred_day, b.has_own_bike === "yes", b.tshirt_size, R.clean(b.emergency_contact_name), R.clean(b.emergency_contact_phone)])).rows[0];
       await audit(c, "public", created ? "limad.register.new" : "limad.register.update", "corp_participant", p.pid, null, { department: p.department, level: lvl, day: p.preferred_day });
       return { p, created };
     });
