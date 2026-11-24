@@ -16,11 +16,10 @@ const SECTIONS = [
     ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
     ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
     ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
-  // Corporate: six tabs (L'imad has its own programme dashboard). Grouped tabs open a second row of tabs (every page stays one click away).
+  // Corporate: the dashboard has a tab per company (each with its seasons). Grouped tabs open a second row of tabs (every page stays one click away).
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
     ["/corporate", "Dashboard", ALL],
-    ["/corporate/limad", "L'imad", ALL],
-    ["/corporate/rides", "Rides & events", STAFF, [["/corporate/rides", "All rides & events", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/attendance", "Attendance register", STAFF], ["/corporate/signups", "Sign-ups & bikes", STAFF]]],
+    ["/corporate/rides", "Rides & events", STAFF, [["/corporate/rides", "All rides & events", STAFF], ["/corporate/schedule", "Schedule", STAFF], ["/corporate/attendance", "Attendance", STAFF], ["/corporate/signups", "Sign-ups & bikes", STAFF]]],
     ["/corporate/participants", "Participants", STAFF],
     ["/corporate/scan", "Check-in", STAFF, [["/corporate/scan", "Scan", STAFF], ["/corporate/qr", "QR codes & posters", STAFF]]],
     ["/corporate/management", "Reports", ALL, [["/corporate/management", "Sponsor report", ["admin", "coordinator", "viewer"]], ["/corporate/report", "Figures & Excel", ALL]]]] },
@@ -43,7 +42,7 @@ function layout(title, body, { user, active, flash, scripts = "", wide = true, b
   const cur = SECTIONS.find((s) => s.key === sec);
   // a link is [href, label, roles] or a group [href, label, roles, children]; a group opens on its first child this user may see
   const kids = (l) => (l[3] || []).filter(([, , r]) => r.includes(user.role));
-  const sub = user && cur && secs.includes(cur) ? cur.links.filter((l) => l[2].includes(user.role) && (!l[3] || kids(l).length) && (l[0] !== "/corporate/limad" || !user.company || user.company === "LIMAD"))
+  const sub = user && cur && secs.includes(cur) ? cur.links.filter((l) => l[2].includes(user.role) && (!l[3] || kids(l).length))
     .map((l) => (l[3] ? [kids(l)[0][0], l[1], l[2], kids(l)] : l)) : [];
   const isOn = (l) => active === l[0] || (l[3] || []).some(([href]) => href === active);
   const open = sub.find((l) => l[3] && l[3].length > 1 && isOn(l));

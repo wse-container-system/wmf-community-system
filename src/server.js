@@ -749,6 +749,8 @@ async function init() {
   await require("./teamcal").seedHolidays();
   await require("./corpdata").seedCompanies();
   await require("./db").tx((c) => require("./corpdata").seedSeasons(c));
+  await require("./db").tx((c) => require("./corpdata").seedLimadSeasons(c));
+  await require("./db").tx((c) => require("./corpdata").backfillSeasonAttendees(c));
   await require("./corpdata").seedSchedules();
   await require("./corpdata").seedLimadTuesday();
   await require("./deptschedule").seedTeam();

@@ -36,7 +36,6 @@ const POINTS = [
   { key: "ambassador", label: "Volunteer or ambassador activity", pts: 20 },
 ];
 const PT = Object.fromEntries(POINTS.map((p) => [p.key, p]));
-const TABS = [["overview", "Overview"], ["league", "Department League"], ["register", "Registration"], ["framework", "Annual framework"], ["reports", "Reports"]];
 
 const opt = (v, label, cur) => `<option value="${h(v)}" ${String(cur) === String(v) ? "selected" : ""}>${h(label)}</option>`;
 const t12 = (t) => { if (!t) return ""; const [hh, mm] = String(t).split(":").map(Number); return `${hh % 12 || 12}${mm ? ":" + String(mm).padStart(2, "0") : ""} ${hh >= 12 ? "PM" : "AM"}`; };
@@ -80,8 +79,9 @@ async function overview(today = R.todayLocal()) {
 }
 
 /** Department League for the programme year: points from attendance plus points awarded by staff. */
-async function league(se = seasonOf()) {
-  const ps = (await pool.query("SELECT id, department FROM corp_participants WHERE company = $1", [CODE])).rows;
+async function league(se = seasonOf(), ids = null) {
+  // ids = the season's list: only those people (and their departments) count
+  const ps = (await pool.query("SELECT id, department FROM corp_participants WHERE company = $1 AND ($2::int[] IS NULL OR id = ANY($2))", [CODE, ids])).rows;
   const names = new Map(); for (const d of await departments()) names.set(deptKey(d), d);
   const dept = new Map(ps.map((p) => { const k = deptKey(p.department); return [p.id, k ? names.get(k) || R.clean(p.department) : ""]; }));
   const att = (await pool.query(`SELECT a.participant_id pid, s.session_date::text d, s.kind, s.title FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id
@@ -138,61 +138,23 @@ function regForm(co, scheds, depts, v = {}, err, { action = "/corporate/limad/re
     <button class="btn primary big lm-btn">Register and get my QR code</button></form>`;
 }
 
-module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, limit }) {
-  const V = need(...ALL), S = need(...STAFF);
-  const regUrl = (req) => `${req.protocol}://${req.get("host")}/corporate/limad/register`;
-  const guard = (req, res) => { const u = user(req); if (u && u.company && u.company !== CODE) { res.redirect("/corporate"); return false; } return true; };
-  const notReady = (req) => page(req, "L'imad", `<section class="card"><h2>L'imad isn't set up yet</h2><p class="lead">Add the company on Corporate → Admin first.</p></section>`, { active: "/corporate/limad" });
-
-  // ===================================================== dashboard
-  app.get("/corporate/limad", V, wrap(async (req, res) => {
-    if (!guard(req, res)) return;
-    const co = await company(); if (!co) return res.send(notReady(req));
-    const u = user(req), named = STAFF.includes(u.role), on = await leagueOn();
-    const tabs = TABS.filter(([k]) => k !== "league" || on || named);
-    const tab = tabs.some(([k]) => k === req.query.tab) ? req.query.tab : "overview";
-    const today = R.todayLocal(), se = seasonOf(today);
-    const scheds = await C.schedules(pool, [CODE]);
-    let body = "";
-
-    if (tab === "overview") {
-      const o = await overview(today);
-      const occ = await C.occurrences(pool, [CODE], today, addDays(today, 21));
-      const extra = (await pool.query("SELECT * FROM corp_sessions WHERE company = $1 AND session_date BETWEEN $2 AND $3 ORDER BY session_date", [CODE, today, addDays(today, 21)])).rows
-        .filter((s) => !occ.some((x) => x.session && x.session.id === s.id));
-      const up = [...occ.map((x) => ({ d: x.date, name: C.schedName(x.sc, co), time: (x.session && x.session.start_time) || x.sc.start_time, grp: x.sc.kind === C.RIDE ? groupOf(x.sc.weekday) : null, cancelled: x.session && x.session.status === "Cancelled", id: x.session && x.session.id })),
-        ...extra.map((s) => ({ d: s.session_date, name: C.sessionName(s, co), time: s.start_time, grp: null, cancelled: s.status === "Cancelled", id: s.id }))].sort((a, b) => a.d.localeCompare(b.d) || String(a.time).localeCompare(String(b.time))).slice(0, 8);
-      const slot = (wd, fallback) => { const s = scheds.find((x) => x.weekday === wd && x.kind === C.RIDE), g = groupOf(wd);
-        return `<div class="lm-slot${s ? "" : " off"}"><span class="lm-eyebrow">${h(g.levels)}</span><b>${h(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][wd])}${s && s.start_time ? " · " + h(t12(s.start_time)) : ""}</b><span>${h(g.name)}</span><small class="muted">${s ? h(s.location || co.location || "Meeting point to be confirmed") : h(fallback)}</small></div>`; };
-      const total = o.levels.reduce((a, l) => a + l.count, 0) || 1;
-      body = `<div class="tiles lm-tiles">
-          <div class="tile big"><span class="lbl">Total registered</span><span class="val">${nf(o.registered)}</span><span class="note">${nf(o.active)} active on the list</span></div>
-          <div class="tile big"><span class="lbl">Active this month</span><span class="val">${nf(o.activeMonth)}</span><span class="note">Came to a session in ${h(fmtDate(today).replace(/^\d+ /, ""))}</span></div>
-          <div class="tile big"><span class="lbl">Retention rate</span><span class="val">${o.retention == null ? "—" : Math.round(o.retention * 100) + "%"}</span><span class="note">${o.retBase ? `${nf(o.retBack)} of ${nf(o.retBase)} returned within 90 days` : "Returning within 90 days of a first session"}</span></div>
-          <div class="tile big"><span class="lbl">Departments represented</span><span class="val">${nf(o.depts)}</span><span class="note">From the registration form</span></div></div>
-        <div class="grid" style="margin-top:14px">
-          <section class="card c12"><div class="card-head"><div><h2>Participation by level</h2><p class="lead">Active riders by the level they chose when registering. Different starting points, one shared cycling culture.</p></div></div>
-            <div class="lm-levels">${o.levels.map((l) => `<div class="lm-level l${l.n}"><span class="lm-eyebrow">Level ${l.n}</span><b>${h(l.name)}</b><span class="lm-num">${nf(l.count)}</span><i style="--w:${Math.round((l.count / total) * 100)}%"></i><small>“${h(l.quote)}”</small></div>`).join("")}</div>
-            ${o.noLevel ? `<p class="hint" style="margin:10px 0 0">${nf(o.noLevel)} active ${o.noLevel === 1 ? "person has" : "people have"} no level yet (added before the registration form). They get one when they fill in the form.</p>` : ""}</section>
-          <section class="card c5"><h2>Weekly rides</h2><p class="lead">Two rides a week so newer riders and established riders each have a group that fits. Day and time can change once L'imad shares its other activities.</p>
-            <div class="lm-slots">${slot(2, "Not on the schedule yet")}${slot(4, "Not on the schedule yet")}</div>
-            ${named ? `<p style="margin:10px 0 0"><a href="/corporate/schedule">Change the schedule</a></p>` : ""}</section>
-          <section class="card c7"><h2>Upcoming rides &amp; events</h2><p class="lead">The next three weeks.</p>
-            ${up.length ? `<ul class="lm-up">${up.map((x) => `<li><span class="lm-date"><b>${h(String(+x.d.slice(8)))}</b>${h(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+x.d.slice(5, 7) - 1])}</span>
-              <span class="lm-what"><b>${named && x.id ? `<a href="/corporate/session/${x.id}">${h(x.name)}</a>` : h(x.name)}</b><small>${h(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date(x.d + "T12:00:00Z").getUTCDay()])}${x.time ? " · " + h(t12(x.time)) : ""}${x.d === today ? " · today" : ""}</small></span>
-              ${x.cancelled ? '<span class="status-chip st-Cancelled">Cancelled</span>' : x.grp ? `<span class="lm-grp">${h(x.grp.name)} · ${h(x.grp.levels)}</span>` : '<span class="lm-grp">Everyone</span>'}</li>`).join("")}</ul>` : '<p class="muted">Nothing planned in the next three weeks.</p>'}</section>
-        </div>`;
-    }
-
-    if (tab === "league") {
-      const L = await league(se), max = Math.max(1, ...L.rows.map((r) => r.points));
+/**
+ * L'imad's own sections on its company dashboard (corpdash.js): Department League, Registration and Annual framework,
+ * plus the level cards and weekly ride slots on the Overview. ctx = { req, co, se, D, today, named, u } with se = the chosen season.
+ */
+async function dashParts(u) {
+  const on = await leagueOn(), named = STAFF.includes(u.role);
+  const prog = (ctx) => { const x = seasonOf(ctx.se ? ctx.se.start : ctx.today); return ctx.se ? { ...x, start: ctx.se.start, end: ctx.se.end, label: ctx.se.name } : x; };
+  const leagueTab = async (ctx) => {
+    const { co, D, today } = ctx, se = prog(ctx);
+      const L = await league(se, D.people.map((p) => p.id)), max = Math.max(1, ...L.rows.map((r) => r.points));
       const toggle = named ? `<form method="post" action="/corporate/limad/league" class="lm-toggle"><input type="hidden" name="on" value="${on ? "0" : "1"}">
           <span class="lm-switch${on ? " on" : ""}" aria-hidden="true"><i></i></span><span><b>Department League is ${on ? "on" : "off"}</b><small>${on ? "Everyone with access to this dashboard can see the table." : "Only the Cycling Development team sees this tab. Turn it on if L'imad wants the league."}</small></span>
           <button class="btn ${on ? "" : "primary"}">${on ? "Turn off" : "Turn on"}</button></form>` : "";
-      const ps = named ? (await pool.query("SELECT id, pid, full_name, department FROM corp_participants WHERE company = $1 AND status = 'Active' ORDER BY full_name", [CODE])).rows : [];
-      body = `${toggle}
+      const ps = named ? D.people.slice().sort((a, b) => a.full_name.localeCompare(b.full_name)) : [];
+      return `${toggle}
         <div class="grid" style="margin-top:14px${on || !named ? "" : ";opacity:.62"}">
-          <section class="card c8"><h2>Corporate Cycling League ${h(se.label)}</h2><p class="lead">Departments compete on engagement, not kilometres. A first ride and bringing a colleague are worth more than a long ride.</p>
+          <section class="card c8"><h2>Department League</h2><p class="lead">${h(se.label)}. Departments compete on engagement, not kilometres. A first ride and bringing a colleague are worth more than a long ride.</p>
             ${L.rows.length ? `<div class="tw"><table class="lm-league"><thead><tr><th class="n">Rank</th><th>Department</th><th>Points</th><th class="n">Participants</th></tr></thead><tbody>
               ${L.rows.map((r) => `<tr class="${r.rank <= 3 && r.points ? "top" + r.rank : ""}"><td class="n"><span class="lm-rank">${r.rank}</span></td><td><b>${h(r.dept)}</b></td><td><div class="lm-bar"><i style="--w:${Math.round((r.points / max) * 100)}%"></i><b>${nf(r.points)}</b></div></td><td class="n">${nf(r.people.size)} <span class="muted">of ${nf(r.registered)}</span></td></tr>`).join("")}
               </tbody></table></div>` : `<p class="muted">No departments yet. Departments appear as people register with the form.</p>`}
@@ -205,25 +167,29 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
             <form class="form" method="post" action="/corporate/limad/points">
               <label>Person<select name="participant" required><option value="">Choose</option>${ps.map((p) => opt(p.id, `${p.full_name}${p.department ? " · " + p.department : ""}`, "")).join("")}</select></label>
               <div class="row2"><label>For<select name="kind" required>${POINTS.filter((p) => !p.auto).map((p) => opt(p.key, `${p.label} (${p.pts})`, "")).join("")}</select></label>
-              <label>Date<input type="date" name="awarded_on" value="${h(today)}" min="${h(se.start)}" max="${h(se.end)}" required></label></div>
+              <label>Date<input type="date" name="awarded_on" value="${h(today < se.start ? se.start : today > se.end ? se.end : today)}" min="${h(se.start)}" max="${h(se.end)}" required></label></div>
               <label>Note <span class="hint">(optional, e.g. who they brought)</span><input name="note" maxlength="200"></label>
               <button class="btn primary lm-btn">Award points</button></form></section>
           <section class="card c6"><h2>Points awarded by staff</h2>${table(["Date", "Person", "For", "Points", ""], L.extra.map((x) => [fmtDate(x.awarded_on), x.full_name + (x.department ? " · " + x.department : ""), (PT[x.kind] || {}).label || x.kind, x.points,
             raw(`<form method="post" action="/corporate/limad/points/${x.id}/delete" data-confirm="Remove these points?"><button class="btn tblbtn">Remove</button></form>`)]), { num: [3], empty: "None yet this season." })}</section>` : ""}
         </div>`;
-    }
 
-    if (tab === "register") {
-      const url = regUrl(req), img = await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 2, width: 520 });
-      const regs = (await pool.query("SELECT * FROM corp_participants WHERE company = $1 AND registered_at IS NOT NULL ORDER BY registered_at DESC", [CODE])).rows;
+  };
+  const registerTab = async (ctx) => {
+    const { req, co, today } = ctx, scheds = await C.schedules(pool, [CODE]);
+      const url = `${req.protocol}://${req.get("host")}/corporate/limad/register`, img = await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 2, width: 520 });
+      // the form signs people up for the open season (the newest one that hasn't ended)
+      const open = await C.openSeason(pool, CODE, today);
+      const regs = (await pool.query(`SELECT p.* FROM corp_participants p WHERE p.company = $1 AND p.registered_at IS NOT NULL
+        AND ($2::int IS NULL OR p.id IN (SELECT participant_id FROM corp_season_members WHERE season_id = $2)) ORDER BY p.registered_at DESC`, [CODE, open ? open.id : null])).rows;
       const count = (f, vals) => vals.map((v) => [v, regs.filter((r) => f(r) === v).length]);
       const chips = (pairs) => pairs.map(([k, n]) => `<span class="lm-chip">${h(k)} <b>${nf(n)}</b></span>`).join("");
-      body = `<div class="grid">
+      return `<div class="grid">
           <section class="card c5 lm-share"><h2>Share the registration form</h2><p class="lead">Put the QR code on posters and in internal emails. Each person gets their own QR code for ride check-in as soon as they register.</p>
             <div class="poster" style="--co:${h(co.color)}"><img src="${img}" alt="QR code for the L'imad registration form"><p><b>Scan to join L'imad Corporate Cycling</b></p></div>
             <p class="muted" style="font-size:13px;overflow-wrap:anywhere;margin:8px 0">${h(url)}</p>
             <div class="toolbar" style="margin:0"><a class="btn primary" href="/corporate/limad/register/poster">Print poster</a><a class="btn" href="${img}" download="LIMAD-registration-QR.png">Download QR</a><button class="btn" data-copy="${h(url)}">Copy link</button><a class="btn ghost" href="/corporate/limad/register" target="_blank" rel="noopener">Open form</a></div></section>
-          <section class="card c7"><h2>Registrations so far</h2><p class="lead">${nf(regs.length)} ${regs.length === 1 ? "person has" : "people have"} used the form.</p>
+          <section class="card c7"><h2>Registrations so far</h2><p class="lead">${nf(regs.length)} ${regs.length === 1 ? "person has" : "people have"} signed up${open ? ` for ${h(open.name)}` : ""}.</p>
             <h3 class="lm-h3">Preferred day</h3><div class="lm-chips">${chips(count((r) => r.preferred_day, DAYS))}</div>
             <h3 class="lm-h3">Level</h3><div class="lm-chips">${chips(LEVELS.map((l) => [`${l.n} ${l.name}`, regs.filter((r) => r.cycling_level === l.n).length]))}</div>
             <h3 class="lm-h3">Bikes and T-shirts</h3><div class="lm-chips">${chips([["Own road bike", regs.filter((r) => r.has_own_bike === true).length], ["Needs a bike", regs.filter((r) => r.has_own_bike === false).length]])}${chips(count((r) => r.tshirt_size, SIZES))}</div>
@@ -232,10 +198,11 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
             raw(`<a href="/corporate/participants/${encodeURIComponent(r.pid)}">${h(r.full_name)}</a>`), r.department || "—", r.cycling_level == null ? "—" : `${r.cycling_level} ${LEVELS[r.cycling_level].name}`, r.preferred_day || "—", r.has_own_bike == null ? "—" : r.has_own_bike ? "Yes" : "No", r.tshirt_size || "—"]), { empty: "No registrations yet." })}</section>` : ""}
           <section class="card c12"><h2>What people see</h2><p class="lead">The form as it opens on a phone. Emergency contacts are kept for ride leads and are in the Excel download only.</p><div class="lm-preview" inert>${regForm(co, scheds, await departments(), {}, null, { action: "#" })}</div></section>
         </div>`;
-    }
 
-    if (tab === "framework") {
-      const y = se.y0, mNow = today.slice(0, 7);
+  };
+  const frameworkTab = async (ctx) => {
+    const { today } = ctx, se = prog(ctx), x = seasonOf(ctx.se ? ctx.se.start : today);
+      const y = x.y0, mNow = today.slice(0, 7);
       const phases = [
         { n: "01", name: "Preparation", from: `${y}-08`, to: `${y}-09`, when: `Aug – Sep ${y}`, verbs: "Plan · align · recruit", items: ["Agree the season plan and ride days with L'imad", "Align with UAE Team L'imad on coaches and team moments", "Recruit department ambassadors", "Open registration (form and QR code)", "Cycling 101 launch talk"] },
         { n: "02", name: "Peak", from: `${y}-10`, to: `${y + 1}-04`, when: `Oct ${y} – Apr ${y + 1}`, verbs: "Activate · engage · progress", items: ["Tuesday evening rides for newer riders (Level 0–1)", "Thursday rides for established riders (Level 2–3)", "Maintenance, bike set-up and nutrition workshops", "Bike fitting and turbo challenges", "Cycling Academy for Level 3 riders", "UAE Tour moment and race screening (February)", "Mid-season report to L'imad (January)"] },
@@ -244,7 +211,7 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
       const cur = phases.find((p) => mNow >= p.from && mNow <= p.to);
       const months = []; for (let i = 0; i < 12; i++) { const m = new Date(Date.UTC(y, 7 + i, 1)).toISOString().slice(0, 7); months.push(m); }
       const pOf = (m) => phases.findIndex((p) => m >= p.from && m <= p.to);
-      body = `<section class="card"><h2>${h(se.label)} annual framework</h2><p class="lead">A three-phase cycle that puts most activity in the cooler riding season and keeps the community going through the summer. Prepare, peak, sustain, repeat.</p>
+      return `<section class="card"><h2>${h(x.label)} annual framework</h2><p class="lead">A three-phase cycle that puts most activity in the cooler riding season and keeps the community going through the summer. Prepare, peak, sustain, repeat.</p>
           <div class="lm-months" role="img" aria-label="Twelve months from August to July, coloured by phase">${months.map((m) => `<span class="p${pOf(m)}${m === mNow ? " now" : ""}">${h(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m.slice(5) - 1])}${m === mNow ? "<em>Now</em>" : ""}</span>`).join("")}</div>
           <div class="lm-phases">${phases.map((p, i) => `<article class="lm-phase p${i}${cur === p ? " now" : ""}"><span class="lm-eyebrow">Phase ${p.n}${cur === p ? ' · <b>We are here</b>' : ""}</span><h3>${h(p.name)}</h3><p class="lm-when">${h(p.when)}</p><p class="muted" style="margin:0 0 8px">${h(p.verbs)}</p>
             <ul>${p.items.map((x) => `<li>${h(x)}</li>`).join("")}</ul></article>`).join("")}</div></section>
@@ -255,56 +222,61 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
             <div class="tw"><table><tbody><tr><td><b>New participation</b></td><td>Share of people taking part for the first time</td></tr><tr><td><b>Conversion</b></td><td>Workshop to first ride</td></tr>
               <tr><td><b>Retention</b></td><td>Employees returning within 90 days</td></tr><tr><td><b>Progression</b></td><td>First ride to second and third ride, and moving up a level</td></tr><tr><td><b>Inclusivity</b></td><td>Mix by gender, department and experience</td></tr></tbody></table></div></section>
         </div>`;
-    }
 
-    if (tab === "reports") {
-      const st = await C.stats({ codes: [CODE], start: se.start, end: se.end < today ? se.end : today }), k = st.k;
-      const q = (o) => new URLSearchParams({ company: CODE, ...o }).toString(), seasonQ = { period: "custom", from: se.start, to: se.end };
-      body = `<div class="tiles lm-tiles">
-          <div class="tile big"><span class="lbl">Rides held</span><span class="val">${nf(k.rideSessions)}</span><span class="note">${k.cancelled ? `${nf(k.cancelled)} cancelled` : "None cancelled"}</span></div>
-          <div class="tile big"><span class="lbl">Total attendance</span><span class="val">${nf(k.attendance)}</span><span class="note">Rides, activities and events</span></div>
-          <div class="tile big"><span class="lbl">Average riders per ride</span><span class="val">${nf(k.avgPerRide, 1)}</span><span class="note">${nf(k.rideAttendance)} ride check-ins</span></div>
-          <div class="tile big"><span class="lbl">New joiners</span><span class="val">${nf(k.newJoiners)}</span><span class="note">First session this season</span></div></div>
-        <p class="hint" style="margin:8px 0 14px">Season ${h(se.label)} so far: ${h(fmtDate(se.start))} to today.</p>
-        <div class="lm-links">
-          <a class="lm-link" href="/corporate/report?${q(seasonQ)}"><b>Season report</b><span>The ${h(se.label)} season on one page, ready to print or save as PDF.</span></a>
-          <a class="lm-link" href="/corporate/report?${q({ period: "quarter" })}"><b>Quarterly report</b><span>This quarter compared with the one before.</span></a>
-          <a class="lm-link" href="/corporate/report.xlsx?${q(seasonQ)}"><b>Season figures (Excel)</b><span>The season report as a workbook.</span></a>
-          ${named ? `<a class="lm-link" href="/corporate/export.xlsx?${q({})}"><b>Attendance tracker (Excel)</b><span>Every session and every person, the full L'imad tracker.</span></a>
-          <a class="lm-link" href="/corporate/limad/registrations.xlsx"><b>Registrations (Excel)</b><span>Form answers with department, level, day, kit and emergency contact.</span></a>` : ""}
-          ${u.role !== "sponsor" ? `<a class="lm-link" href="/corporate/management?${q({})}"><b>Sponsor report</b><span>The management and sponsor view of the programme.</span></a>` : ""}
-          <a class="lm-link" href="/corporate?${q({ period: "custom", from: se.start, to: today })}"><b>Corporate dashboard</b><span>All the season's figures and charts for L'imad.</span></a></div>`;
-    }
+  };
+  const extraOverview = async (ctx) => {
+    const { co, D } = ctx, scheds = await C.schedules(pool, [CODE]);
+    const ps = D.people.filter((p) => p.status === "Active");
+    const levels = LEVELS.map((l) => ({ ...l, count: ps.filter((p) => p.cycling_level === l.n).length })), noLevel = ps.filter((p) => p.cycling_level == null).length;
+    const total = levels.reduce((a, l) => a + l.count, 0) || 1;
+    const slot = (wd) => { const s = scheds.find((x) => x.weekday === wd && x.kind === C.RIDE), g = groupOf(wd);
+      return `<div class="lm-slot${s ? "" : " off"}"><span class="lm-eyebrow">${h(g.levels)}</span><b>${h(C.WEEKDAYS_LONG[wd])}${s && s.start_time ? " · " + h(t12(s.start_time)) : ""}</b><span>${h(g.name)}</span><small class="muted">${s ? h(s.location || co.location || "Meeting point to be confirmed") : "Not on the schedule yet"}</small></div>`; };
+    return `<div class="grid" style="margin-top:14px">
+        <section class="card c7"><h2>Participation by level</h2><p class="lead">People on this season's list by the level they chose when registering.</p>
+          <div class="lm-levels">${levels.map((l) => `<div class="lm-level l${l.n}"><span class="lm-eyebrow">Level ${l.n}</span><b>${h(l.name)}</b><span class="lm-num">${nf(l.count)}</span><i style="--w:${Math.round((l.count / total) * 100)}%"></i></div>`).join("")}</div>
+          ${noLevel ? `<p class="hint" style="margin:10px 0 0">${nf(noLevel)} ${noLevel === 1 ? "person has" : "people have"} no level yet (added before the registration form).</p>` : ""}</section>
+        <section class="card c5"><h2>Weekly rides</h2><p class="lead">Newer riders and established riders each have a group that fits.</p><div class="lm-slots">${slot(2)}${slot(4)}</div>
+          ${ctx.named ? `<p style="margin:10px 0 0"><a href="/corporate/schedule">Change the schedule</a></p>` : ""}</section></div>`;
+  };
+  const tagUp = (x) => { const g = x.kind === C.RIDE ? groupOf(x.weekday) : null; return `<span class="lm-grp">${g ? `${h(g.name)} · ${h(g.levels)}` : "Everyone"}</span>`; };
+  const extraTabs = [["league", on ? "Department League" : "Department League · off", leagueTab], ["register", "Registration", registerTab], ["framework", "Annual framework", frameworkTab]]
+    .filter(([k]) => k !== "league" || on || named);
+  return { extraTabs, extraOverview, tagUp };
+}
 
-    const nav = `<nav class="lm-tabs" aria-label="L'imad dashboard">${tabs.map(([k, l]) => `<a href="/corporate/limad${k === "overview" ? "" : "?tab=" + k}" ${k === tab ? 'aria-current="page"' : ""}>${h(l)}${k === "league" && !on ? ' <span class="lm-off">off</span>' : ""}</a>`).join("")}</nav>`;
-    res.send(page(req, "L'imad dashboard", `<div class="lm" style="--lm:${h(co.color || "#2f7fd6")}">
-      <header class="lm-hero"><div><span class="lm-eyebrow">Corporate Cycling ${h(se.label)} · The Social Ride</span><h2>L'imad Dashboard</h2><p>With UAE Team L'imad coaches · Abu Dhabi</p></div>
-        ${named ? `<div class="toolbar" style="margin:0"><a class="btn" href="/corporate/attendance?company=${CODE}">Take attendance</a><a class="btn lm-btn primary" href="/corporate/limad?tab=register">Registration &amp; QR</a></div>` : ""}</header>
-      ${nav}<div class="lm-body">${body}</div></div>`, { active: "/corporate/limad" }));
-  }));
+module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, limit }) {
+  const V = need(...ALL), S = need(...STAFF);
+  const regUrl = (req) => `${req.protocol}://${req.get("host")}/corporate/limad/register`;
+  const notReady = (req) => page(req, "L'imad", `<section class="card"><h2>L'imad isn't set up yet</h2><p class="lead">Add the company on Corporate → Admin first.</p></section>`, { active: "/corporate/limad" });
+
+  // the L'imad dashboard is now L'imad's tab on the corporate dashboard (old links and QR posters keep working)
+  app.get("/corporate/limad", V, (req, res) => {
+    const tab = ["league", "register", "framework", "reports", "attendance"].includes(req.query.tab) ? req.query.tab : "";
+    res.redirect("/corporate?" + new URLSearchParams({ company: CODE, ...(tab ? { tab } : {}) }).toString());
+  });
 
   app.post("/corporate/limad/league", S, wrap(async (req, res) => {
     const on = String((req.body || {}).on) === "1";
     await pool.query("INSERT INTO settings (key, value) VALUES ('limadLeague', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify({ on })]);
     await audit(pool, actor(req), "limad.league." + (on ? "on" : "off"), "setting", "limadLeague", null, { on });
     setFlash(req, "ok", on ? "Department League is on." : "Department League is off. Only the Cycling Development team sees the tab.");
-    res.redirect("/corporate/limad?tab=league");
+    res.redirect("/corporate?company=LIMAD&tab=league");
   }));
   app.post("/corporate/limad/points", S, wrap(async (req, res) => {
     const b = req.body || {}, kind = PT[b.kind], se = seasonOf();
     const p = (await pool.query("SELECT * FROM corp_participants WHERE id = $1 AND company = $2", [+b.participant || 0, CODE])).rows[0];
     const d = /^\d{4}-\d{2}-\d{2}$/.test(b.awarded_on || "") ? b.awarded_on : R.todayLocal();
-    if (!p || !kind || kind.auto) { setFlash(req, "err", "Choose the person and what the points are for."); return res.redirect("/corporate/limad?tab=league"); }
+    if (!p || !kind || kind.auto) { setFlash(req, "err", "Choose the person and what the points are for."); return res.redirect("/corporate?company=LIMAD&tab=league"); }
     await pool.query("INSERT INTO corp_points (participant_id, kind, points, awarded_on, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)", [p.id, kind.key, kind.pts, d < se.start || d > se.end ? R.todayLocal() : d, R.clean(b.note) || null, actor(req)]);
     await audit(pool, actor(req), "limad.points.award", "corp_participant", p.pid, null, { kind: kind.key, points: kind.pts });
     setFlash(req, "ok", `${kind.pts} points for ${p.full_name}${p.department ? " (" + p.department + ")" : ""}.`);
-    res.redirect("/corporate/limad?tab=league");
+    res.redirect("/corporate?company=LIMAD&tab=league");
   }));
   app.post("/corporate/limad/points/:id/delete", S, wrap(async (req, res) => {
     const r = (await pool.query("DELETE FROM corp_points WHERE id = $1 RETURNING *", [+req.params.id || 0])).rows[0];
     if (r) await audit(pool, actor(req), "limad.points.remove", "corp_points", String(r.id), r, null);
     setFlash(req, "ok", "Points removed.");
-    res.redirect("/corporate/limad?tab=league");
+    res.redirect("/corporate?company=LIMAD&tab=league");
   }));
 
   // ===================================================== registration form (public, no sign-in)
@@ -344,7 +316,10 @@ module.exports = function limad(app, { need, page, setFlash, actor, user, wrap, 
         if (byName && byName.email && byName.email !== email) return { err: "We already have this name with a different email. Use the email you registered with, or ask your ride lead." };
         p = byName;
       }
-      if (!p) { p = await C.createParticipant(c, { company: CODE, full_name: b.full_name, email }, "public", "L'imad registration form"); created = true; }
+      if (!p) { p = await C.createParticipant(c, { company: CODE, full_name: b.full_name, email, noSeason: true }, "public", "L'imad registration form"); created = true; }
+      // registering signs the person up for the open season only (the new programme); earlier seasons keep their own lists
+      const open = await C.openSeason(c, CODE);
+      if (open) await C.enrol(c, open.id, p.id, "Registration form");
       p = (await c.query(`UPDATE corp_participants SET email = $2, mobile = $3, department = $4, cycling_level = $5, preferred_day = $6, has_own_bike = $7, tshirt_size = $8,
         emergency_contact_name = $9, emergency_contact_phone = $10, registered_at = coalesce(registered_at, now()), status = 'Active', updated_at = now() WHERE id = $1 RETURNING *`,
       [p.id, email, R.clean(b.mobile), department, lvl, b.preferred_day, b.has_own_bike === "yes", b.tshirt_size, R.clean(b.emergency_contact_name), R.clean(b.emergency_contact_phone)])).rows[0];
@@ -392,3 +367,4 @@ module.exports.POINTS = POINTS;
 module.exports.league = league;
 module.exports.overview = overview;
 module.exports.seasonOf = seasonOf;
+module.exports.dashParts = dashParts;
