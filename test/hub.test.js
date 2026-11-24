@@ -115,7 +115,8 @@ test("cycling development hub", async (t) => {
     assert.ok(out.checkins > 300);
     const r = ok200(await admin("/corporate?period=all"), "corporate dashboard");
     assert.match(r.text, /L&#39;IMAD|L'IMAD/);
-    for (const p of ["/corporate/attendance?company=LIMAD&period=year&p=2025", "/corporate/rides?kind=other&period=all", "/corporate/participants?company=NMDC", "/corporate/qr", "/corporate/scan",
+    assert.equal((await admin("/corporate/attendance?company=LIMAD")).status, 302, "the register is now a tab on the company dashboard");
+    for (const p of ["/corporate?company=LIMAD&tab=attendance", "/corporate?company=NMDC&tab=attendance&view=person", "/corporate?company=AURORA&tab=reports", "/corporate/rides?kind=other&period=all", "/corporate/participants?company=NMDC", "/corporate/qr", "/corporate/scan",
       "/corporate/report?period=all", "/corporate/report?company=NMDC&period=year&p=2026", "/corporate/qr/NMDC/poster", "/corporate/qr/LIMAD/cards"]) ok200(await admin(p), p);
     const x = await admin("/corporate/report.xlsx?period=all", { raw: true }); assert.equal(x.status, 200);
     const wb = await xlsx(x.text); assert.ok(wb.getWorksheet("Monthly"));
@@ -833,9 +834,9 @@ test("cycling development hub", async (t) => {
     // Corporate: five tabs; grouped tabs open a second row, so every page stays one click away
     const nav = (t) => [...(t.match(/<nav class="sub-nav" aria-label="Corporate">([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
     const row2 = (t) => [...(t.match(/<nav class="sub-nav sub-nav2"[^>]*>([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
-    assert.deepEqual(nav(ok200(await admin("/corporate"), "corp dashboard").text), ["Dashboard", "L&#39;imad", "Rides &amp; events", "Participants", "Check-in", "Reports"]);
+    assert.deepEqual(nav(ok200(await admin("/corporate"), "corp dashboard").text), ["Dashboard", "Rides &amp; events", "Participants", "Check-in", "Reports"]);
     const sch = ok200(await admin("/corporate/schedule"), "schedule").text;
-    assert.deepEqual(row2(sch), ["All rides &amp; events", "Schedule", "Attendance register", "Sign-ups &amp; bikes"]);
+    assert.deepEqual(row2(sch), ["All rides &amp; events", "Schedule", "Attendance", "Sign-ups &amp; bikes"]);
     assert.match(sch, /<a href="\/corporate\/rides" aria-current="page">Rides &amp; events/);
     assert.deepEqual(row2(ok200(await admin("/corporate/qr"), "qr").text), ["Scan", "QR codes &amp; posters"]);
     assert.deepEqual(row2(ok200(await admin("/corporate/report?period=all"), "figures").text), ["Sponsor report", "Figures &amp; Excel"]);
@@ -1104,18 +1105,35 @@ test("cycling development hub", async (t) => {
     assert.equal(rows.length, 1, "same email updates, not doubles");
     assert.equal(rows[0].tshirt_size, "L"); assert.equal(rows[0].cycling_level, 1); assert.equal(rows[0].department, "Finance"); assert.equal(rows[0].has_own_bike, false);
     assert.equal((await pub("/corporate/limad")).status, 302, "dashboard needs sign-in");
+    assert.match((await admin("/corporate/limad?tab=league")).location, /^\/corporate\?company=LIMAD&tab=league$/, "old L'imad links open the L'imad company tab");
+    // seasons: the form signs people up for the open season (The Social Ride) only; the earlier season's list is untouched
+    const C = require("../src/corpdata");
+    const lseas = await C.seasons(pool, "LIMAD"), open = await C.openSeason(pool, "LIMAD");
+    assert.ok(lseas.some((x) => x.name === C.LIMAD_NEW.name), "The Social Ride season exists");
+    const inSeason = async (sid, pid) => !!(await pool.query("SELECT 1 FROM corp_season_members WHERE season_id = $1 AND participant_id = $2", [sid, pid])).rows[0];
+    assert.ok(await inSeason(open.id, rows[0].id), "registered person is on the open season's list");
+    for (const x of lseas.filter((x) => x.id !== open.id)) assert.ok(!(await inSeason(x.id, rows[0].id)), "not added to " + x.name);
     // Tuesday evening ride is on the L'imad schedule next to Thursday
     assert.ok((await pool.query("SELECT 1 FROM corp_schedules WHERE company = 'LIMAD' AND weekday = 2 AND start_time = '17:30'")).rows[0]);
-    for (const tab of ["", "?tab=league", "?tab=register", "?tab=framework", "?tab=reports"]) ok200(await admin("/corporate/limad" + tab), "tab " + tab);
-    assert.match(ok200(await admin("/corporate/limad"), "overview").text, /Participation by level/);
+    for (const tab of ["", "&tab=attendance", "&tab=attendance&view=person", "&tab=league", "&tab=register", "&tab=framework", "&tab=reports"]) ok200(await admin("/corporate?company=LIMAD" + tab), "tab " + tab);
+    for (const x of lseas) ok200(await admin(`/corporate?company=LIMAD&season=${x.id}&tab=attendance`), "season " + x.name);
+    const ov = ok200(await admin("/corporate?company=LIMAD"), "overview").text;
+    assert.match(ov, /Participation by level/); assert.match(ov, /class="cd-cos"/); assert.match(ov, /\/brand\/corp\/limad\.png/);
     // league starts off; staff turn it on and award points
-    assert.match((await admin("/corporate/limad?tab=league")).text, /Department League is off/);
+    assert.match((await admin("/corporate?company=LIMAD&tab=league")).text, /Department League is off/);
     assert.equal((await admin("/corporate/limad/league", { method: "POST", form: { on: "1" } })).status, 302);
     assert.equal((await admin("/corporate/limad/points", { method: "POST", form: { participant: String(rows[0].id), kind: "bring", awarded_on: today } })).status, 302);
-    const lg = ok200(await admin("/corporate/limad?tab=league"), "league").text;
+    const lg = ok200(await admin("/corporate?company=LIMAD&tab=league"), "league").text;
     assert.match(lg, /Department League is on/); assert.match(lg, /Finance/);
     const L = await require("../src/limad").league();
     assert.equal(L.rows.find((r) => r.dept === "Finance").points, 20);
+    // departments are typed in; a different spelling of one already entered joins it, a new one is added
+    ok200(await pub("/corporate/limad/register", { method: "POST", form: { ...form, full_name: "Sam Second", email: "sam@limad.example", department: "  finance " } }), "second register");
+    ok200(await pub("/corporate/limad/register", { method: "POST", form: { ...form, full_name: "Tara Third", email: "tara@limad.example", department: "People & Culture" } }), "third register");
+    assert.equal((await pool.query("SELECT department FROM corp_participants WHERE email = 'sam@limad.example'")).rows[0].department, "Finance");
+    assert.match(ok200(await pub("/corporate/limad/register"), "form").text, /<datalist id="lm-depts"><option value="Finance"><option value="People &amp; Culture">/);
+    const L2 = await require("../src/limad").league();
+    assert.equal(L2.rows.find((r) => r.dept === "Finance").registered, 2); assert.ok(L2.rows.find((r) => r.dept === "People & Culture"));
     ok200(await admin("/corporate/limad/register/poster"), "poster");
     const x = await admin("/corporate/limad/registrations.xlsx", { raw: true }); assert.equal(x.status, 200);
     const ws = (await xlsx(x.text)).getWorksheet("Registrations"); assert.equal(ws.getRow(2).getCell(3).value, "Noor Test");

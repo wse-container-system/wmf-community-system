@@ -74,6 +74,8 @@ async function markAttendance(c, session, participant, method, by) {
     ON CONFLICT (session_id, participant_id) DO NOTHING RETURNING id`, [session.id, participant.id, method, R.nowLocal(), by]);
   if (session.status === "Scheduled") await c.query("UPDATE corp_sessions SET status = 'Held' WHERE id = $1", [session.id]);
   if (participant.status === "Inactive") await c.query("UPDATE corp_participants SET status = 'Active', updated_at = now() WHERE id = $1", [participant.id]);
+  // coming to a session puts the person on that session's season list (seasons never copy people across on their own)
+  if (r.rowCount) { const se = await seasonOn(c, session.company, String(session.session_date).slice(0, 10)); if (se) await enrol(c, se.id, participant.id, "Came to a session"); }
   const n = Number((await c.query("SELECT count(*) n FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = $1", [participant.id])).rows[0].n);
   return { status: r.rowCount ? "ok" : "duplicate", total: n };
 }
@@ -286,6 +288,20 @@ async function currentSeason(c, company, d = R.todayLocal()) {
   const all = await seasons(c, company);
   return all.find((s) => s.start <= d && s.end >= d) || all.find((s) => s.start <= d) || null;
 }
+/** The season whose dates include this day (none between seasons). */
+async function seasonOn(c, company, d) {
+  return (await c.query("SELECT id, name FROM corp_seasons WHERE company = $1 AND $2::date BETWEEN start_date AND end_date ORDER BY start_date DESC LIMIT 1", [company, d])).rows[0] || null;
+}
+/** The season people sign up for now: the newest one that hasn't ended (it may not have started yet). */
+async function openSeason(c, company, d = R.todayLocal()) {
+  return (await seasons(c, company)).find((s) => s.end >= d) || null;
+}
+/** The season a dashboard opens on: the newest season that hasn't ended, else the latest one. */
+async function defaultSeason(c, company, d = R.todayLocal()) {
+  const all = await seasons(c, company);
+  const open = all.filter((s) => s.end >= d);
+  return open[0] || all[0] || null;
+}
 async function enrol(c, seasonId, participantId, source) {
   await c.query("INSERT INTO corp_season_members (season_id, participant_id, source) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [seasonId, participantId, source || null]);
 }
@@ -298,6 +314,40 @@ async function seedSeasons(c) {
   await c.query(`INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ('NMDC', 'NMDC 2026-2027', '2026-09-01', '2027-08-31') ON CONFLICT DO NOTHING`);
   await c.query(`INSERT INTO corp_season_members (season_id, participant_id, source) SELECT $1, id, 'Existing list' FROM corp_participants WHERE company = 'NMDC' ON CONFLICT DO NOTHING`, [old]);
   await c.query("INSERT INTO settings (key, value) VALUES ('nmdcSeasonsSeeded', 'true') ON CONFLICT DO NOTHING");
+}
+
+/**
+ * One-time start for L'imad: the people and sessions so far become their own season, and
+ * "Corporate Cycling 2026/27 · The Social Ride" starts empty. Only people who signed up with the new
+ * registration form are on its list; nobody from the earlier season is copied across.
+ */
+const LIMAD_NEW = { name: "Corporate Cycling 2026/27 · The Social Ride", start: "2026-12-01", end: "2027-07-31" };
+async function seedLimadSeasons(c) {
+  if ((await c.query("SELECT 1 FROM settings WHERE key = 'limadSeasonsSeeded'")).rows.length) return;
+  if (!(await c.query("SELECT 1 FROM corp_companies WHERE code = 'LIMAD'")).rows.length) return;
+  if (!(await c.query("SELECT 1 FROM corp_seasons WHERE company = 'LIMAD'")).rows.length) {
+    const first = (await c.query("SELECT min(session_date)::text d FROM corp_sessions WHERE company = 'LIMAD'")).rows[0].d || "2025-09-01";
+    const oldEnd = addDays(LIMAD_NEW.start, -1), y0 = +first.slice(0, 4);
+    const oldName = y0 < 2026 ? `L'imad ${y0}–2026` : "L'imad 2026";
+    const old = (await c.query("INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ('LIMAD', $1, $2, $3) RETURNING id", [oldName, first < oldEnd ? first : addDays(oldEnd, -1), oldEnd])).rows[0].id;
+    const neu = (await c.query("INSERT INTO corp_seasons (company, name, start_date, end_date) VALUES ('LIMAD', $1, $2, $3) RETURNING id", [LIMAD_NEW.name, LIMAD_NEW.start, LIMAD_NEW.end])).rows[0].id;
+    // earlier season: everyone already on the L'imad list before the new form, plus anyone who came to a session in it
+    await c.query(`INSERT INTO corp_season_members (season_id, participant_id, source) SELECT $1, p.id, 'Existing list' FROM corp_participants p WHERE p.company = 'LIMAD'
+      AND (p.registered_at IS NULL OR EXISTS (SELECT 1 FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id WHERE a.participant_id = p.id AND s.session_date <= $2)) ON CONFLICT DO NOTHING`, [old, oldEnd]);
+    // new season: only people who registered with the Social Ride form
+    await c.query(`INSERT INTO corp_season_members (season_id, participant_id, source) SELECT $1, id, 'Registration form' FROM corp_participants WHERE company = 'LIMAD' AND registered_at IS NOT NULL ON CONFLICT DO NOTHING`, [neu]);
+  }
+  await c.query("INSERT INTO settings (key, value) VALUES ('limadSeasonsSeeded', 'true') ON CONFLICT DO NOTHING");
+}
+
+/** One-time: people who came to a session go on the list of the season that session belongs to (as check-ins do from now on). */
+async function backfillSeasonAttendees(c) {
+  if ((await c.query("SELECT 1 FROM settings WHERE key = 'seasonAttendeesBackfilled'")).rows.length) return;
+  await c.query(`INSERT INTO corp_season_members (season_id, participant_id, source)
+    SELECT DISTINCT se.id, a.participant_id, 'Came to a session' FROM corp_attendance a JOIN corp_sessions s ON s.id = a.session_id
+    JOIN corp_seasons se ON se.company = s.company AND s.session_date BETWEEN se.start_date AND se.end_date
+    WHERE s.status <> 'Cancelled' ON CONFLICT DO NOTHING`);
+  await c.query("INSERT INTO settings (key, value) VALUES ('seasonAttendeesBackfilled', 'true') ON CONFLICT DO NOTHING");
 }
 
 /** A personal QR link that can't be guessed: /cq/NMDC-0012.<signature> shows only that person's code. */
@@ -344,5 +394,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, seedLimadTuesday, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, seasons, currentSeason, enrol, seedSeasons, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, seedLimadTuesday, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, seasons, currentSeason, seasonOn, openSeason, defaultSeason, enrol, seedSeasons, seedLimadSeasons, backfillSeasonAttendees, LIMAD_NEW, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };
