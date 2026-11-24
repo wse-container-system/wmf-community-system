@@ -261,6 +261,27 @@ ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS qr_sent_at TIMESTAMPTZ;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS mobile TEXT;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS height_cm INTEGER;
 ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS bike_type TEXT;
+-- L'imad registration form: department (Department League), riding level 0–3 (Curious, Try, Ride, Develop), preferred day, kit and emergency contact
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS department TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS cycling_level INTEGER CHECK (cycling_level BETWEEN 0 AND 3);
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS preferred_day TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS has_own_bike BOOLEAN;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS tshirt_size TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
+ALTER TABLE corp_participants ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ;
+-- Department League points that don't come from attendance (Academy complete, brought a first-timer, ambassador activity)
+CREATE TABLE IF NOT EXISTS corp_points (
+  id SERIAL PRIMARY KEY,
+  participant_id INTEGER NOT NULL REFERENCES corp_participants(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  awarded_on DATE NOT NULL,
+  note TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS corp_points_participant ON corp_points (participant_id);
 ALTER TABLE corp_companies ADD COLUMN IF NOT EXISTS signup_token TEXT UNIQUE;
 CREATE TABLE IF NOT EXISTS corp_signups (
   id SERIAL PRIMARY KEY,

@@ -112,6 +112,18 @@ async function seedSchedules(c = pool) {
   }
   await c.query("INSERT INTO settings (key, value) VALUES ('corpSchedulesSeeded', 'true') ON CONFLICT (key) DO NOTHING");
 }
+/**
+ * 2026/27 season: L'imad rides twice a week. Tuesday evening for newer riders (Level 0–1) is added once; the existing
+ * Thursday 06:00 ride stays for established riders (Level 2–3). Time and day can be changed on Corporate → Schedule.
+ */
+async function seedLimadTuesday(c = pool) {
+  if ((await c.query("SELECT 1 FROM settings WHERE key = 'limadTuesdaySeeded'")).rows[0]) return;
+  if ((await c.query("SELECT 1 FROM corp_companies WHERE code = 'LIMAD'")).rows[0]
+    && !(await c.query("SELECT 1 FROM corp_schedules WHERE company = 'LIMAD' AND weekday = 2")).rows[0]) {
+    await c.query("INSERT INTO corp_schedules (company, kind, title, weekday, week, start_time, starts) VALUES ('LIMAD', $1, $2, 2, 0, '17:30', $3)", [RIDE, "Tuesday evening ride (newer riders)", R.todayLocal()]);
+  }
+  await c.query("INSERT INTO settings (key, value) VALUES ('limadTuesdaySeeded', 'true') ON CONFLICT (key) DO NOTHING");
+}
 /** Every planned occurrence between two dates, with the session already recorded for it (if any). */
 async function occurrences(c, codes, from, to) {
   const scs = await schedules(c, codes);
@@ -332,5 +344,5 @@ function periodFromQuery(q, today = R.todayLocal()) {
 
 module.exports = {
   DEFAULT_COMPANIES, KINDS, RIDE, COMMUNITIES, ACTIVE_WINDOW, ACTIVE_MIN, token, nameKey, weekdayShort, isRideDay, pidQr, pidFromScan,
-  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, seasons, currentSeason, enrol, seedSeasons, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
+  seedCompanies, companies, companiesFor, corpScan, WEEKDAYS_LONG, WEEKS, occursOn, scheduleText, schedName, schedules, seedSchedules, seedLimadTuesday, occurrences, sessionValue, resolveSession, createParticipant, findParticipant, walkIn, seasons, currentSeason, enrol, seedSeasons, cqSig, cqPath, ensureSession, markAttendance, todaysSessions, sessionName, stats, periodFromQuery,
 };

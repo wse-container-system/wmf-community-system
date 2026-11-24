@@ -833,7 +833,7 @@ test("cycling development hub", async (t) => {
     // Corporate: five tabs; grouped tabs open a second row, so every page stays one click away
     const nav = (t) => [...(t.match(/<nav class="sub-nav" aria-label="Corporate">([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
     const row2 = (t) => [...(t.match(/<nav class="sub-nav sub-nav2"[^>]*>([\s\S]*?)<\/nav>/) || [, ""])[1].matchAll(/>([^<]+)<\/a>/g)].map((m) => m[1]);
-    assert.deepEqual(nav(ok200(await admin("/corporate"), "corp dashboard").text), ["Dashboard", "Rides &amp; events", "Participants", "Check-in", "Reports"]);
+    assert.deepEqual(nav(ok200(await admin("/corporate"), "corp dashboard").text), ["Dashboard", "L&#39;imad", "Rides &amp; events", "Participants", "Check-in", "Reports"]);
     const sch = ok200(await admin("/corporate/schedule"), "schedule").text;
     assert.deepEqual(row2(sch), ["All rides &amp; events", "Schedule", "Attendance register", "Sign-ups &amp; bikes"]);
     assert.match(sch, /<a href="\/corporate\/rides" aria-current="page">Rides &amp; events/);
@@ -1088,5 +1088,36 @@ test("cycling development hub", async (t) => {
     const tok = (await pool.query("SELECT token FROM report_links WHERE kind = 'management' AND label = 'Board'")).rows[0].token;
     const g = ok200(await client()(`/g/${tok}?period=year`), "shared").text;
     assert.match(g, /dt-panel/); assert.doesNotMatch(g, /@test\.local/);
+  });
+
+  await t.test("L'imad dashboard: tabs, registration form with QR code, Department League on/off", async () => {
+    const pub = client();
+    ok200(await pub("/corporate/limad/register"), "public form");
+    const bad = await pub("/corporate/limad/register", { method: "POST", form: { full_name: "Noor Test", email: "noor@limad.example" } });
+    assert.equal(bad.status, 400); assert.match(bad.text, /mobile/);
+    const form = { full_name: "Noor Test", email: "noor@limad.example", mobile: "+971 50 111 2233", department: "Finance", cycling_level: "1", preferred_day: "Tuesday evening",
+      has_own_bike: "no", tshirt_size: "M", emergency_contact_name: "Ahmed", emergency_contact_phone: "+971 50 999 8877", consent: "1" };
+    const ok = ok200(await pub("/corporate/limad/register", { method: "POST", form }), "register");
+    assert.match(ok.text, /LIMAD-\d{4}/); assert.match(ok.text, /Welcome/);
+    ok200(await pub("/corporate/limad/register", { method: "POST", form: { ...form, tshirt_size: "L" } }), "register again");
+    const rows = (await pool.query("SELECT * FROM corp_participants WHERE email = 'noor@limad.example'")).rows;
+    assert.equal(rows.length, 1, "same email updates, not doubles");
+    assert.equal(rows[0].tshirt_size, "L"); assert.equal(rows[0].cycling_level, 1); assert.equal(rows[0].department, "Finance"); assert.equal(rows[0].has_own_bike, false);
+    assert.equal((await pub("/corporate/limad")).status, 302, "dashboard needs sign-in");
+    // Tuesday evening ride is on the L'imad schedule next to Thursday
+    assert.ok((await pool.query("SELECT 1 FROM corp_schedules WHERE company = 'LIMAD' AND weekday = 2 AND start_time = '17:30'")).rows[0]);
+    for (const tab of ["", "?tab=league", "?tab=register", "?tab=framework", "?tab=reports"]) ok200(await admin("/corporate/limad" + tab), "tab " + tab);
+    assert.match(ok200(await admin("/corporate/limad"), "overview").text, /Participation by level/);
+    // league starts off; staff turn it on and award points
+    assert.match((await admin("/corporate/limad?tab=league")).text, /Department League is off/);
+    assert.equal((await admin("/corporate/limad/league", { method: "POST", form: { on: "1" } })).status, 302);
+    assert.equal((await admin("/corporate/limad/points", { method: "POST", form: { participant: String(rows[0].id), kind: "bring", awarded_on: today } })).status, 302);
+    const lg = ok200(await admin("/corporate/limad?tab=league"), "league").text;
+    assert.match(lg, /Department League is on/); assert.match(lg, /Finance/);
+    const L = await require("../src/limad").league();
+    assert.equal(L.rows.find((r) => r.dept === "Finance").points, 20);
+    ok200(await admin("/corporate/limad/register/poster"), "poster");
+    const x = await admin("/corporate/limad/registrations.xlsx", { raw: true }); assert.equal(x.status, 200);
+    const ws = (await xlsx(x.text)).getWorksheet("Registrations"); assert.equal(ws.getRow(2).getCell(3).value, "Noor Test");
   });
 });

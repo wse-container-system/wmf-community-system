@@ -710,6 +710,7 @@ app.get("/api/wmf/monthly.xlsx", need(), wrap(async (req, res) => {
 // ======================= admin =======================
 require("./admin")(app, { need, page, setFlash, actor, user, wrap, SECRET });
 require("./corporate")(app, { need, page, setFlash, actor, user, wrap, limit });
+require("./limad")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./corpsignup")(app, { need, page, setFlash, actor, user, wrap, limit });
 require("./scanner")(app, { need, page, setFlash, actor, user, wrap, limit, checkIn, rideActivities, scanReply, calendar: require("./calendar"), qrSend, qrDataUrl });
 require("./department")(app, { need, page, setFlash, actor, user, wrap });
@@ -749,6 +750,7 @@ async function init() {
   await require("./corpdata").seedCompanies();
   await require("./db").tx((c) => require("./corpdata").seedSeasons(c));
   await require("./corpdata").seedSchedules();
+  await require("./corpdata").seedLimadTuesday();
   await require("./deptschedule").seedTeam();
   const merged = await require("./dupes").autoMergeEmails("system"); // same email = same person
   if (merged) console.log(`Merged ${merged} duplicate member records (same email).`);
