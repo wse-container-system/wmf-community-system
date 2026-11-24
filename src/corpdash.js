@@ -21,8 +21,8 @@ const pct = (r) => (r == null ? "—" : Math.round(r * 100) + "%");
 const first = (s) => String(s || "").trim().split(/\s+/)[0];
 const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v != null && v !== "")).toString();
 
-/** Partner logos (public/brand/corp), each on a plate in a colour it reads on: L'imad's is white, Aurora's sits on black. */
-const LOGOS = { LIMAD: { src: "/brand/corp/limad.png", plate: "var(--co)" }, NMDC: { src: "/brand/corp/nmdc.png", plate: "#ffffff" }, AURORA: { src: "/brand/corp/aurora.png", plate: "#000000" } };
+/** Partner logos (public/brand/corp), each on the plate its brand uses: L'imad and NMDC on white, Aurora on black. */
+const LOGOS = { LIMAD: { src: "/brand/corp/limad.png", plate: "#ffffff" }, NMDC: { src: "/brand/corp/nmdc.png", plate: "#ffffff" }, AURORA: { src: "/brand/corp/aurora.png", plate: "#000000" } };
 const logo = (co, cls = "") => { const l = LOGOS[co.code]; return l ? `<span class="cd-logo ${cls}" style="--co:${h(co.color || "#4a5bc4")};--plate:${l.plate}"><img src="${l.src}" alt="${h(co.name)}"></span>` : ""; };
 /** The company tabs at the top of the corporate dashboard. */
 const companyTabs = (list, cur) => `<nav class="cd-cos" aria-label="Companies">${list.length > 1 ? `<a href="/corporate" ${!cur ? 'aria-current="page"' : ""}><span class="cd-all">All companies</span></a>` : ""}${list.map((c) => `<a href="/corporate?company=${h(c.code)}" style="--co:${h(c.color || "var(--accent)")}" ${cur && c.code === cur.code ? 'aria-current="page"' : ""}${LOGOS[c.code] ? ` title="${h(c.name)}"` : ""}>${LOGOS[c.code] ? logo(c, "sm") : `<i></i>${h(c.name)}`}</a>`).join("")}</nav>`;

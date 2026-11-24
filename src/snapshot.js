@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const { pool, getSettings } = require("./db");
 const { nowLocal, todayLocal, TZ } = require("./rules");
+const { sessionSeries } = require("./engine");
 
 const isoOut = (d) => (d == null ? null : d instanceof Date ? localIso(d) : String(d));
 // node-postgres returns TIMESTAMP (no zone) as a local Date of the server; rebuild the wall-clock text
@@ -23,8 +24,6 @@ async function buildData() {
   const lead = (await pool.query("SELECT id, ride_date, ride_type, title, city, participants FROM lead_rides ORDER BY ride_date, id")).rows;
   // merged members: their rows count for the surviving member
   const merged = new Map((await pool.query("SELECT member_id, merged_into FROM members WHERE merged_into IS NOT NULL")).rows.map((r) => [r.member_id, r.merged_into]));
-  const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-  const weekday = (iso) => ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date(iso + "T12:00:00Z").getUTCDay()];
   const dayOnly = (d) => (d instanceof Date ? localIso(d).slice(0, 10) : String(d).slice(0, 10));
   const setupLocations = {};
   for (const s of setup.rows) if (s.location) setupLocations[s.activity_id] = s.location;
@@ -54,9 +53,9 @@ async function buildData() {
       };
     }),
     historyRides: hr.rows.map((h) => {
-      const d = dayOnly(h.ride_date), n = String(h.initiative || "").toLowerCase();
-      const w = DAYS.find((x) => n.includes(x));
-      return { date: d, initiative: h.initiative, series: w ? w[0].toUpperCase() + w.slice(1) + " Ride" : weekday(d) + " Ride",
+      const d = dayOnly(h.ride_date);
+      // each named session is its own ride ("Monday Madness", "Monday Just Ride"), as for check-ins
+      return { date: d, initiative: h.initiative, series: sessionSeries(h.initiative, "", d),
         location: /dxb|dubai/i.test(h.state || "") ? "Dubai" : "Abu Dhabi", attendees: h.attendees, hid: h.id };
     }).concat(lead.map((l) => ({ date: dayOnly(l.ride_date), initiative: l.title || l.ride_type, lead: true, location: l.city,
       series: l.ride_type === "Manual" ? l.title || "Ride" : l.ride_type === "Special ride" ? (l.title ? "Special: " + l.title : "Special ride") : l.ride_type + " Ride",

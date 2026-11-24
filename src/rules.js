@@ -30,7 +30,7 @@ const formatMemberId = (n) => "WMF-" + String(n).padStart(6, "0");
 
 /** Ride series for an activity, using the same classification as the dashboard. */
 function seriesFor(activity, isoDate) {
-  const c = E.classify({ recordType: "Attendance", activityName: activity.name, activityId: activity.activity_id, activityType: activity.activity_type || "Community Ride" });
+  const c = E.classify({ recordType: "Attendance", activityName: activity.name, activityId: activity.activity_id, activityType: activity.activity_type || "Community Ride", date: isoDate });
   if (c.series && c.series !== "Other ride") return c.series;
   return weekdayOf(isoDate) + " Ride"; // no weekday in the name: use the day of the session
 }
@@ -38,6 +38,7 @@ function seriesFor(activity, isoDate) {
 /** The rides offered on the scanner. Fixed list; the calendar says which of them run on a given day. */
 const CORE_RIDES = [
   { activity_id: "RIDE-MONDAY-MADNESS", name: "Monday Madness" },
+  { activity_id: "RIDE-MONDAY-JUST-RIDE", name: "Monday Just Ride" },
   { activity_id: "RIDE-MONDAY-MAINTENANCE", name: "Monday Maintenance" },
   { activity_id: "RIDE-WEDNESDAY-SOCIAL", name: "Wednesday Social" },
   { activity_id: "RIDE-MORNING", name: "Morning Ride" },
@@ -55,6 +56,7 @@ async function ensureCoreRides(c) {
 function slotForTitle(title) {
   const t = clean(title).toLowerCase();
   if (/madness/.test(t)) return "RIDE-MONDAY-MADNESS";
+  if (/just ride/.test(t)) return "RIDE-MONDAY-JUST-RIDE";
   if (/maintenance/.test(t)) return "RIDE-MONDAY-MAINTENANCE";
   if (/social/.test(t)) return "RIDE-WEDNESDAY-SOCIAL";
   if (/mountain|jebel|hafeet/.test(t)) return "RIDE-MOUNTAIN";
@@ -169,7 +171,7 @@ async function alreadyRode(c, member, isoDate, series) {
       WHERE voided_at IS NULL AND record_type = 'Attendance' AND status = 'Attended' AND record_date::date = $1::date
         AND (member_id = $2 OR lower(member_email) = ANY($3) OR form_response_id = $2)`, [isoDate, member.member_id, emails]);
   return r.rows.find((x) => {
-    const c2 = E.classify({ recordType: x.record_type, activityName: x.activity_name, activityId: x.activity_id, activityType: x.activity_type });
+    const c2 = E.classify({ recordType: x.record_type, activityName: x.activity_name, activityId: x.activity_id, activityType: x.activity_type, date: isoDate });
     const s = c2.series && c2.series !== "Other ride" ? c2.series : weekdayOf(isoDate) + " Ride";
     return c2.kind === "ride" && s === series;
   }) || null;

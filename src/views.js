@@ -12,10 +12,16 @@ const SECTIONS = [
   { key: "reports", label: "Reports", home: "/report/management", roles: ["admin", "coordinator", "viewer"], scoped: false, match: /^\/report(\/|\.|$)/, links: [
     ["/report/management", "Management", ["admin", "coordinator", "viewer"]], ["/report", "Performance report", ["admin", "coordinator", "viewer"]],
     ["/corporate/management", "Corporate report", ["admin", "coordinator", "viewer"]]] },
+  // WMF: the same clickable tabs as Corporate. Related pages sit together; a grouped tab opens a second row of tabs.
   { key: "wmf", label: "WMF", home: "/wmf", roles: ALL, scoped: false, match: /^\/(wmf|ride-it-forward|overview|scan|members|activities|activations|partners|rides|newsletter|calendar|dashboard|surveys|social|dubai)(\/|$)/, links: [
-    ["/wmf", "Home", STAFF], ["/overview", "Overview", ALL], ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"]], ["/members", "Members", STAFF], ["/activities", "Events", STAFF],
-    ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/surveys", "Surveys", STAFF], ["/social", "Social growth", STAFF], ["/calendar", "Calendar", ALL],
-    ["/report", "Reports", ["admin", "coordinator", "viewer"]], ["/newsletter", "Newsletter", STAFF], ["/dashboard", "Dashboard", ALL]] },
+    ["/wmf", "Home", STAFF],
+    ["/overview", "Overview", ALL, [["/overview", "Overview", ALL], ["/dashboard", "Full dashboard", ALL]]],
+    ["/wmf/rides", "Rides", ["admin", "coordinator", "viewer"], [["/wmf/rides", "Performance", ["admin", "coordinator", "viewer"]], ["/rides", "Attendance per ride", STAFF], ["/scan", "Scan QR", STAFF], ["/dubai", "Dubai rides", STAFF]]],
+    ["/members", "Members", STAFF],
+    ["/activities", "Events", ["admin", "coordinator", "viewer"], [["/activities", "Events & sign-ups", STAFF], ["/activations", "Activations", ["admin", "coordinator", "viewer"]], ["/partners", "Partners", ["admin", "coordinator", "viewer"]], ["/ride-it-forward/manage", "Ride It Forward", STAFF]]],
+    ["/calendar", "Calendar", ALL, [["/calendar", "Calendar", ALL], ["/calendar/manage", "Share", STAFF], ["/calendar/races", "Race watch", STAFF]]],
+    ["/social", "Growth", STAFF, [["/social", "Social growth", STAFF], ["/surveys", "Surveys", STAFF], ["/newsletter", "Newsletter", STAFF]]],
+    ["/report", "Reports", ["admin", "coordinator", "viewer"]]] },
   // Corporate: the dashboard has a tab per company (each with its seasons). Grouped tabs open a second row of tabs (every page stays one click away).
   { key: "corporate", label: "Corporate", home: "/corporate", roles: ALL, scoped: true, match: /^\/corporate(\/|$)/, links: [
     ["/corporate", "Dashboard", ALL],
@@ -33,7 +39,17 @@ function sectionOf(path) {
   return s ? s.key : path && path.startsWith("/admin") ? "admin" : "hub";
 }
 
-function layout(title, body, { user, active, flash, scripts = "", wide = true, brandTitle = false } = {}) {
+/** The menu entry a page belongs to: its own address, else the longest menu address it sits under (/members/WMF-1 → /members). */
+function pickActive(links, active, path) {
+  const all = links.flatMap((l) => [l[0], ...(l[3] || []).map((k) => k[0])]);
+  if (active && all.includes(active)) return active;
+  const p = path || active || "";
+  return all.filter((href) => p === href || p.startsWith(href + "/")).sort((a, b) => b.length - a.length)[0] || active;
+}
+
+function layout(title, body, { user, active, path, flash, scripts = "", wide = true, brandTitle = false } = {}) {
+  const sec0 = SECTIONS.find((x) => x.match.test(active || path || ""));
+  active = sec0 ? pickActive(sec0.links, active, path) : active || path;
   const sec = sectionOf(active);
   const secs = user ? sectionsFor(user) : [];
   const top = user ? [`<a href="/" ${sec === "hub" ? 'aria-current="page"' : ""}>Hub</a>`,

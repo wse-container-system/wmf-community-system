@@ -23,7 +23,8 @@ const ACTS = [
 ];
 // ready timings for each activity: the first is filled in when the activity is picked
 const TIMES = {
-  Office: [["08:00", "17:00"], ["09:00", "18:00"], ["07:00", "16:00"], ["08:00", "13:00"], ["13:00", "17:00"]],
+  // the three office shifts (Rona, 24 Nov 2026): 8:00–5:30 PM, 9:00–6:30 PM, 11:00–8:30 PM
+  Office: [["08:00", "17:30"], ["09:00", "18:30"], ["11:00", "20:30"], ["08:00", "13:00"], ["13:00", "17:30"]],
   "WMF Ride": [["05:30", "08:30"], ["06:00", "09:00"], ["17:00", "20:00"], ["18:00", "21:00"], ["19:00", "21:30"]],
   "Corporate Ride": [["05:30", "08:00"], ["06:00", "08:00"], ["16:30", "19:00"], ["17:00", "19:00"]],
   Event: [["07:00", "12:00"], ["09:00", "17:00"], ["16:00", "21:00"], ["18:00", "22:00"]],
@@ -32,6 +33,7 @@ const TIMES = {
 const OLD = { "Workshop / Training": "#13917a", Mechanic: "#a87a00", "Business trip": "#4a6a8a", "Lieu day": "#9a94ab" };
 const actOf = (k) => ACTS.find((a) => a.k === k) || (OLD[k] ? { k, c: OLD[k], hours: k !== "Lieu day", allDay: k === "Lieu day" } : { k, c: "#777", hours: true });
 const LEAVE_TYPES = ["Annual", "Sick", "Other"];
+const LEAVE_PICK = "Leave"; // "Add time" can also put leave in the schedule (it is saved as leave, not as hours)
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const dow = (d) => new Date(d + "T12:00:00Z").getUTCDay();
 const mondayOf = (d) => addDays(d, -((dow(d) + 6) % 7));
@@ -68,7 +70,7 @@ const chip = (b, href) => {
   const inner = `${t ? `<b>${h(t)}</b> ` : ""}${h(b.activity)}${b.note ? ` <span class="sc-note2">${h(b.note)}</span>` : ""}`;
   return href ? `<a class="sc-chip" style="--ac:${actOf(b.activity).c}" href="${href}">${inner}</a>` : `<span class="sc-chip" style="--ac:${actOf(b.activity).c}">${inner}</span>`;
 };
-const leaveChip = (l) => `<span class="sc-lv ${l.status === "Approved" ? "conf" : "tent"}">${h(l.leave_type === "Annual" ? "Leave" : l.leave_type + " leave")}${l.status === "Approved" ? "" : " · tentative"}</span>`;
+const leaveChip = (l, href) => `<${href ? `a href="${href}"` : "span"} class="sc-lv ${l.status === "Approved" ? "conf" : "tent"}">${h(l.leave_type === "Annual" ? "Annual leave" : l.leave_type + " leave")}${l.status === "Approved" ? "" : " · tentative"}</${href ? "a" : "span"}>`;
 const legend = () => `<div class="sc-legend">${ACTS.map((a) => `<span><i style="background:${a.c}"></i>${h(a.k)}</span>`).join("")}<span><i class="sc-li conf"></i>Leave</span><span><i class="sc-li tent"></i>Tentative leave</span></div>`;
 
 function weekView(D, mon, ctx) {
@@ -77,7 +79,7 @@ function weekView(D, mon, ctx) {
   const rows = D.staff.map((s) => {
     const edit = ctx.canEdit(s); let tot = 0;
     const cells = ds.map((d) => { const x = D.day(s.id, d); tot += x.hours;
-      return `<td class="${d === today ? "is-today" : ""} ${x.weekend ? "we" : ""}">${x.leave ? leaveChip(x.leave) : ""}${x.holiday && !x.blocks.length ? `<span class="sc-lv hol">${h(x.holiday)}</span>` : ""}${x.blocks.map((b) => chip(b, edit ? `${ctx.base}/schedule/entry/${b.id}` : null)).join("")}${edit ? `<a class="sc-plus noprint" href="${ctx.base}/schedule/new?staff=${s.id}&date=${d}" aria-label="Add">+</a>` : ""}</td>`; }).join("");
+      return `<td class="${d === today ? "is-today" : ""} ${x.weekend ? "we" : ""}">${x.leave ? leaveChip(x.leave, edit ? `${ctx.base}/leave` : null) : ""}${x.holiday && !x.blocks.length ? `<span class="sc-lv hol">${h(x.holiday)}</span>` : ""}${x.blocks.map((b) => chip(b, edit ? `${ctx.base}/schedule/entry/${b.id}` : null)).join("")}${edit && !x.leave ? `<a class="sc-plus noprint" href="${ctx.base}/schedule/new?staff=${s.id}&date=${d}" aria-label="Add">+</a>` : ""}</td>`; }).join("");
     return `<tr class="${edit ? "mine" : ""}"><th>${h(s.full_name)}</th>${cells}<td class="sc-tot ${tot > WEEK_LIMIT ? "over" : ""}" title="${tot > WEEK_LIMIT ? "Over " + WEEK_LIMIT + " hours" : ""}">${hm(tot) || "—"}</td></tr>`;
   }).join("");
   return `<div class="tw"><table class="sc-week"><thead><tr><th></th>${head}<th>Hours</th></tr></thead><tbody>${rows || `<tr><td class="muted">Add the team first.</td></tr>`}</tbody></table></div>`;
@@ -181,7 +183,7 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
       <div class="sc-bar">
         <div class="sc-step"><a class="btn" href="${q(view, prev)}" aria-label="Previous">‹</a><b>${h(label)}</b><a class="btn" href="${q(view, next)}" aria-label="Next">›</a></div>
         <div class="seg" role="group" aria-label="View"><a class="btn ${view === "week" ? "primary" : ""}" href="${q("week", date)}">Week</a><a class="btn ${view === "month" ? "primary" : ""}" href="${q("month", date)}">Month</a></div>
-        <div class="sc-act">${c.mine ? `<a class="btn primary" href="${c.base}/schedule/new?staff=${c.mine.id}&date=${R.todayLocal()}">+ Add my time</a>` : ""}${c.mine && view === "week" ? `<form method="post" action="${c.base}/schedule/copy-week" style="display:inline"><input type="hidden" name="staff_id" value="${c.mine.id}"><input type="hidden" name="monday" value="${mon}"><button class="btn" title="Fill this week's empty days from last week">Copy last week</button></form>` : ""}
+        <div class="sc-act">${c.mine ? `<a class="btn primary" href="${c.base}/schedule/new?staff=${c.mine.id}&date=${R.todayLocal()}">+ Add my time</a><a class="btn" href="${c.base}/schedule/new?staff=${c.mine.id}&date=${R.todayLocal()}&leave=1">+ Annual leave</a>` : c.editable.length ? `<a class="btn" href="${c.base}/schedule/new?date=${R.todayLocal()}&leave=1">+ Leave</a>` : ""}${c.mine && view === "week" ? `<form method="post" action="${c.base}/schedule/copy-week" style="display:inline"><input type="hidden" name="staff_id" value="${c.mine.id}"><input type="hidden" name="monday" value="${mon}"><button class="btn" title="Fill this week's empty days from last week">Copy last week</button></form>` : ""}
           <a class="btn" href="${c.base}/schedule/export.xlsx?month=${m}">HR timesheet</a></div>
       </div>
       ${legend()}<section class="card sc-card">${body}</section>`, "/department/schedule");
@@ -190,11 +192,14 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
   // ----- add / change a block
   const form = (c, v, action, del) => `<form class="form" method="post" action="${action}">
     ${c.editable.length > 1 ? `<label>Who<select name="staff_id">${c.editable.map((s) => `<option value="${s.id}" ${String(v.staff_id) === String(s.id) ? "selected" : ""}>${h(s.full_name)}</option>`).join("")}</select></label>` : `<input type="hidden" name="staff_id" value="${c.editable[0].id}">`}
-    <div class="ds-acts">${ACTS.map((a) => `<label class="ds-actpick" style="--ac:${a.c}"><input type="radio" name="activity" value="${h(a.k)}" ${v.activity === a.k ? "checked" : ""} required><span>${h(a.k)}</span></label>`).join("")}</div>
-    <div class="row2"><label>Date<input type="date" name="work_date" value="${h(v.work_date)}" required></label><label>Note <span class="hint">(optional)</span><input name="note" value="${h(v.note)}" maxlength="60" placeholder="e.g. L'IMAD"></label></div>
-    <div class="ds-times" id="dsTimes" data-times="${h(JSON.stringify(TIMES))}" ${v.activity === "Off" ? "hidden" : ""}><span class="hint">Ready times: tap one</span><div class="ds-chips"></div></div>
-    <div class="row2" id="dsFromTo" ${v.activity === "Off" ? "hidden" : ""}><label>From<input type="time" name="start_time" value="${h(v.start_time)}"></label><label>To<input type="time" name="end_time" value="${h(v.end_time)}"></label></div>
-    ${del ? "" : `<details><summary>Repeat</summary><div class="ds-days" style="margin-top:8px">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<label><input type="checkbox" name="repeat" value="${i}"> ${DOW[i]}</label>`).join("")}</div><label style="margin-top:8px">Until<input type="date" name="until"></label></details>`}
+    <div class="ds-acts">${ACTS.map((a) => `<label class="ds-actpick" style="--ac:${a.c}"><input type="radio" name="activity" value="${h(a.k)}" ${v.activity === a.k ? "checked" : ""} required><span>${h(a.k)}</span></label>`).join("")}${del ? "" : `<label class="ds-actpick" style="--ac:#e0a21d"><input type="radio" name="activity" value="${LEAVE_PICK}" ${v.activity === LEAVE_PICK ? "checked" : ""}><span>Annual leave</span></label>`}</div>
+    <div class="row2"><label><span id="dsDateLbl">${v.activity === LEAVE_PICK ? "From" : "Date"}</span><input type="date" name="work_date" value="${h(v.work_date)}" required></label><label id="dsNote" ${v.activity === LEAVE_PICK ? "hidden" : ""}>Note <span class="hint">(optional)</span><input name="note" value="${h(v.note)}" maxlength="60" placeholder="e.g. L'IMAD"></label>
+      ${del ? "" : `<label id="dsLeaveTo" ${v.activity === LEAVE_PICK ? "" : "hidden"}>To<input type="date" name="leave_to" value="${h(v.leave_to || v.work_date)}"></label>`}</div>
+    ${del ? "" : `<div class="row2" id="dsLeave" ${v.activity === LEAVE_PICK ? "" : "hidden"}><label>Type<select name="leave_type">${LEAVE_TYPES.map((t) => `<option>${t}</option>`).join("")}</select></label>
+      <label>Plan<select name="plan"><option value="Approved">Confirmed</option><option value="Tentative">Tentative</option></select></label></div>`}
+    <div class="ds-times" id="dsTimes" data-times="${h(JSON.stringify(TIMES))}" ${v.activity === "Off" || v.activity === LEAVE_PICK ? "hidden" : ""}><span class="hint" id="dsTimesHint">${v.activity === "Office" ? "Office shifts: tap one" : "Ready times: tap one"}</span><div class="ds-chips"></div></div>
+    <div class="row2" id="dsFromTo" ${v.activity === "Off" || v.activity === LEAVE_PICK ? "hidden" : ""}><label>From<input type="time" name="start_time" value="${h(v.start_time)}"></label><label>To<input type="time" name="end_time" value="${h(v.end_time)}"></label></div>
+    ${del ? "" : `<details id="dsRepeat" ${v.activity === LEAVE_PICK ? "hidden" : ""}><summary>Repeat</summary><div class="ds-days" style="margin-top:8px">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<label><input type="checkbox" name="repeat" value="${i}"> ${DOW[i]}</label>`).join("")}</div><label style="margin-top:8px">Until<input type="date" name="until"></label></details>`}
     <div class="toolbar" style="margin:0"><button class="btn primary">Save</button>${del ? `<button class="btn danger" name="action" value="delete" formnovalidate>Remove</button>` : ""}<a class="btn ghost" href="${c.base}/schedule?date=${h(v.work_date || "")}">Cancel</a></div></form><script src="/deptform.js" defer></script>`;
   function readEntry(b) {
     const a = ACTS.find((x) => x.k === b.activity);
@@ -208,10 +213,18 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
   both("get", "/schedule/new", async (req, res, c) => {
     if (!c.editable.length) return res.redirect(`${c.base}/schedule`);
     const sid = c.editable.some((s) => String(s.id) === String(req.query.staff)) ? req.query.staff : c.editable[0].id;
-    c.send(res, "Add time", `<section class="card narrow"><h2>Add time</h2>${req.query.err ? `<div class="flash err" role="alert">${h(String(req.query.err).slice(0, 120))}</div>` : ""}${form(c, { staff_id: sid, work_date: okDate(req.query.date) ? req.query.date : R.todayLocal(), activity: "Office", start_time: "08:00", end_time: "17:00" }, `${c.base}/schedule/entries`)}</section>`, "/department/schedule");
+    c.send(res, req.query.leave ? "Add leave" : "Add time", `<section class="card narrow"><h2>${req.query.leave ? "Add leave" : "Add time"}</h2><p class="lead" style="margin:0">Pick what it is: a shift, a ride, or annual leave.</p>${req.query.err ? `<div class="flash err" role="alert">${h(String(req.query.err).slice(0, 120))}</div>` : ""}${form(c, { staff_id: sid, work_date: okDate(req.query.date) ? req.query.date : R.todayLocal(), activity: req.query.leave ? LEAVE_PICK : "Office", start_time: "08:00", end_time: "17:30" }, `${c.base}/schedule/entries`)}</section>`, "/department/schedule");
   });
   both("post", "/schedule/entries", async (req, res, c) => {
-    const b = req.body, s = c.editable.find((x) => String(x.id) === String(b.staff_id)), e = readEntry(b);
+    const b = req.body, s = c.editable.find((x) => String(x.id) === String(b.staff_id));
+    if (b.activity === LEAVE_PICK) {
+      const to = okDate(b.leave_to) ? b.leave_to : b.work_date;
+      if (!s || !okDate(b.work_date) || to < b.work_date || days(b.work_date, to).length > 93)
+        return res.redirect(`${c.base}/schedule/new?leave=1&staff=${b.staff_id || ""}&date=${b.work_date || ""}&err=${encodeURIComponent(!s ? "Not allowed." : "Check the leave dates.")}`);
+      await addLeave(c, s, { from: b.work_date, to, type: b.leave_type, plan: b.plan });
+      return res.redirect(`${c.base}/schedule?date=${b.work_date}`);
+    }
+    const e = readEntry(b);
     if (!s || e.err) return res.redirect(`${c.base}/schedule/new?staff=${b.staff_id || ""}&date=${b.work_date || ""}&err=${encodeURIComponent(e.err || "Not allowed.")}`);
     const rep = [].concat(b.repeat || []).map(Number);
     const ds = rep.length && okDate(b.until) && b.until >= b.work_date && days(b.work_date, b.until).length <= 93 ? days(b.work_date, b.until).filter((d) => d === b.work_date || rep.includes(dow(d))) : [b.work_date];
@@ -277,15 +290,16 @@ module.exports = function deptSchedule(app, { need, page, setFlash, actor, user,
         <button class="btn primary">Save</button></form></section>` : ""}
     </div>`, "/department/leave");
   });
+  async function addLeave(c, s, { from, to, type, plan }) {
+    const n = await require("./department").workingDays(from, to, false);
+    const st = plan === "Tentative" ? "Tentative" : "Approved";
+    await pool.query("INSERT INTO dept_leave (staff_id, leave_type, start_date, end_date, days, status, requested_by, decided_by, decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+      [s.id, LEAVE_TYPES.includes(type) ? type : "Annual", from, to, n || 0, st, c.by, st === "Approved" ? c.by : null, st === "Approved" ? new Date() : null]);
+    await audit(pool, c.by, "dept.leave.create", "dept_leave", String(s.id), null, { from, to, status: st });
+  }
   both("post", "/leave", async (req, res, c) => {
     const b = req.body, s = c.editable.find((x) => String(x.id) === String(b.staff_id));
-    if (s && okDate(b.start_date) && okDate(b.end_date) && b.end_date >= b.start_date) {
-      const n = await require("./department").workingDays(b.start_date, b.end_date, false);
-      const st = b.plan === "Tentative" ? "Tentative" : "Approved";
-      await pool.query("INSERT INTO dept_leave (staff_id, leave_type, start_date, end_date, days, status, requested_by, decided_by, decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [s.id, LEAVE_TYPES.includes(b.leave_type) ? b.leave_type : "Annual", b.start_date, b.end_date, n || 0, st, c.by, st === "Approved" ? c.by : null, st === "Approved" ? new Date() : null]);
-      await audit(pool, c.by, "dept.leave.create", "dept_leave", String(s.id), null, { from: b.start_date, to: b.end_date, status: st });
-    }
+    if (s && okDate(b.start_date) && okDate(b.end_date) && b.end_date >= b.start_date) await addLeave(c, s, { from: b.start_date, to: b.end_date, type: b.leave_type, plan: b.plan });
     res.redirect(`${c.base}/leave`);
   });
   both("post", "/leave/:id", async (req, res, c) => {

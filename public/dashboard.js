@@ -295,7 +295,7 @@
         ${exportBox()}
         ${chartCard("quarter", "Ride attendance by quarter", "Historical headcounts plus registered riders, combined without double counting.", "c6", tableHtml(["Quarter", "Ride attendance", "Qualifying participations"], cur.quarterly.map((q) => [q.quarter, cnt(q.rideAttendance), cnt(q.qualifying)])))}
         ${chartCard("newret", "New and returning members taking part", "Each person counted once per month: in their first month they are new.", "c6", trendTable(["Month", "New", "Returning"], (t) => [monLabel(t.month), t.firstTimers, t.returning]))}
-        ${chartCard("series", "Ride attendance by ride", "Weekday ride series, agreed 1 Oct. Older ride names sit inside each series.", "c6", tableHtml(["Ride", "Attendance"], cur.bySeries.map((d) => [d.name, cnt(d.value)])))}
+        ${chartCard("series", "Ride attendance by session", "Each ride session on its own (Monday Madness and Monday Just Ride are two rides). Plain names count as the weekday ride.", "c6", tableHtml(["Session", "Attendance"], cur.bySeries.map((d) => [d.name, cnt(d.value)])))}
         ${chartCard("location", "Abu Dhabi and Dubai", "Ride attendance by location. Rides count as Abu Dhabi unless they are marked Dubai.", "c6", tableHtml(["Location", "Attendance"], cur.byLocation.map((d) => [d.name, cnt(d.value)])))}
         ${chartCard("events", "Event participation", "Each registration counts as attendance; historical event figures included.", "c6", tableHtml(["Event", "Participation"], cur.byEvent.map((d) => [d.name, cnt(d.value)])))}
         ${chartCard("type", "Rides and events", "Participation by activity type in the period.", "c6", tableHtml(["Type", "Participation"], cur.byType.map((d) => [d.name, cnt(d.value)])))}

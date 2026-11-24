@@ -87,7 +87,7 @@ async function monthlyWorkbook(data, { from, to, sponsor = false } = {}) {
     s.getColumn(1).width = 34; months.forEach((_, j) => { s.getColumn(j + 2).width = 9; }); s.getColumn(months.length + 2).width = 10;
     s.views = [{ state: "frozen", xSplit: 1, ySplit: 2 }];
   };
-  cross("Rides by month", "Ride attendance per month by ride series (historical headcounts plus registered riders)", seriesNames, bySeries);
+  cross("Rides by month", "Ride attendance per month by ride session (historical headcounts plus registered riders)", seriesNames, bySeries);
   cross("Events by month", "Event participation per month (each registration counts; large public events are on the summary sheet)", eventNames, byEvent);
 
   // ---------- 4. Impact
