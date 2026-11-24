@@ -221,7 +221,8 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
     const list = sessions(P, city.name, per.start, end);
     const vMap = new Map((await pool.query("SELECT ride_date::text AS d, series, venue FROM ride_venues WHERE city = $1 AND ride_date BETWEEN $2 AND $3", [city.name, per.start, end])).rows.map((r) => [r.d + "|" + r.series, r.venue]));
     const vDef = new Map((await pool.query("SELECT series, venue FROM ride_venue_defaults WHERE city = $1", [city.name])).rows.map((r) => [r.series, r.venue]));
-    for (const s of list) { s.venue = vMap.get(s.d + "|" + s.series) || vDef.get(s.series) || null; s.venueUsual = !vMap.has(s.d + "|" + s.series) && !!s.venue; }
+    // a session without its own usual location falls back to the weekday ride's (set before sessions were split)
+    for (const s of list) { s.venue = vMap.get(s.d + "|" + s.series) || vDef.get(s.series) || vDef.get(R.weekdayOf(s.d) + " Ride") || null; s.venueUsual = !vMap.has(s.d + "|" + s.series) && !!s.venue; }
     const byVenue = new Map();
     for (const s of list) { const k = s.venue || "Not set"; const x = byVenue.get(k) || { name: k, rides: 0, people: 0 }; x.rides++; x.people += s.n; byVenue.set(k, x); }
     const venues = [...byVenue.values()].sort((a, b) => (a.name === "Not set") - (b.name === "Not set") || b.people - a.people);
@@ -230,6 +231,10 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
     const series = new Map();
     for (const s of list) { const x = series.get(s.series) || { name: s.series, rides: 0, people: 0, best: null }; x.rides++; x.people += s.n; if (!x.best || s.n > x.best.n) x.best = s; series.set(s.series, x); }
     const bySeries = [...series.values()].sort((a, b) => b.people - a.people);
+    // each session against the period before: is it doing better or worse?
+    const prevSeries = new Map();
+    for (const s of prevList) { const x = prevSeries.get(s.series) || { rides: 0, people: 0 }; x.rides++; x.people += s.n; prevSeries.set(s.series, x); }
+    for (const x of bySeries) { const p = prevSeries.get(x.name); x.avg = x.people / x.rides; x.prevAvg = p ? p.people / p.rides : null; x.ch = x.prevAvg ? Math.round(((x.avg - x.prevAvg) / x.prevAvg) * 100) : null; }
     // people whose first WMF ride was in this period, in this city
     const newRiders = [];
     for (const p of P.persons.values()) {
@@ -258,7 +263,7 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
           <span class="seg">${Object.keys(KIND).map((t) => `<a href="/wmf/rides?city=${cityKey}&period=${t}" class="${type === t ? "on" : ""}">${KIND[t]}</a>`).join("")}</span>
           <form method="get" style="margin:0"><input type="hidden" name="city" value="${cityKey}"><input type="hidden" name="period" value="${type}"><select class="inp" name="p" style="width:auto" data-autosubmit aria-label="Period">${opts.map(([v, l]) => `<option value="${v}" ${v === per.p ? "selected" : ""}>${h(l)}</option>`).join("")}</select></form></div></section>
       ${detailTiles([
-        { label: "Participation", value: nf(people), note: delta, detail: { title: `Participation · ${city.name} · ${per.label}`, html: `<h3>By ride</h3>${mini(["Ride", "Rides", "Participation", "Avg. per ride"], bySeries.map((x) => [h(x.name), nf(x.rides), nf(x.people), nf(Math.round(x.people / x.rides))]), { num: [1, 2, 3] })}
+        { label: "Participation", value: nf(people), note: delta, detail: { title: `Participation · ${city.name} · ${per.label}`, html: `<h3>By session</h3>${mini(["Session", "Rides", "Participation", "Avg. per ride"], bySeries.map((x) => [h(x.name), nf(x.rides), nf(x.people), nf(Math.round(x.people / x.rides))]), { num: [1, 2, 3] })}
           <h3>Compared with the period before</h3>${mini(["", "This period", "Period before"], [["Participation", nf(people), nf(prevPeople)], ["Rides held", nf(rides), nf(prevList.length)], ["Avg. per ride", avg ? nf(Math.round(avg)) : "—", prevList.length ? nf(Math.round(prevPeople / prevList.length)) : "—"]], { num: [1, 2] })}` } },
         { label: "Rides held", value: nf(rides), note: prevList.length ? `${prevList.length} the period before` : "", detail: { title: "Rides held by weekday", html: mini(["Day", "Rides", "Participation", "Avg. per ride"],
           ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((w) => { const l = list.filter((s) => R.weekdayOf(s.d) === w); return l.length ? [w, nf(l.length), nf(l.reduce((a, s) => a + s.n, 0)), nf(Math.round(l.reduce((a, s) => a + s.n, 0) / l.length))] : null; }).filter(Boolean), { num: [1, 2, 3] }) + '<p class="hint">Every ride is listed under “Every ride” below.</p>' } },
@@ -270,15 +275,18 @@ module.exports = function ridesPerf(app, { need, page, wrap, user, setFlash, act
       ])}
       <div class="grid">
         <section class="card c7"><h2>${type === "month" ? "Riders per ride" : "Participation by month"}</h2>${chart || '<p class="muted">No rides in this period.</p>'}</section>
-        <section class="card c5"><h2>By ride</h2>
+        <section class="card c5"><h2>By session</h2><p class="lead" style="margin:0 0 8px">Each ride session on its own (e.g. Monday Madness and Monday Just Ride), average riders per ride.</p>
           ${bySeries.length ? `<div class="hbars">${bySeries.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.name)}</span><span class="hbar-t"><span style="width:${(x.people / x.rides / maxS) * 100}%;background:${city.color}"></span></span>
-            <span class="hbar-v"><b>${nf(Math.round(x.people / x.rides))}</b> <span class="muted">avg · ${x.rides} ride${x.rides === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : '<p class="muted">No rides.</p>'}
+            <span class="hbar-v"><b>${nf(Math.round(x.people / x.rides))}</b> <span class="muted">avg · ${x.rides} ride${x.rides === 1 ? "" : "s"}</span>${x.ch != null ? ` <span class="${x.ch >= 0 ? "rp-up" : "rp-down"}" title="Average per ride vs the period before">${x.ch >= 0 ? "▲" : "▼"}${Math.abs(x.ch)}%</span>` : ""}</span></div>`).join("")}</div>` : '<p class="muted">No rides.</p>'}
           ${venues.length > 1 || (venues[0] && venues[0].name !== "Not set") ? `<h3 style="margin:14px 0 6px">By location</h3><div class="hbars">${venues.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.name)}</span><span class="hbar-t"><span style="width:${(x.people / Math.max(1, ...venues.map((v) => v.people))) * 100}%;background:${x.name === "Not set" ? "var(--line)" : city.color}"></span></span>
             <span class="hbar-v"><b>${nf(x.people)}</b> <span class="muted">· ${x.rides} ride${x.rides === 1 ? "" : "s"}</span></span></div>`).join("")}</div>` : ""}
           <p class="hint" style="margin-top:8px">Average riders per ride. Best turnout: ${bySeries.length ? bySeries.map((x) => `${h(x.name)} ${x.best.n} (${fmtDate(x.best.d)})`).slice(0, 2).join(", ") : "—"}.</p></section>
+        ${bySeries.length ? `<section class="card c12"><h2>Sessions compared</h2><p class="lead" style="margin:0 0 8px">Which sessions are doing well: riders per ride now and in the period before.</p>
+          ${mini(["Session", "Rides", "Riders", "Avg. per ride", "Before", "Change", "Best turnout"], bySeries.map((x) => [`<b>${h(x.name)}</b>`, nf(x.rides), nf(x.people), `<b>${nf(x.avg, 1)}</b>`, x.prevAvg == null ? "—" : nf(x.prevAvg, 1),
+            x.ch == null ? '<span class="muted">new</span>' : `<span class="${x.ch >= 0 ? "rp-up" : "rp-down"}">${x.ch >= 0 ? "▲" : "▼"} ${Math.abs(x.ch)}%</span>`, `${nf(x.best.n)} <span class="muted">· ${fmtDate(x.best.d)}</span>`]), { num: [1, 2, 3, 4, 5] })}</section>` : ""}
         <section class="card c12"><div class="card-head"><div><h2>Every ride</h2>${dupes ? `<p class="lead" style="margin:0"><span class="badge warn">${dupes}</span> rides look entered twice (same day, same ride). Open one with Edit / delete to fix or remove it.</p>` : ""}</div>
           <div class="toolbar" style="margin:0">${canEdit ? `<a class="btn primary" href="/wmf/rides/new?${h(new URLSearchParams({ city: cityKey, back }).toString())}">+ Add a ride</a>` : ""}${cityKey === "auh" ? `<a class="btn" href="/rides">Attendance per ride: check people in</a>` : `<a class="btn" href="/dubai">Dubai lead link &amp; photos</a>`}</div></div>
-          <div class="tw"><table><thead><tr><th>Date</th><th>Ride</th><th>Location</th><th class="n">Riders</th><th>How it was counted</th><th></th></tr></thead><tbody>
+          <div class="tw"><table><thead><tr><th>Date</th><th>Session</th><th>Location</th><th class="n">Riders</th><th>How it was counted</th><th></th></tr></thead><tbody>
           ${list.map((s) => `<tr${s.dupe ? ' class="rd-dupe"' : ""}><td style="white-space:nowrap">${fmtDate(s.d)}</td><td>${h(s.series)}${s.dupe ? ' <span class="badge warn">Possible duplicate</span>' : ""}</td>
             <td>${s.venue ? `${h(s.venue)}${s.venueUsual ? ' <span class="muted" title="The usual location for this ride">(usual)</span>' : ""}` : '<span class="muted">—</span>'}</td><td class="n"><b>${nf(s.n)}</b></td>
             <td class="muted">${s.src === "l" ? (s.manual ? "Number of riders, added by the team" : "Sent by the ride lead") : s.src === "q" ? "QR check-ins" : "Attendance records"}</td>

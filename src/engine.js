@@ -36,6 +36,29 @@
   const TYPO_RE = /@(homtail|hotmial|gmial|gamil|gmai|yaho|exmaple)\.|\.con$/i;
   const goodKey = (k) => /^[ep]\|.+/.test(k);
 
+  /**
+   * The ride session a check-in belongs to. Each named session is its own ride (Rona, 24 Nov 2026):
+   * "Monday Madness" and "Monday Just Ride" on the same Monday are two rides with their own attendance.
+   * A plain name ("Monday Ride", "Community Ride") is the weekday ride; a named session without a weekday
+   * gets the weekday of the ride in front ("Tuesday Morning Ride"), except weekend rides.
+   */
+  const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const GENERIC = /^(?:(?:wmf|community|group|social media|women'?s?|weekly|regular|the)\s+)*(?:ride|rides|ride session|session|attendance)?$/;
+  function sessionSeries(activityName, activityId, date) {
+    const words = clean(activityName).replace(/\b(abu dhabi|dubai|auh|dxb)\b/gi, " ").replace(/[()[\]|·–—-]+/g, " ").replace(/\s+/g, " ").trim();
+    const low = words.toLowerCase(), id = norm(activityId);
+    const named = WEEKDAYS.find((w) => low.includes(w)) || WEEKDAYS.find((w) => id.includes(w));
+    const onDay = date ? ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][new Date(String(date).slice(0, 10) + "T12:00:00Z").getUTCDay()] : null;
+    const wd = named || onDay;
+    const cap = (w) => w[0].toUpperCase() + w.slice(1);
+    const rest = low.replace(new RegExp("\\b(" + WEEKDAYS.join("|") + ")s?\\b", "g"), " ").replace(/\s+/g, " ").trim();
+    if (!rest || GENERIC.test(rest)) return wd ? cap(wd) + " Ride" : "Other ride";
+    // keep the session's own words, in title case ("monday madness" → "Monday Madness")
+    const title = words.split(" ").map((w) => (/^[a-z]/.test(w) ? cap(w) : w)).join(" ");
+    if (named || /weekend/.test(rest) || !wd) return title;
+    return cap(wd) + " " + title;
+  }
+
   /** Ride series, event name and location for one activity row (agreed 1 Oct). */
   function classify(r) {
     const name = norm(r.activityName), id = norm(r.activityId), type = norm(r.activityType);
@@ -43,10 +66,7 @@
     if (r.recordType === "Event Registration") return { kind: "event", series: null, activity: clean(r.activityName) };
     if (name === "workshop") return { kind: "event", series: null, activity: "Summer Workshop" };   // moved to events, 1 Oct
     if (type.includes("ride") || r.recordType === "Attendance") {
-      const s = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].find((w) => name.includes(w) || id.includes(w));
-      // no weekday in the name (Morning Ride, Weekend Long Ride, Mountain Ride): use the weekday of the ride date, as for the history
-      const wd = s || (r.date ? ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][new Date(String(r.date).slice(0, 10) + "T12:00:00Z").getUTCDay()] : null);
-      const series = wd ? wd[0].toUpperCase() + wd.slice(1) + " Ride" : "Other ride";
+      const series = sessionSeries(r.activityName, r.activityId, r.date);
       return { kind: "ride", series, activity: series };
     }
     return { kind: "other", series: null, activity: clean(r.activityName) };
@@ -438,6 +458,6 @@
   function isMixChanged(a, b) { return !!(a && b && (a.rideCoverage !== b.rideCoverage || a.rideCoverage === "mixed")); }
   function fmt(n) { return n == null ? "—" : Number(n).toLocaleString("en-GB", { maximumFractionDigits: 1 }); }
 
-  const api = { RULES, prepare, compute, commentary, isMixChanged, previousPeriod, classify, locationOf, helpers: { addDays, diffDays, addMonths, monthEnd, monthsBetween, quarterOf, clean, norm } };
+  const api = { RULES, prepare, compute, commentary, isMixChanged, previousPeriod, classify, sessionSeries, locationOf, helpers: { addDays, diffDays, addMonths, monthEnd, monthsBetween, quarterOf, clean, norm } };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.WMFEngine = api;
 })(typeof self !== "undefined" ? self : this);

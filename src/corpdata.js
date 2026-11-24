@@ -7,9 +7,9 @@ const E = require("./engine");
 const { addDays, addMonths, monthEnd, monthsBetween } = E.helpers;
 
 const DEFAULT_COMPANIES = [
-  { code: "LIMAD", name: "L'IMAD", ride_days: "Thu", color: "#2f7fd6", sort_order: 1 },
-  { code: "NMDC", name: "NMDC", ride_days: "Thu", color: "#13917a", sort_order: 2 },
-  { code: "AURORA", name: "Aurora", ride_days: "Thu", color: "#d9634f", sort_order: 3 },
+  { code: "LIMAD", name: "L'IMAD", ride_days: "Thu", color: "#111111", sort_order: 1 },
+  { code: "NMDC", name: "NMDC", ride_days: "Thu", color: "#26a9e1", sort_order: 2 },
+  { code: "AURORA", name: "Aurora", ride_days: "Thu", color: "#6a4fc4", sort_order: 3 },
 ];
 const KINDS = ["Weekly ride", "Running", "Yoga", "Workshop", "Event", "Other"];
 const RIDE = "Weekly ride";
@@ -26,10 +26,13 @@ const pidQr = (pid) => "CORP-" + pid;
 /** Participant ID from a scanned code or a typed ID: "CORP-NMDC-0012", "NMDC-0012" and "nmdc 12" all give "NMDC-0012". */
 const pidFromScan = (text) => { const m = R.clean(text).toUpperCase().match(/^(?:CORP-)?([A-Z]{2,12})[- ]?(\d{1,5})$/) || R.clean(text).toUpperCase().match(/CORP-([A-Z]{2,12})-(\d{1,5})\b/); return m ? `${m[1]}-${m[2].padStart(4, "0")}` : null; };
 
+const OLD_COLORS = ["#2f7fd6", "#13917a", "#d9634f"];
 async function seedCompanies(c = pool) {
   for (const co of DEFAULT_COMPANIES) {
     await c.query(`INSERT INTO corp_companies (code, name, ride_days, color, sort_order, checkin_token) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (code) DO NOTHING`,
       [co.code, co.name, co.ride_days, co.color, co.sort_order, token()]);
+    // brand colours from the logos (2026-11-24): move companies still on the old generic colours
+    await c.query(`UPDATE corp_companies SET color = $1 WHERE code = $2 AND (color IS NULL OR color = ANY($3))`, [co.color, co.code, OLD_COLORS]);
   }
 }
 async function companies(c = pool, { all = false } = {}) {

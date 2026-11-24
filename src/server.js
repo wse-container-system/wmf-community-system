@@ -89,7 +89,7 @@ const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
 const SHARED = /^\/(g|m|mk|l|f|fs|ride|shop)\//;
 const page = (req, title, body, opts = {}) => SHARED.test(req.path)
   ? layout(title, body, { user: null, flash: takeFlash(req), brandTitle: true, ...opts })
-  : layout(title, body, { user: user(req), flash: takeFlash(req), ...opts });
+  : layout(title, body, { user: user(req), flash: takeFlash(req), path: req.path, ...opts });
 
 // ======================= sign in =======================
 app.get("/login", (req, res) => {
@@ -194,28 +194,44 @@ app.get("/wmf", need(), wrap(async (req, res) => {
       (SELECT count(*) FROM race_watch_seen rw JOIN calendar_items ci ON ci.id = rw.calendar_item_id WHERE rw.seen_at > now() - interval '7 days' AND ci.status = 'Tentative') AS newraces`, [today]);
   const s = q.rows[0];
   const empty = Number(s.members) === 0;
-  const tile = (href, label, val, note) => `<a class="tile" href="${href}" style="text-decoration:none;color:inherit"><span class="lbl">${h(label)}</span><span class="val">${h(val)}</span><span class="note">${h(note)}</span></a>`;
+  // this month's rides, one line per session (Monday Madness and Monday Just Ride apart), and the last 12 weeks
+  const E = require("./engine"), { sessions } = require("./ridesperf"), { columns } = require("./charts"), { nf, monLabel } = require("./views");
+  const P = E.prepare(await buildData()), m0 = today.slice(0, 7) + "-01", from12 = E.helpers.addDays(today, -83);
+  const all = (a, b) => [...sessions(P, "Abu Dhabi", a, b), ...sessions(P, "Dubai", a, b)];
+  const month = all(m0, today), weeks = all(from12, today);
+  const bySes = new Map();
+  for (const x of month) { const o = bySes.get(x.series) || { name: x.series, rides: 0, people: 0 }; o.rides++; o.people += x.n; bySes.set(x.series, o); }
+  const ses = [...bySes.values()].sort((a, b) => b.people / b.rides - a.people / a.rides), maxAvg = Math.max(1, ...ses.map((x) => x.people / x.rides));
+  const wk = []; for (let i = 0; i < 12; i++) wk.push(E.helpers.addDays(from12, i * 7));
+  const wkVals = wk.map((w) => weeks.filter((x) => x.d >= w && x.d < E.helpers.addDays(w, 7)).reduce((a, x) => a + x.n, 0));
+  const riders = month.reduce((a, x) => a + x.n, 0);
+  const tile = (href, label, val, note) => `<a class="tile big" href="${href}" style="text-decoration:none;color:inherit"><span class="lbl">${h(label)}</span><span class="val">${h(val)}</span><span class="note">${h(note)}</span></a>`;
+  const act = (href, icon, label) => `<a class="wh-act" href="${href}"><span aria-hidden="true">${icon}</span>${h(label)}</a>`;
+  const base = h(req.protocol + "://" + req.get("host"));
   res.send(page(req, "Home", `
     ${empty ? `<div class="alert warn"><span class="ic">!</span><span><b>The database is empty.</b> ${u.role === "admin" ? `<a href="/admin/import">Import the WMF workbook</a> to bring in members, their Member IDs and the history.` : "Ask an administrator to import the workbook."}</span></div>` : ""}
     ${Number(s.newraces) ? `<div class="alert info"><span class="ic">+</span><span><b>${s.newraces} new race${Number(s.newraces) > 1 ? "s" : ""} found this week</b> and added to the WMF calendar as Tentative. <a href="/calendar/races">Review them</a></span></div>` : ""}
-    <div class="tiles">
-      ${tile("/scan", "Scan ride attendance", "Open scanner", "Uses the QR codes already sent to members")}
-      ${tile("/members", "Members", Number(s.members).toLocaleString("en-GB"), "Unique member records")}
-      ${tile("/scan", "Ride check-ins today", s.today, fmtDate(today))}
-      ${tile("/members?sort=new", "New members, last 30 days", s.new30, "Registrations")}
+    <section class="mk-head"><div><div class="wc-eyebrow">WMN Moving FWD · ${h(fmtDate(today))}</div><h2 class="ov-title">${h(monLabel(today.slice(0, 7), true))}</h2></div></section>
+    <nav class="wh-acts" aria-label="Quick actions">${act("/scan", "▣", "Scan QR")}${act("/rides", "✓", "Attendance per ride")}${act("/wmf/rides/new", "+", "Add a ride")}${act("/members/new", "👤", "New member")}${act("/calendar", "▦", "Calendar")}${act("/dashboard#performance", "↓", "Monthly Excel")}</nav>
+    <div class="tiles wh-tiles">
+      ${tile("/wmf/rides", "Riders this month", nf(riders), `${month.length} ride${month.length === 1 ? "" : "s"} held · ${month.length ? nf(riders / month.length, 1) : "—"} per ride`)}
+      ${tile("/scan", "Check-ins today", s.today, fmtDate(today))}
+      ${tile("/members", "Members", nf(Number(s.members)), `+${s.new30} in the last 30 days`)}
       ${tile("/activities", "Events open for sign-up", s.openevents, "Public sign-up page: /events")}
-      ${tile("/ride-it-forward/manage", "Ride It Forward", "Open", "Gear donations, applications, QR code")}
-      ${tile("/rides", "Attendance per ride", "Check", "Spot riders you forgot to scan")}
-      ${tile("/calendar", "WMF calendar", "Open", "Rides, events and key dates")}
-      ${tile("/dashboard", "Dashboard & reports", "Open", "Agreed counting rules")}
-      ${tile("/dashboard#performance", "Monthly export", "Excel", "Attendance per month: rides, events, impact")}
     </div>
-    <section class="card"><h2>Links to share with the community</h2>
-      <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link, and the calendar shows every ride and event.</p>
-      <dl class="kv"><dt>Registration</dt><dd><a href="/join">${h(req.protocol + "://" + req.get("host"))}/join</a></dd>
-      <dt>Event sign-up</dt><dd><a href="/events">${h(req.protocol + "://" + req.get("host"))}/events</a></dd>
-      <dt>Ride It Forward</dt><dd><a href="/ride-it-forward">${h(req.protocol + "://" + req.get("host"))}/ride-it-forward</a> · <a href="/ride-it-forward/manage">QR code</a></dd>
-      <dt>Ride calendar</dt><dd><a href="/calendar">${h(req.protocol + "://" + req.get("host"))}/calendar</a> · <a href="/calendar/manage">Share it (WhatsApp, QR code)</a></dd></dl></section>`, { active: "/wmf" }));
+    <div class="grid">
+      <section class="card c7"><div class="card-head"><h2>Riders per week</h2><a class="btn ghost" href="/wmf/rides">Rides →</a></div><p class="lead">The last 12 weeks, Abu Dhabi and Dubai.</p>
+        ${columns({ categories: wk, series: [{ name: "Riders", color: "var(--s1)", values: wkVals }], height: 170, label: "Riders per week", short: (d) => `${+d.slice(8)} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+d.slice(5, 7) - 1]}` })}</section>
+      <section class="card c5"><div class="card-head"><h2>Sessions this month</h2></div><p class="lead">Average riders per ride, each session on its own.</p>
+        ${ses.length ? `<div class="hbars">${ses.map((x) => `<div class="hbar"><span class="hbar-l">${h(x.name)}</span><span class="hbar-t"><span style="width:${((x.people / x.rides / maxAvg) * 100).toFixed(1)}%;background:var(--s1)"></span></span><span class="hbar-v">${nf(x.people / x.rides, 1)} <span class="muted">· ${x.rides}×</span></span></div>`).join("")}</div>` : '<p class="muted">No rides yet this month.</p>'}</section>
+      <section class="card c12"><h2>Links to share with the community</h2>
+        <p class="lead">New members register here and receive their QR code on screen. Event sign-ups go through the second link, and the calendar shows every ride and event.</p>
+        <div class="wh-links">
+          <div><span>Registration</span><a href="/join">${base}/join</a></div>
+          <div><span>Event sign-up</span><a href="/events">${base}/events</a></div>
+          <div><span>Ride It Forward</span><a href="/ride-it-forward">${base}/ride-it-forward</a> <a class="muted" href="/ride-it-forward/manage">QR code</a></div>
+          <div><span>Ride calendar</span><a href="/calendar">${base}/calendar</a> <a class="muted" href="/calendar/manage">Share (WhatsApp, QR)</a></div></div></section>
+    </div>`, { active: "/wmf" }));
 }));
 
 // ======================= dashboard =======================
@@ -247,7 +263,7 @@ app.get("/scan", need(...STAFF), wrap(async (req, res) => {
   res.send(page(req, "Scan QR", `
     <section class="card narrow">
       <h2>Ride attendance</h2>
-      <p class="lead">Point the camera at a member's WMF QR code. Each member is counted once per ride per day; a second scan is simply confirmed.</p>
+      <p class="lead">Point the camera at a member's WMF QR code. Each member is counted once per ride session (Monday Madness and Monday Just Ride are separate); a second scan is simply confirmed.</p>
       <div class="row2">
         <label class="f"><span>Ride</span><select id="activity" class="inp">${acts.map((a) => `<option value="${h(a.activity_id)}" ${def && a.activity_id === def.activity_id ? "selected" : ""}>${h(a.name)}${a.location && a.location !== "Abu Dhabi" ? " · " + h(a.location) : ""}</option>`).join("")}</select></label>
         <label class="f"><span>Ride date</span><input id="date" class="inp" type="date" value="${today}" max="${today}"></label>

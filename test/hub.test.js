@@ -441,6 +441,14 @@ test("cycling development hub", async (t) => {
     assert.equal(+lv.days, 3); assert.equal(lv.status, "Tentative");
     await admin(`/department/leave/${lv.id}`, { method: "POST", form: { do: "confirm" } });
     assert.equal((await pool.query("SELECT status FROM dept_leave WHERE id = $1", [lv.id])).rows[0].status, "Approved");
+    // annual leave straight from the schedule, and the three office shifts
+    const sf = ok200(await admin(`/department/schedule/new?staff=${staff[1].id}&leave=1`), "add leave").text;
+    assert.match(sf, /Annual leave/); assert.match(sf, /17:30/); assert.match(sf, /18:30/); assert.match(sf, /20:30/);
+    await admin("/department/schedule/entries", { method: "POST", form: { staff_id: String(staff[1].id), activity: "Leave", work_date: mon, leave_to: E.helpers.addDays(mon, 1), leave_type: "Annual", plan: "Approved" } });
+    const sl = (await pool.query("SELECT * FROM dept_leave WHERE staff_id = $1", [staff[1].id])).rows;
+    assert.equal(sl.length, 1); assert.equal(+sl[0].days, 2); assert.equal(sl[0].status, "Approved");
+    assert.match(ok200(await admin(`/department/schedule?date=${mon}`), "week").text, /Annual leave/);
+    await pool.query("DELETE FROM dept_leave WHERE staff_id = $1", [staff[1].id]);
     for (const p of ["/department/schedule", "/department/leave", "/department/staff", "/department/share"]) ok200(await admin(p), p);
     assert.equal((await admin("/department")).location, "/department/schedule");
     const lx = await admin(`/department/export/leave.xlsx?year=${mon.slice(0, 4)}`, { raw: true }); assert.equal(lx.status, 200);
@@ -707,6 +715,27 @@ test("cycling development hub", async (t) => {
     await tx((c) => R2.createMember(c, { full_name: "Zoe Uniquename-Two", email: "zoe.two@test.local", waiver_consent: true }, "t", "t"));
     r = await admin("/rides/checkin", { method: "POST", form: { memberId: "Uniquename", date, activityId: "RIDE-WEDNESDAY-SOCIAL", back } });
     assert.match(r.location, /find=Uniquename/, "several matches: shows the list");
+  });
+
+  await t.test("WMF: each ride session is its own ride (Monday Madness and Monday Just Ride)", async () => {
+    const R2 = require("../src/rules");
+    assert.equal(E.sessionSeries("Monday Madness", "RIDE-MONDAY-MADNESS", "2026-11-23"), "Monday Madness");
+    assert.equal(E.sessionSeries("Monday Just Ride", "", "2026-11-23"), "Monday Just Ride");
+    assert.equal(E.sessionSeries("Monday Ride - Abu Dhabi", "", "2026-11-23"), "Monday Ride");
+    assert.equal(E.sessionSeries("Community Ride", "", "2026-11-25"), "Wednesday Ride");
+    await tx((c) => R2.createMember(c, { full_name: "Mona Twosessions", email: "mona.two@test.local", waiver_consent: true }, "t", "t"));
+    let mon = E.helpers.addDays(today, -1); while (new Date(mon + "T12:00:00Z").getUTCDay() !== 1) mon = E.helpers.addDays(mon, -1);
+    for (const a of ["RIDE-MONDAY-MADNESS", "RIDE-MONDAY-JUST-RIDE"])
+      await admin("/rides/checkin", { method: "POST", form: { memberId: "Twosessions", date: mon, activityId: a, back: `/rides/${mon}/${a}` } });
+    const n = (await pool.query("SELECT count(*)::int n FROM participation p JOIN members m ON m.member_id = p.member_id WHERE m.full_name = 'Mona Twosessions' AND p.voided_at IS NULL")).rows[0].n;
+    assert.equal(n, 2, "the same person counts once at each session on the same day");
+    const pg = ok200(await admin(`/wmf/rides?period=month&p=${mon.slice(0, 7)}`), "rides").text;
+    assert.match(pg, /Sessions compared/); assert.match(pg, /Monday Madness/); assert.match(pg, /Monday Just Ride/);
+    // WMF menu: grouped tabs open a second row, like Corporate
+    const home = ok200(await admin("/wmf"), "wmf home").text;
+    assert.match(home, /Sessions this month/); assert.match(home, /Riders per week/);
+    const sc = ok200(await admin("/scan"), "scan").text;
+    assert.match(sc, /class="sub-nav sub-nav2" aria-label="Rides"/); assert.match(sc, /href="\/scan" aria-current="page"/);
   });
 
   await t.test("WMF: usual-rider check-in shows on the same ride; Rides page; management link", async () => {

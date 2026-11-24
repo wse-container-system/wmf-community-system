@@ -919,3 +919,90 @@ form.rif-attend:not(.form) { display: grid; gap: 6px; margin-top: 12px; justify-
 .cd-hero-id { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
 .cd-cardhead { display: flex; align-items: center; gap: 10px; }
 @media (max-width: 640px) { .cd-logo.lg { height: 52px; } .cd-logo.lg img { height: 26px; max-width: 160px; } }
+
+/* ===== HUB-wide polish (24 Nov 2026): one calmer type scale, the corporate-style clickable tabs everywhere,
+   number boxes that never squeeze their label, and brand colours for the partners. Later rules win. ===== */
+.shell-nav a, .shell-nav .btn { font-size: 13.5px; }
+.brand-name .sub { font-size: 12px; }
+.brand-logo img { max-height: 40px; width: auto; }
+.cd-mark { width: 38px; height: 38px; } .cd-mark svg { width: 26px; height: 26px; }
+/* first row: underlined section tabs; second row: the segmented tab bar from the company dashboards */
+.sub-nav a { font-size: 13.5px; padding: 9px 12px; }
+.sub-nav2 { display: flex; gap: 4px; padding: 4px; margin: 6px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; scrollbar-width: none; }
+.sub-nav2::-webkit-scrollbar { display: none; }
+.sub-nav2 a { flex: 1 0 auto; text-align: center; padding: 8px 14px; border: 0; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.sub-nav2 a:hover { background: var(--accent-wash); color: var(--ink); }
+.sub-nav2 a[aria-current="page"] { background: var(--accent); border-color: transparent; color: #fff; }
+@media (max-width: 640px) { .sub-nav2 a { flex: 0 0 auto; } }
+/* headings */
+.hub-intro h2 { font-size: 21px; }
+.hub-card h3 { font-size: 17px; }
+.hub-card .stats b { font-size: 19px; }
+.lm-hero h2 { font-size: 22px; }
+.lm-level .lm-num { font-size: 28px; }
+.rif-hero h2 { font-size: clamp(24px, 6vw, 34px); }
+.card h3 { font-size: 14px; }
+.wc-eyebrow { font-size: 10.5px; }
+/* number boxes: "Details" becomes a small chevron in the corner, so the label keeps the full width */
+.tile.dt { position: relative; padding-right: 28px; }
+.tile.dt .lbl { display: block; }
+.tile.dt .dt-ic { position: absolute; top: 9px; right: 9px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-wash); }
+.dt-ic::after { content: "▾"; font-size: 10px; line-height: 1; }
+.tile.dt[aria-expanded="true"] .dt-ic::after { content: "▴"; }
+.tile .lbl, .tile .note { overflow-wrap: anywhere; }
+.md-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; }
+.ov-tiles { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+/* tables, bars and charts */
+th { font-size: 11px; }
+td { font-size: 13.5px; }
+.hbar { font-size: 13px; }
+.hbar-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .hbars .hbar { grid-template-columns: minmax(0, 1fr) auto; } .hbars .hbar-l { grid-column: 1 / -1; white-space: normal; } }
+.svgchart text { font-size: 11px; }
+.legend { font-size: 12px; }
+.cd-cos a { font-size: 13.5px; }
+.cd-st b, .cd-names li, .cd-pn { font-size: 13.5px; }
+.cd-n b, .cd-ring-v { font-size: 22px; }
+.tc-chip { min-width: 0; }
+/* partners on dark mode: L'imad's brand colour is black, so its marks turn light on a dark page */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [fill="#111111"] { fill: #e9e9ee; }
+  :root:not([data-theme="light"]) [style*="background:#111111"], :root:not([data-theme="light"]) [style*="--co:#111111"] .cd-meter i { background: #e9e9ee !important; }
+}
+:root[data-theme="dark"] [fill="#111111"] { fill: #e9e9ee; }
+/* WMF home: quick actions and share links */
+.wh-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.wh-act { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 600; font-size: 13px; text-decoration: none; box-shadow: var(--shadow); }
+.wh-act span { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--accent-wash); color: var(--accent); font-size: 12px; }
+.wh-act:hover { border-color: var(--accent); }
+.wh-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.wh-links div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; font-size: 13px; }
+.wh-links span { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.wh-links a { overflow-wrap: anywhere; }
+.wh-tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.wh-links a { display: block; }
+/* form controls: 16px stops phones zooming in; a touch smaller on wider screens */
+@media (min-width: 700px) {
+  .form input:not([type=checkbox]):not([type=radio]), .form select, .form textarea, input.inp, select.inp { font-size: 14px; min-height: 38px; padding: 7px 10px; }
+  .form label { font-size: 13px; }
+}
+.ov-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* partner brand colours: fills that carry white text use a deep tone of the brand colour (NMDC's light blue is
+   too light for white text), so every partner reads well: L'imad black, NMDC navy-blue, Aurora deep violet */
+.lm { --lm-deep: color-mix(in srgb, var(--lm) 68%, #0b1530); }
+.lm .lm-hero { background: linear-gradient(120deg, color-mix(in srgb, var(--lm) 38%, #0b1530), color-mix(in srgb, var(--lm) 78%, #0b1530)); }
+.lm .lm-tabs a[aria-current="page"], .lm .cd-seg a[aria-current="page"], .lm-months .p1, .lm-league tr.top1 .lm-rank, .lm-phase.now .lm-eyebrow b,
+.lm .lm-btn.primary, .lm .btn.primary.lm-btn, .lm .lm-toggle .btn.primary { background: var(--lm-deep); border-color: var(--lm-deep); }
+.lm .lm-hero .btn.primary, .lm-link b, .cd-sd, .lm-date, .cd-empty-ic, .lm-league tr.top2 .lm-rank, .lm-league tr.top3 .lm-rank { color: var(--lm-deep); }
+.lm .lm-tabs a:hover { background: var(--lm-wash); }
+.cd-seasons a[aria-current="page"] b { color: var(--ink); }
+@media (max-width: 640px) { .si-up { grid-template-columns: minmax(0, 1fr) !important; display: grid; } .si-up input[type=file] { max-width: 100%; } }
+.lm .lm-hero .btn.primary, .lm .lm-hero .lm-btn.primary { background: #fff; border-color: #fff; color: var(--lm-deep); }
+/* phones: the main menu is one swipeable row instead of three lines */
+@media (max-width: 640px) {
+  .shell-nav { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; width: 100%; gap: 2px; }
+  .shell-nav::-webkit-scrollbar { display: none; }
+  .shell-nav > * { flex: 0 0 auto; }
+  .ov-title { font-size: 22px; }
+}
+@media (max-width: 640px) { .wh-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .wh-act { padding: 8px 10px; } .brand-logo img { max-height: 32px; } }
