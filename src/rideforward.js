@@ -47,7 +47,7 @@ const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
   ["intro", "Intro", "Every cyclist started with a first ride. Ride It Forward helps women take theirs, with donated gear, a little courage and a community cheering them on. Share your gear, share the road, and help someone begin.", 500],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
-  ["apply", "“I'm new to cycling” text", "Just starting out or getting back on the bike? Share your story for a chance to receive a donated cycling kit and ride with our community.", 400],
+  ["apply", "“I'm new to cycling” text", "Just starting out or getting back on the bike? Share your story for a chance to receive a cycling kit and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
   ["day_when", "Event day: date", "Sunday, 6 December 2026", 120],
   ["day_text", "Event day: text", "All women are invited! Join our women-only community ride, then watch the final of the Hudayriyat Women's Races series and cheer on amazing, strong women to look up to.", 600],
