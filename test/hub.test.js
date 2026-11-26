@@ -516,7 +516,7 @@ test("cycling development hub", async (t) => {
   await t.test("WMF Ride It Forward: landing page, donations, applications with sizes, selection, CSV", async () => {
     const pub = client(), id = "ACT-RIDE-IT-FORWARD";
     const land = ok200(await pub("/ride-it-forward"), "landing").text;
-    assert.match(land, /Donate gear/); assert.match(land, /Apply now/);
+    assert.match(land, /Donate gear/); assert.match(land, /Share my story/);
     // donation
     assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", condition: "1" } })).text, /tick what you/);
     assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", items: "Cycling shoes", details: "Shoes 39", condition: "1" } })).text, /RIF-0001/);
