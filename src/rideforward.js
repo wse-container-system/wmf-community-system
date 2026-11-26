@@ -8,6 +8,38 @@ const { h, fmtDate, fmtTs } = require("./views");
 const EVENT = "ACT-RIDE-IT-FORWARD";
 const DAY = "ACT-RIDE-IT-FORWARD-DAY"; // plain sign-up for the event day (community ride)
 const ITEMS = ["Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoes", "Lights", "Water bottle", "Other"];
+// ---------- 6 December, Presentation Day: what to join, and the plan for the morning ----------
+const RACE_URL = "https://my.raceresult.com/423300/registration";
+const RENT_URL = "https://app.booking.bike.rent/book?store=wolfis";
+const ACTS = [
+  { key: "ride", name: "Community Ride", tag: "50% off · food included", text: "The Ride It Forward Ride, 10 km at a social pace. Register and pay on RaceResult with your 50% discount." },
+  { key: "yoga", name: "Yoga", tag: "Free", text: "A relaxed yoga session for everyone. Nothing to pay, just tick Yoga so we know how many are coming." },
+];
+const PLAN = [["06:45", "Competitive races", ""], ["07:05", "Community rides", "Ride It Forward Ride · 10 km"]];
+const COLLAB = "Hudayriyat Women's Cycling Race";
+/** Read the Dec 6 choices from a form: { acts: ["Community Ride", ...], rental } or null when nothing was picked. */
+function readDay(b) {
+  const keys = [].concat((b && b.day_act) || []);
+  const acts = ACTS.filter((a) => keys.includes(a.key)).map((a) => a.name);
+  return acts.length ? { acts, rental: acts.includes("Community Ride") && b.rental === "yes" } : null;
+}
+const dayNote = (d) => d ? `${d.acts.join(", ")} · Rental bike: ${d.rental ? "Yes" : "No"}` : null;
+/** The activity tick boxes and the rental bike question (used on the page and inside the donate / apply forms). */
+function dayPicker(v = {}, legend = "Which activities will you join?") {
+  const keys = [].concat(v.day_act || []);
+  return `<fieldset class="rif-pick"><legend>${h(legend)}</legend>
+    ${ACTS.map((a) => `<label class="check"><input type="checkbox" name="day_act" value="${a.key}" ${keys.includes(a.key) ? "checked" : ""}> <span><b>${h(a.name)}</b> <span class="rif-pill">${h(a.tag)}</span></span></label>`).join("")}
+    <p class="rif-q">Do you need a rental bike? <span class="hint">(Community Ride)</span></p>
+    <div class="rif-yn"><label class="check"><input type="radio" name="rental" value="no" ${v.rental !== "yes" ? "checked" : ""}> <span>No, I have a bike</span></label>
+      <label class="check"><input type="radio" name="rental" value="yes" ${v.rental === "yes" ? "checked" : ""}> <span>Yes, I'll rent one</span></label></div></fieldset>`;
+}
+/** Next steps after picking: register on RaceResult for the ride, book a rental bike. */
+function nextSteps(d) {
+  if (!d || !d.acts.includes("Community Ride")) return "";
+  return `<div class="rif-next"><a class="btn primary" href="${RACE_URL}" target="_blank" rel="noopener">Register for the Community Ride ↗</a>
+    ${d.rental ? `<a class="btn" href="${RENT_URL}" target="_blank" rel="noopener">Book your rental bike ↗</a>` : ""}</div>
+    <p class="rif-note">Your Community Ride place is confirmed once you register on RaceResult.</p>`;
+}
 const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses and water bottles", "Lights, reflectors, saddle bags and basic tools", "Other clean, safe and usable cycling accessories"];
 
 // ---------- page text: editable by the team, and by the manager through a review link (no sign-in) ----------
@@ -49,21 +81,23 @@ const readText = (b) => Object.fromEntries(TEXT.map(([k, , d, max]) => [k, Strin
 const para = (s) => h(s).replace(/\n/g, "<br>");
 
 /** Add someone to the event day list (finds or creates the WMF member). Returns false if the day is closed. */
-async function markAttending(c, f, source) {
+async function markAttending(c, f, source, day) {
   const d = (await c.query("SELECT * FROM activities WHERE activity_id = $1 AND registration_open AND status = 'Active' AND (event_date IS NULL OR event_date >= $2::date)", [DAY, R.todayLocal()])).rows[0];
   if (!d) return false;
   const email = R.normEmail(f.email);
   let m = (email && await R.findMember(c, { email })) || await R.findMember(c, { phone: f.mobile });
   if (!m) m = await R.createMember(c, { full_name: f.full_name, email, mobile: f.mobile, waiver_consent: true }, "public", source);
-  await R.addParticipation(c, { member: m, recordType: "Event Registration", date: R.nowLocal(), activityId: DAY, activityName: d.name,
-    activityType: d.activity_type || "Event Registration", status: "Registered", source, dedupeKey: `event|${m.member_id}|${DAY}` }, "public");
+  const r = await R.addParticipation(c, { member: m, recordType: "Event Registration", date: R.nowLocal(), activityId: DAY, activityName: d.name,
+    activityType: d.activity_type || "Event Registration", status: "Registered", source, notes: dayNote(day), dedupeKey: `event|${m.member_id}|${DAY}` }, "public");
+  // signing up again with other choices updates them
+  if (r.duplicate && day) await c.query("UPDATE participation SET notes = $2 WHERE id = $1", [r.row.id, dayNote(day)]);
   return true;
 }
 // ---------- remember who this is (after they apply, donate or attend), so "I'm attending" is one tap ----------
 const SECRET = process.env.SESSION_SECRET || "dev-only-secret";
 const sig = (v) => crypto.createHmac("sha256", SECRET).update("rif|" + v).digest("base64url").slice(0, 16);
-function rememberMe(res, f, going) {
-  const v = Buffer.from(JSON.stringify({ n: R.clean(f.full_name), m: R.clean(f.mobile), e: R.normEmail(f.email) || "", g: going ? 1 : 0 })).toString("base64url");
+function rememberMe(res, f, day) {
+  const v = Buffer.from(JSON.stringify({ n: R.clean(f.full_name), m: R.clean(f.mobile), e: R.normEmail(f.email) || "", g: day ? 1 : 0, ...(day && day.acts ? { a: day.acts, r: day.rental ? 1 : 0 } : {}) })).toString("base64url");
   res.cookie("rif_me", v + "." + sig(v), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 365 * 864e5, path: "/" });
 }
 function whoAmI(req) {
@@ -73,7 +107,8 @@ function whoAmI(req) {
   if (!v || !s2 || s2.length !== 16 || !crypto.timingSafeEqual(Buffer.from(s2), Buffer.from(sig(v)))) return null;
   try { const o = JSON.parse(Buffer.from(v, "base64url").toString()); return o && o.n && o.m ? o : null; } catch (e) { return null; }
 }
-const attendBox = (label) => `<label class="check"><input type="checkbox" name="attend_day" value="1"> <span>${label}</span></label>`;
+const attendBox = (v = {}) => `<div class="rif-inform">${dayPicker(v, "Joining us on 6 December? (optional)")}
+  <p class="hint" style="margin:0">Community Ride: register on RaceResult with your 50% discount. By joining, you ride at your own risk and follow the ride leader.</p></div>`;
 
 async function applyOpen() {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1", [EVENT])).rows[0];
@@ -95,7 +130,7 @@ function donateForm(v = {}, err) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:4px 12px">${ITEMS.map((g) => `<label class="check"><input type="checkbox" name="items" value="${h(g)}" ${items.includes(g) ? "checked" : ""}> <span>${h(g)}</span></label>`).join("")}</div></fieldset>
       <label>Sizes and details <span class="hint">(e.g. jersey M, bib shorts S, shoes 39)</span><textarea name="details" maxlength="600" rows="3">${h(v.details)}</textarea></label>
       <label class="check"><input type="checkbox" name="condition" value="1" required ${v.condition ? "checked" : ""}> <span>My items are clean and in good condition.</span></label>
-      ${attendBox("I'm attending Ride It Forward Day on 6 December (I ride at my own risk and follow the ride leader).")}
+      ${attendBox(v)}
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">Donate my gear</button>
     </form><p style="margin:12px 0 0"><a href="/ride-it-forward">Back</a></p></section>`;
@@ -113,13 +148,26 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
     const me = whoAmI(req);
     const f = me && !b.full_name ? { full_name: me.n, mobile: me.m, email: me.e } : { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile) };
     if (!R.clean(f.full_name) || R.normPhone(f.mobile).length < 9) return res.redirect("/ride-it-forward?going=check#day");
-    const ok = await tx((c) => markAttending(c, f, "Ride It Forward Day"));
-    if (ok) rememberMe(res, f, true);
+    const day = readDay(b);
+    if (!day) return res.redirect("/ride-it-forward?going=pick#day");
+    const ok = await tx((c) => markAttending(c, f, "Ride It Forward Day", day));
+    if (ok) rememberMe(res, f, day);
     res.redirect("/ride-it-forward?going=" + (ok ? "yes" : "closed") + "#day");
   }));
   app.get("/ride-it-forward", wrap(async (req, res) => {
     const { e, open } = await applyOpen();
     const t = await loadText(), me = whoAmI(req);
+    // who is already going, and with which activities (an older sign-up without choices is asked to pick)
+    const going = me && me.g && me.a ? { acts: me.a, rental: !!me.r } : null;
+    const err = req.query.going === "check" ? "Please add your name and mobile." : req.query.going === "pick" ? "Please tick at least one activity." : "";
+    const attendForm = (who, v) => `<form class="form rif-attend" method="post" action="/ride-it-forward/attend">
+      ${err ? `<p class="flash err" role="alert" style="margin:0">${err}</p>` : ""}
+      ${who ? "" : `<div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
+        <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>`}
+      ${dayPicker(v.acts ? { day_act: ACTS.filter((x) => v.acts.includes(x.name)).map((x) => x.key), rental: v.rental ? "yes" : "no" } : {})}
+      <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
+      <button class="btn primary">${who ? "I'm attending" : "Confirm"}</button>
+      <span class="rif-note">${who ? "As " + h(who.n) + ". " : ""}By confirming, you ride at your own risk and follow the ride leader.</span></form>`;
     const day = (await pool.query("SELECT 1 FROM activities WHERE activity_id = $1 AND registration_open AND status = 'Active' AND (event_date IS NULL OR event_date >= $2::date)", [DAY, R.todayLocal()])).rows[0];
     res.send(pub(req, "Ride It Forward", `<div class="rif">
       <section class="rif-hero">
@@ -142,20 +190,21 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I want to start riding</b>
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
-      <section class="rif-day" id="day"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
-        <p class="rif-kicker">${h(t.day_when)}</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p>
-        ${req.query.going === "yes" || (me && me.g) ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}. See you on the day!</p>`
-          : !day ? "" : me ? `<form class="rif-attend" method="post" action="/ride-it-forward/attend">
-            <button class="btn primary">I'm attending</button>
-            <span class="rif-note">As ${h(me.n)}. By tapping, you ride at your own risk and follow the ride leader.</span></form>`
-          : `<details class="rif-attend-new" ${req.query.going === "check" ? "open" : ""}><summary class="btn primary">I'm attending</summary>
-            <form class="form rif-attend" method="post" action="/ride-it-forward/attend">
-            ${req.query.going === "check" ? `<p class="flash err" role="alert" style="margin:0">Please add your name and mobile.</p>` : ""}
-            <div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
-              <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>
-            <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
-            <button class="btn primary">Confirm</button>
-            <span class="rif-note">By confirming, you ride at your own risk and follow the ride leader.</span></form></details>`}</div></section>
+      <section class="rif-day" id="day"><div class="rif-day-head"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
+        <p class="rif-kicker">${h(t.day_when)} · Presentation Day</p><h2>${h(t.day_title)}</h2><p>${para(t.day_text)}</p></div></div>
+        <div class="rif-panel"><h3>Itinerary</h3>
+          <p class="rif-collab">In collaboration with <b>${h(COLLAB)}</b></p>
+          <ol class="rif-plan">${PLAN.map(([tm, what, more]) => `<li><time>${tm}<small>am</small></time><div><b>${h(what)}</b>${more ? `<span>${h(more)}</span>` : ""}</div></li>`).join("")}</ol></div>
+        <div class="rif-panel"><h3>Activities to join</h3>
+          <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b><span class="rif-pill">${h(x.tag)}</span></div>
+            <span>${h(x.text)}</span>
+            ${x.key === "ride" ? `<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}</div>`).join("")}</div>
+        ${going ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}: ${h(going.acts.join(" and "))}${going.rental ? " · rental bike" : ""}. See you on the day!</p>
+          ${nextSteps(going)}
+          ${day ? `<details class="rif-attend-new rif-change" ${err ? "open" : ""}><summary class="rif-link">Change my activities</summary>${attendForm(me, going)}</details>` : ""}`
+          : !day ? "" : me ? attendForm(me, {})
+          : `<details class="rif-attend-new" ${["check", "pick"].includes(req.query.going) ? "open" : ""}><summary class="btn primary">I'm attending</summary>${attendForm(null, {})}</details>`}
+        </div></section>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
           <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
@@ -180,25 +229,28 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
     else if (!items.length) err = "Please tick what you're donating.";
     else if (!b.condition) err = "Please confirm your items are clean and in good condition.";
     if (err) return res.send(pub(req, "Donate gear", donateForm(b, err)));
+    const day = readDay(b);
     const ref = await tx(async (c) => {
       const r = "RIF-" + String(await nextNumber(c, "RIF")).padStart(4, "0");
       await c.query("INSERT INTO gear_donations (ref, full_name, mobile, email, items, details) VALUES ($1,$2,$3,$4,$5,$6)",
         [r, R.clean(b.full_name), R.clean(b.mobile), email || null, items, String(b.details || "").trim().slice(0, 600) || null]);
-      if (b.attend_day) await markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile), email }, "Ride It Forward Day");
+      if (day) await markAttending(c, { full_name: R.clean(b.full_name), mobile: R.clean(b.mobile), email }, "Ride It Forward Day", day);
       return r;
     });
-    rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, !!b.attend_day);
+    rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, day);
     const t = await loadText();
     res.send(pub(req, "Thank you", `<div class="rif"><section class="rif-hero"><h2>Thank you for riding it forward!</h2>
       <p class="rif-sub">Your gear will help a beginner start her cycling journey. ${para(t.dropoff)}</p>
-      <p class="rif-sub">Your reference: <b>${h(ref)}</b></p>${b.attend_day ? `<p class="rif-sub">✓ You're on the list for Ride It Forward Day. See you on 6 December!</p>` : ""}</section>
+      <p class="rif-sub">Your reference: <b>${h(ref)}</b></p>${day ? `<p class="rif-sub">✓ You're on the list for Ride It Forward Day (${h(day.acts.join(" and "))}). See you on 6 December!</p>` : ""}</section>
+      ${day ? `<div style="text-align:center">${nextSteps(day)}</div>` : ""}
       <p style="text-align:center"><a href="/ride-it-forward">Back to Ride It Forward</a></p></div>`));
   }));
 
   // ---------- staff: QR code, link, donations ----------
   app.get("/ride-it-forward/manage", STAFF, wrap(async (req, res) => {
     const d = (await pool.query("SELECT * FROM gear_donations ORDER BY created_at DESC")).rows;
-    const daysign = (await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = $1 AND voided_at IS NULL", [DAY])).rows[0].n;
+    const dc = (await pool.query(`SELECT count(*)::int n, count(*) FILTER (WHERE notes LIKE '%Community Ride%')::int ride, count(*) FILTER (WHERE notes LIKE '%Yoga%')::int yoga,
+      count(*) FILTER (WHERE notes LIKE '%Rental bike: Yes%')::int rent FROM participation WHERE activity_id = $1 AND voided_at IS NULL`, [DAY])).rows[0], daysign = dc.n;
     const apps = (await pool.query("SELECT count(*)::int n, count(*) FILTER (WHERE selection = 'Selected')::int s FROM participation WHERE activity_id = $1 AND voided_at IS NULL", [EVENT])).rows[0];
     const img = await qrDataUrl(link(req));
     const t = await loadText(), tok = await reviewToken();
@@ -214,6 +266,11 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${EVENT}/signups">Applications (${apps.n}, ${apps.s} selected)</a><a class="btn" href="/activities/${DAY}/signups">Event day sign-ups (${daysign})</a><a class="btn" href="/activities/${EVENT}">Event settings</a></div></div>
         <div class="tiles" style="margin:6px 0 14px"><div class="tile"><span class="lbl">Donations</span><span class="val">${d.length}</span></div>
           <div class="tile"><span class="lbl">Received</span><span class="val">${d.filter((x) => x.received).length}</span></div></div>
+        <p style="margin:0 0 6px"><b>6 December sign-ups</b></p>
+        <div class="tiles" style="margin:0 0 14px"><div class="tile"><span class="lbl">Attending</span><span class="val">${dc.n}</span></div>
+          <div class="tile"><span class="lbl">Community Ride</span><span class="val">${dc.ride}</span></div>
+          <div class="tile"><span class="lbl">Yoga</span><span class="val">${dc.yoga}</span></div>
+          <div class="tile"><span class="lbl">Rental bikes</span><span class="val">${dc.rent}</span></div></div>
         <div class="tw"><table><thead><tr><th>Donor</th><th>Items</th><th>Date</th><th>Received</th></tr></thead><tbody>
         ${d.map((x) => `<tr><td><b>${h(x.full_name)}</b><br><span class="muted">${h(x.ref)} · ${h(x.mobile || "")}${x.email ? " · " + h(x.email) : ""}</span></td>
           <td>${h(x.items.join(", "))}${x.details ? `<br><span class="muted">${h(x.details)}</span>` : ""}</td><td>${fmtTs(x.created_at)}</td>
@@ -284,4 +341,6 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
 module.exports.EVENT = EVENT;
 module.exports.markAttending = markAttending;
 module.exports.attendBox = attendBox;
+module.exports.readDay = readDay;
+module.exports.nextSteps = nextSteps;
 module.exports.rememberMe = rememberMe;
