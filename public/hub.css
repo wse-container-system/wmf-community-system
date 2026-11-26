@@ -1035,9 +1035,5 @@ td { font-size: 13.5px; }
 .rif-pick label.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
 .rif-pick input[type=radio], .rif-pick input[type=checkbox] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4a5bc4); }
 .rif-pick label.check > span { display: inline-flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
-.rif-sublead { font-size: 15px; }
-.rif-how { list-style: none; counter-reset: rk; margin: 4px 0 6px; padding: 0; display: grid; gap: 12px; }
-.rif-how li { counter-increment: rk; display: grid; grid-template-columns: 30px 1fr; column-gap: 12px; align-items: start; }
-.rif-how li::before { content: counter(rk); grid-row: span 2; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--accent, #4a4fb5); color: var(--accent, #4a4fb5); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
-.rif-choice .rif-how b { font-size: 16px; }
-.rif-how span { color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.rif-story { display: grid; gap: 2px; }
+.rif-choice .rif-story b { font-size: 16px; color: var(--ink); }

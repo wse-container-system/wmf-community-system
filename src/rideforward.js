@@ -16,11 +16,6 @@ const ACTS = [
   { key: "yoga", name: "Yoga", tag: "Free", text: "A relaxed yoga session for everyone. Nothing to pay, just tick Yoga so we know how many are coming." },
 ];
 const PLAN = [["06:45", "Competitive races", ""], ["07:05", "Community rides", "Ride It Forward Ride · 10 km"]];
-const KIT_STEPS = [
-  ["Tell us your story", "What inspires you to ride? Why you? What would proper gear mean to you?"],
-  ["Get geared up", "Selected riders receive a cycling kit: jersey, bib shorts and more."],
-  ["Join us on 6 December", "Community ride (50% discount) or yoga (free) at Hudayriyat."],
-];
 const COLLAB = "Hudayriyat Women's Cycling Race";
 /** Read the Dec 6 choices from a form: { acts: ["Community Ride", ...], rental } or null when nothing was picked. */
 function readDay(b) {
@@ -188,11 +183,10 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <span class="btn primary">Donate gear</span></a>
         ${open ? `<a class="rif-choice" href="/events/${EVENT}">
           <span class="rif-ic" aria-hidden="true">🚲</span>
-          <b>Get the chance to own a cycling kit</b>
-          <span class="rif-sublead">New to cycling or getting back on the bike? Here's what to do.</span>
-          <ol class="rif-how">${KIT_STEPS.map(([b, txt]) => `<li><b>${h(b)}</b><span>${h(txt)}</span></li>`).join("")}</ol>
+          <b>I'm a beginner: ready to start</b>
+          <span class="rif-story"><b>Tell us your story</b>What inspires you to ride? Why you? What would proper gear mean to you?</span>
           <span class="btn primary">Share my story</span>${e.apply_until ? `<span class="rif-note">Applications close ${fmtDate(e.apply_until)}</span>` : ""}</a>`
-        : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>Get the chance to own a cycling kit</b>
+        : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I'm a beginner: ready to start</b>
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
       <section class="rif-day" id="day"><div class="rif-day-head"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
