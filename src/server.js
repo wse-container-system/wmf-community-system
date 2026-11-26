@@ -471,7 +471,7 @@ function eventForm(e, v = {}, err) {
       <div class="row2"><label>Email<input name="email" type="email" required maxlength="160" value="${h(v.email)}" autocomplete="email"></label>
       <label>Mobile<input name="mobile" required maxlength="30" value="${h(v.mobile)}" autocomplete="tel"></label></div>
       ${e.apply_form ? APPLY.fields(v) : ""}
-      ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? RIF.attendBox("I'm attending Ride It Forward Day on 6 December.") : ""}
+      ${e.activity_id === "ACT-RIDE-IT-FORWARD" ? RIF.attendBox(v) : ""}
       <label class="check"><input type="checkbox" name="waiver_consent" value="1" required> <span>${consentText}</span></label>
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary big">${e.apply_form ? "Send my application" : "Sign up"}</button></form>
@@ -497,6 +497,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     return res.send(page(req, e.name, eventForm(e, b, "Please fill in your name, a valid email and mobile, and accept the terms."), evOpts(e)));
   const ap = e.apply_form ? APPLY.read(b) : {};
   if (ap.err) return res.send(page(req, e.name, eventForm(e, b, ap.err), evOpts(e)));
+  const rifDay = e.activity_id === "ACT-RIDE-IT-FORWARD" ? RIF.readDay(b) : null;
   const out = await tx(async (c) => {
     await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["event|" + e.activity_id]);
     // the Member ID only counts when it belongs to the same email, so nobody can sign up as someone else
@@ -514,13 +515,13 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
     const r = await R.addParticipation(c, { member, recordType: "Event Registration", date: R.nowLocal(), activityId: e.activity_id, activityName: e.name,
       activityType: e.activity_type || "Event Registration", status: "Registered", source: "WMF App Event Registration", dedupeKey: `event|${member.member_id}|${e.activity_id}` }, "public");
     let paymentStatus = r.row.payment_status;
-    if (e.activity_id === "ACT-RIDE-IT-FORWARD" && b.attend_day) await RIF.markAttending(c, { full_name: b.full_name, email, mobile: b.mobile }, "Ride It Forward Day");
+    if (rifDay) await RIF.markAttending(c, { full_name: b.full_name, email, mobile: b.mobile }, "Ride It Forward Day", rifDay);
     if (!r.duplicate && ap.answers) await c.query("UPDATE participation SET answers = $2 WHERE id = $1", [r.row.id, JSON.stringify(ap.answers)]);
     if (!r.duplicate && Number(e.price_aed) > 0) { paymentStatus = "Unpaid"; await c.query("UPDATE participation SET payment_status = 'Unpaid' WHERE id = $1", [r.row.id]); }
     return { member, created, duplicate: r.duplicate, paymentStatus, recordId: r.row.record_id };
   });
   if (out.full) return res.send(page(req, e.name, eventForm(e, b, "Sorry, this event is full."), evOpts(e)));
-  if (e.activity_id === "ACT-RIDE-IT-FORWARD") RIF.rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, !!b.attend_day);
+  if (e.activity_id === "ACT-RIDE-IT-FORWARD") RIF.rememberMe(res, { full_name: b.full_name, mobile: b.mobile, email }, rifDay);
   let qr = "";
   if (out.created) { const img = await qrDataUrl(out.member.qr_value); qr = `<p class="lead">You're also now a WMF member. This is your personal QR code for rides:</p><div class="qrbox"><img src="${img}" alt="Your QR code"><span class="id">${h(out.member.member_id)}</span></div><a class="btn" href="${img}" download="${h(out.member.member_id)}-WMF-QR.png">Download QR code</a>`; }
   const payUrl = safePayUrl(e.payment_url);
@@ -529,6 +530,7 @@ app.post("/events/:id", limit("event", 10, 60 * 60e3), wrap(async (req, res) => 
   res.send(page(req, e.name, `<section class="card" style="display:grid;gap:12px"><h2>${e.apply_form ? (out.duplicate ? "You've already applied" : "Thank you, your application is in!") : out.duplicate ? "You're already signed up" : "You're signed up!"}</h2>
     ${e.apply_form ? `<p class="lead">We'll read every story and contact the selected participants${e.apply_until ? " after " + fmtDate(e.apply_until) : ""}. Your reference: <b>${h(out.recordId)}</b></p>` : ""}
     <p class="lead">${h(e.name)}${e.event_date ? " · " + fmtDate(e.event_date) : ""}</p>${pay}
+    ${rifDay ? `<p class="lead">✓ You're also on the list for Ride It Forward Day: ${h(rifDay.acts.join(" and "))}.</p>${RIF.nextSteps(rifDay)}` : ""}
     ${e.strava_url ? `<div class="alert info"><span class="ic">i</span><span><b>Join the event on Strava too</b>, so your ride shows up with the group.</span></div>${stravaBtn(e)}` : ""}${qr}<p><a href="/events">Back to events</a></p></section>`, evOpts(e)));
 }));
 

@@ -132,7 +132,7 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
     const paid = Number(a.price_aed) > 0;
     const count = (s) => rows.filter((r) => (r.payment_status || "") === s).length;
     const collected = count("Paid") * Number(a.price_aed || 0);
-    const ap = !!a.apply_form, sel = (s) => rows.filter((r) => (r.selection || "") === s).length;
+    const ap = !!a.apply_form, sel = (s) => rows.filter((r) => (r.selection || "") === s).length, nt = rows.some((r) => r.notes);
     res.send(page(req, "Sign-ups", `<section class="card">
       <div class="card-head"><div><h2>${h(a.name)}</h2><p class="lead">${fmtDate(a.event_date)} · ${h(money(a.price_aed))}${a.capacity ? ` · capacity ${a.capacity}` : ""}</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}">Event settings</a><a class="btn" href="/activities/${encodeURIComponent(a.activity_id)}/signups.csv">Download list (CSV)</a></div></div>
@@ -146,12 +146,12 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
         <div class="tile"><span class="lbl">Collected</span><span class="val">${h(money(collected))}</span><span class="note">Paid × fee</span></div>` : ""}
       </div>
       <p class="lead" style="margin:0 0 8px">After the event, tick who came: the attendance goes to the activation report.</p>
-      <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Contact</th>${ap ? "<th>Application</th><th>Selection</th>" : ""}<th>Signed up</th><th>Came</th>${paid ? "<th>Payment</th>" : ""}</tr></thead><tbody>
+      <div class="tw"><table><thead><tr><th>#</th><th>Member</th><th>Contact</th>${ap ? "<th>Application</th><th>Selection</th>" : ""}${nt ? "<th>Choices</th>" : ""}<th>Signed up</th><th>Came</th>${paid ? "<th>Payment</th>" : ""}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/members/${encodeURIComponent(r.member_id || "")}">${h(r.full_name || r.member_name || "—")}</a><br><span class="muted">${h(r.member_id || "")} · ${h(r.record_id || "")}</span></td>
         <td>${h(R.maskEmail(r.primary_email || r.member_email) || "—")}<br><span class="muted">${h(R.maskPhone(r.mobile || r.phone))}</span></td>
         ${ap ? `<td style="min-width:240px">${APPLY.summary(r.answers)}</td><td><form method="post" action="/participation/${r.id}/selection" class="toolbar" style="margin:0;align-items:center">
           <select class="inp" name="selection" style="width:auto;min-height:32px;font-size:14px"><option value="">To review</option>${APPLY.SELECTION.map((s) => `<option ${r.selection === s ? "selected" : ""}>${s}</option>`).join("")}</select>
-          <button class="btn tblbtn">Save</button></form></td>` : ""}<td>${fmtDate(r.record_date)}</td>
+          <button class="btn tblbtn">Save</button></form></td>` : ""}${nt ? `<td>${h(r.notes || "")}</td>` : ""}<td>${fmtDate(r.record_date)}</td>
         <td><form method="post" action="/participation/${r.id}/attended" style="margin:0"><button class="btn tblbtn ${r.status === "Attended" ? "primary" : ""}" name="came" value="${r.status === "Attended" ? "0" : "1"}" aria-pressed="${r.status === "Attended"}">${r.status === "Attended" ? "✓ Came" : "Mark came"}</button></form></td>
         ${paid ? `<td><form method="post" action="/participation/${r.id}/payment" class="toolbar" style="margin:0;align-items:center">
           <select class="inp" name="status" style="width:auto;min-height:32px;font-size:14px">${PAY.map((s) => `<option ${(r.payment_status || "Unpaid") === s ? "selected" : ""}>${s}</option>`).join("")}</select>
@@ -161,10 +161,10 @@ module.exports = function events(app, { need, page, setFlash, actor, wrap }) {
   }));
   app.get("/activities/:id/signups.csv", STAFF, wrap(async (req, res) => {
     const rows = await signups(req.params.id);
-    const ap = rows.some((r) => r.answers);
+    const ap = rows.some((r) => r.answers), nt = rows.some((r) => r.notes);
     const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-    const csv = [["Reference", "Member ID", "Name", "Signed up", "Payment", "Payment note", ...(ap ? ["Selection", ...APPLY.csvCols] : [])].map(q).join(",")]
-      .concat(rows.map((r) => [r.record_id, r.member_id, r.full_name || r.member_name, String(r.record_date).slice(0, 16).replace("T", " "), r.payment_status || "", r.payment_note || "",
+    const csv = [["Reference", "Member ID", "Name", "Signed up", "Payment", "Payment note", ...(nt ? ["Choices"] : []), ...(ap ? ["Selection", ...APPLY.csvCols] : [])].map(q).join(",")]
+      .concat(rows.map((r) => [r.record_id, r.member_id, r.full_name || r.member_name, String(r.record_date).slice(0, 16).replace("T", " "), r.payment_status || "", r.payment_note || "", ...(nt ? [r.notes || ""] : []),
         ...(ap ? [r.selection || "To review", ...APPLY.csvRow(r.answers || {})] : [])].map(q).join(",")));
     await audit(pool, actor(req), "signups.download", "activity", req.params.id, null, { rows: rows.length }, null);
     res.type("text/csv").set("Content-Disposition", `attachment; filename="signups-${req.params.id}.csv"`).send("﻿" + csv.join("\r\n"));

@@ -516,7 +516,7 @@ test("cycling development hub", async (t) => {
   await t.test("WMF Ride It Forward: landing page, donations, applications with sizes, selection, CSV", async () => {
     const pub = client(), id = "ACT-RIDE-IT-FORWARD";
     const land = ok200(await pub("/ride-it-forward"), "landing").text;
-    assert.match(land, /Donate gear/); assert.match(land, /Apply now/);
+    assert.match(land, /Donate gear/); assert.match(land, /Share my story/);
     // donation
     assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", condition: "1" } })).text, /tick what you/);
     assert.match((await pub("/ride-it-forward/donate", { method: "POST", form: { full_name: "Dee Nor", mobile: "0501112299", items: "Cycling shoes", details: "Shoes 39", condition: "1" } })).text, /RIF-0001/);
@@ -551,14 +551,22 @@ test("cycling development hub", async (t) => {
     assert.match((await admin("/ride-it-forward/manage")).text, /Approved by Lynsey/);
     // event day: someone new gives name + mobile once; someone who donated just taps
     const fresh = client();
+    const landDay = (await pub("/ride-it-forward")).text;
+    assert.match(landDay, /06:45[\s\S]*Competitive races[\s\S]*07:05[\s\S]*Ride It Forward Ride · 10 km/);
+    assert.match(landDay, /my\.raceresult\.com\/423300\/registration/); assert.match(landDay, /booking\.bike\.rent/); assert.match(landDay, /50% off/);
     let r2 = await fresh("/ride-it-forward/attend", { method: "POST", form: { full_name: "Day Rider", mobile: "0501230000" } });
+    assert.equal(r2.location, "/ride-it-forward?going=pick#day", "an activity has to be picked");
+    r2 = await fresh("/ride-it-forward/attend", { method: "POST", form: new URLSearchParams([["full_name", "Day Rider"], ["mobile", "0501230000"], ["day_act", "ride"], ["day_act", "yoga"], ["rental", "yes"]]) });
     assert.equal(r2.location, "/ride-it-forward?going=yes#day");
-    assert.match((await fresh("/ride-it-forward")).text, /on the list, Day/);
+    const mine = (await fresh("/ride-it-forward")).text;
+    assert.match(mine, /on the list, Day/); assert.match(mine, /Community Ride and Yoga/); assert.match(mine, /Book your rental bike/);
     const donor = client();
     await donor("/ride-it-forward/donate", { method: "POST", form: { full_name: "Gia Ver", mobile: "0501230011", items: "Gloves", condition: "1" } });
     assert.match((await donor("/ride-it-forward")).text, /As Gia Ver/);
-    assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: {} })).location, "/ride-it-forward?going=yes#day");
+    assert.equal((await donor("/ride-it-forward/attend", { method: "POST", form: { day_act: "yoga" } })).location, "/ride-it-forward?going=yes#day");
     assert.equal((await pool.query("SELECT count(*)::int n FROM participation WHERE activity_id = 'ACT-RIDE-IT-FORWARD-DAY' AND voided_at IS NULL")).rows[0].n, 2);
+    assert.match(ok200(await admin("/ride-it-forward/manage"), "manage").text, /Community Ride<\/span><span class="val">1<[\s\S]*Yoga<\/span><span class="val">2<[\s\S]*Rental bikes<\/span><span class="val">1</);
+    assert.match((await admin("/activities/ACT-RIDE-IT-FORWARD-DAY/signups")).text, /Yoga · Rental bike: No/);
     // member page: send the personal QR code on WhatsApp (to the member's number, with the QR link)
     const mp = ok200(await admin("/members/" + encodeURIComponent(p.member_id)), "member").text;
     assert.match(mp, /href="https:\/\/wa\.me\/9715\d+\?text=[^"]*%2Fq%2FWMF-\d{6}\./);

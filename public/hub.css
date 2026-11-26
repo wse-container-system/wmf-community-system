@@ -733,6 +733,31 @@ a.btn.done { opacity: .7; }
 .rif-attend-new > summary { list-style: none; display: inline-flex; cursor: pointer; }
 .rif-attend-new > summary::-webkit-details-marker { display: none; }
 .rif-attend-new[open] > summary { display: none; }
+.rif-day { flex-direction: column; gap: 16px; }
+.rif-day-head { display: flex; gap: 14px; align-items: flex-start; }
+.rif-panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent, #4a4fb5); }
+.rif-collab { font-size: 14px; color: var(--ink-2); margin: 0 0 8px !important; }
+.rif-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rif-plan li { display: flex; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.rif-plan time { flex: none; min-width: 58px; font-weight: 700; font-size: 18px; color: var(--accent, #4a4fb5); }
+.rif-plan time small { font-size: 11px; font-weight: 600; margin-left: 2px; }
+.rif-plan div { display: grid; }
+.rif-plan div span { font-size: 14px; color: var(--ink-2); }
+.rif-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.rif-act { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.rif-act > span { font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+.rif-act-top { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.rif-act-top b { font-size: 17px; }
+.rif-pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--accent-wash, #eef0fd); color: var(--accent, #4a4fb5); border: 1px solid var(--brand-lavender); white-space: nowrap; }
+.rif-links { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; font-weight: 600; margin-top: 2px; }
+.rif-pick { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; display: grid; gap: 6px; background: var(--surface); }
+.rif-pick legend { font-weight: 600; color: var(--ink-2); font-size: 14px; padding: 0 4px; }
+.rif-q { margin: 6px 0 0 !important; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.rif-yn { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.rif-next { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; justify-content: inherit; }
+.rif-change { margin-top: 8px; }
+.rif-link { font-size: 14px; color: var(--accent, #4a4fb5); text-decoration: underline; }
+.rif-inform { display: grid; gap: 6px; }
 form.rif-attend:not(.form) { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }
 
 /* ---------- L'imad programme dashboard (/corporate/limad) and registration form */
@@ -1006,3 +1031,9 @@ td { font-size: 13.5px; }
   .ov-title { font-size: 22px; }
 }
 @media (max-width: 640px) { .wh-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .wh-act { padding: 8px 10px; } .brand-logo img { max-height: 32px; } }
+@media (max-width: 480px) { .rif-attend-row { grid-template-columns: 1fr; } .rif-plan time { font-size: 16px; min-width: 52px; } }
+.rif-pick label.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
+.rif-pick input[type=radio], .rif-pick input[type=checkbox] { width: 20px; height: 20px; min-height: 0; flex: none; margin: 0; padding: 0; accent-color: var(--accent, #4a5bc4); }
+.rif-pick label.check > span { display: inline-flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.rif-story { display: grid; gap: 2px; }
+.rif-choice .rif-story b { font-size: 16px; color: var(--ink); }
