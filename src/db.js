@@ -566,6 +566,9 @@ CREATE TABLE IF NOT EXISTS gear_donations (
   id SERIAL PRIMARY KEY, ref TEXT UNIQUE, full_name TEXT NOT NULL, mobile TEXT, email TEXT, items TEXT[] NOT NULL DEFAULT '{}', details TEXT,
   received BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Ride It Forward: reworded beginner card (only replaces the old default text, never a team edit)
+UPDATE settings SET value = jsonb_set(value, '{apply}', to_jsonb('Just starting out or getting back on the bike? Share your story for a chance to receive a donated cycling kit and ride with our community.'::text))
+  WHERE key = 'rideItForward' AND value->>'apply' = 'New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.';
 -- race watch: external cycling and triathlon races go on the WMF calendar as 'external_race'
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calendar_items_category_check' AND pg_get_constraintdef(oid) LIKE '%external_race%') THEN
