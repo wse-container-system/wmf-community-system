@@ -47,7 +47,7 @@ const TEXT = [
   ["tagline", "Tagline", "Supporting beginners into their cycling journey.", 160],
   ["intro", "Intro", "Every cyclist started with a first ride. Ride It Forward helps women take theirs, with donated gear, a little courage and a community cheering them on. Share your gear, share the road, and help someone begin.", 500],
   ["donate", "“I have gear to give” text", "Give your gear a new home. Clean, good-condition cycling items help a beginner ride with confidence.", 400],
-  ["apply", "“I'm a beginner: I want a new cycling kit” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
+  ["apply", "“I'm a beginner, hoping for a cycling kit” text", "New to cycling or getting back on the bike? Share your story. Selected women receive donated cycling essentials and ride with our community.", 400],
   ["day_title", "Event day: title", "Ride It Forward Day", 120],
   ["day_when", "Event day: date", "Sunday, 6 December 2026", 120],
   ["day_text", "Event day: text", "All women are invited! Join our women-only community ride, then watch the final of the Hudayriyat Women's Races series and cheer on amazing, strong women to look up to.", 600],
@@ -184,10 +184,10 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <span class="btn primary">Donate gear</span></a>
         ${open ? `<a class="rif-choice" href="/events/${EVENT}">
           <span class="rif-ic" aria-hidden="true">🚲</span>
-          <b>I'm a beginner: I want a new cycling kit</b>
+          <b>I'm a beginner, hoping for a cycling kit</b>
           <span>${para(t.apply)}</span>
           <span class="btn primary">Apply now</span>${e.apply_until ? `<span class="rif-note">Applications close ${fmtDate(e.apply_until)}</span>` : ""}</a>`
-        : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I'm a beginner: I want a new cycling kit</b>
+        : `<div class="rif-choice off"><span class="rif-ic" aria-hidden="true">🚲</span><b>I'm a beginner, hoping for a cycling kit</b>
           <span>Applications are closed for now. Thank you to everyone who shared their story. Follow WMF for the next round.</span></div>`}
       </div>
       <section class="rif-day" id="day"><div class="rif-day-head"><span class="rif-date" aria-hidden="true"><small>DEC</small>6</span><div>
