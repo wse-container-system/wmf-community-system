@@ -13,7 +13,7 @@ const RACE_URL = "https://my.raceresult.com/423300/registration";
 const RENT_URL = "https://app.booking.bike.rent/book?store=wolfis";
 const ACTS = [
   { key: "ride", name: "Community Ride", tag: "50% off · food included", text: "The Ride It Forward Ride: choose 14 km or 29 km at a social pace. Register on RaceResult with this code for 50% off:" },
-  { key: "yoga", name: "Yoga", tag: "", text: "A relaxed yoga session for everyone. Just tick Yoga so we know how many are coming." },
+  { key: "yoga", name: "Yoga", tag: "", text: "A relaxed yoga session for everyone." },
 ];
 const CODE = "HWCS50ALL"; // 50% discount on RaceResult
 const PLAN = [["06:45", "Competitive races", ""], ["07:00", "Community rides", "Approximate start · Ride It Forward Ride · 14 km or 29 km"]];
