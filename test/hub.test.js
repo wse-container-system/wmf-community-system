@@ -552,7 +552,9 @@ test("cycling development hub", async (t) => {
     // event day: someone new gives name + mobile once; someone who donated just taps
     const fresh = client();
     const landDay = (await pub("/ride-it-forward")).text;
-    assert.match(landDay, /06:45[\s\S]*Competitive races[\s\S]*07:05[\s\S]*Ride It Forward Ride · 10 km/);
+    assert.match(landDay, /06:45[\s\S]*Competitive races[\s\S]*07:00[\s\S]*14 km or 29 km/);
+    assert.match(landDay, /HWCS50ALL/); assert.match(landDay, /href="\/ride-it-forward\?join=yoga#rif-attend"/);
+    assert.match((await pub("/ride-it-forward?join=yoga")).text, /value="yoga" checked/);
     assert.match(landDay, /my\.raceresult\.com\/423300\/registration/); assert.match(landDay, /booking\.bike\.rent/); assert.match(landDay, /50% off/);
     let r2 = await fresh("/ride-it-forward/attend", { method: "POST", form: { full_name: "Day Rider", mobile: "0501230000" } });
     assert.equal(r2.location, "/ride-it-forward?going=pick#day", "an activity has to be picked");

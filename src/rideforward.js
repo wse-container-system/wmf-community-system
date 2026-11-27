@@ -12,10 +12,12 @@ const ITEMS = ["Helmet", "Jersey", "Bib shorts", "Gloves", "Cycling shoes", "Lig
 const RACE_URL = "https://my.raceresult.com/423300/registration";
 const RENT_URL = "https://app.booking.bike.rent/book?store=wolfis";
 const ACTS = [
-  { key: "ride", name: "Community Ride", tag: "50% off · food included", text: "The Ride It Forward Ride, 10 km at a social pace. Register and pay on RaceResult with your 50% discount." },
-  { key: "yoga", name: "Yoga", tag: "Free", text: "A relaxed yoga session for everyone. Nothing to pay, just tick Yoga so we know how many are coming." },
+  { key: "ride", name: "Community Ride", tag: "50% off · food included", text: "The Ride It Forward Ride: choose 14 km or 29 km at a social pace. Register on RaceResult with this code for 50% off:" },
+  { key: "yoga", name: "Yoga", tag: "", text: "A relaxed yoga session for everyone." },
 ];
-const PLAN = [["06:45", "Competitive races", ""], ["07:05", "Community rides", "Ride It Forward Ride · 10 km"]];
+const CODE = "HWCS50ALL"; // 50% discount on RaceResult
+const PLAN = [["06:45", "Competitive races", ""], ["07:00", "Community rides", "Approximate start · Ride It Forward Ride · 14 km or 29 km"]];
+const codeChip = () => `<span class="rif-code"><span>Code</span><b>${CODE}</b><button type="button" class="rif-copy" data-code="${CODE}" aria-label="Copy discount code">Copy</button></span>`;
 const COLLAB = "Hudayriyat Women's Cycling Race";
 /** Read the Dec 6 choices from a form: { acts: ["Community Ride", ...], rental } or null when nothing was picked. */
 function readDay(b) {
@@ -28,7 +30,7 @@ const dayNote = (d) => d ? `${d.acts.join(", ")} · Rental bike: ${d.rental ? "Y
 function dayPicker(v = {}, legend = "Which activities will you join?") {
   const keys = [].concat(v.day_act || []);
   return `<fieldset class="rif-pick"><legend>${h(legend)}</legend>
-    ${ACTS.map((a) => `<label class="check"><input type="checkbox" name="day_act" value="${a.key}" ${keys.includes(a.key) ? "checked" : ""}> <span><b>${h(a.name)}</b> <span class="rif-pill">${h(a.tag)}</span></span></label>`).join("")}
+    ${ACTS.map((a) => `<label class="check"><input type="checkbox" name="day_act" value="${a.key}" ${keys.includes(a.key) ? "checked" : ""}> <span><b>${h(a.name)}</b>${a.tag ? ` <span class="rif-pill">${h(a.tag)}</span>` : ""}</span></label>`).join("")}
     <p class="rif-q">Do you need a rental bike? <span class="hint">(Community Ride)</span></p>
     <div class="rif-yn"><label class="check"><input type="radio" name="rental" value="no" ${v.rental !== "yes" ? "checked" : ""}> <span>No, I have a bike</span></label>
       <label class="check"><input type="radio" name="rental" value="yes" ${v.rental === "yes" ? "checked" : ""}> <span>Yes, I'll rent one</span></label></div></fieldset>`;
@@ -38,7 +40,7 @@ function nextSteps(d) {
   if (!d || !d.acts.includes("Community Ride")) return "";
   return `<div class="rif-next"><a class="btn primary" href="${RACE_URL}" target="_blank" rel="noopener">Register for the Community Ride ↗</a>
     ${d.rental ? `<a class="btn" href="${RENT_URL}" target="_blank" rel="noopener">Book your rental bike ↗</a>` : ""}</div>
-    <p class="rif-note">Your Community Ride place is confirmed once you register on RaceResult.</p>`;
+    <p class="rif-note">Use code <b>${CODE}</b> on RaceResult for 50% off. Your Community Ride place is confirmed once you register there.</p>`;
 }
 const COLLECT = ["Jerseys, cycling shorts, gloves and socks", "Shoes, sunglasses and water bottles", "Lights, reflectors, saddle bags and basic tools", "Other clean, safe and usable cycling accessories"];
 
@@ -107,7 +109,7 @@ function whoAmI(req) {
   try { const o = JSON.parse(Buffer.from(v, "base64url").toString()); return o && o.n && o.m ? o : null; } catch (e) { return null; }
 }
 const attendBox = (v = {}) => `<div class="rif-inform">${dayPicker(v, "Joining us on 6 December? (optional)")}
-  <p class="hint" style="margin:0">Community Ride: register on RaceResult with your 50% discount. By joining, you ride at your own risk and follow the ride leader.</p></div>`;
+  <p class="hint" style="margin:0">Community Ride: register on RaceResult with code ${CODE} for 50% off. By joining, you ride at your own risk and follow the ride leader.</p></div>`;
 
 async function applyOpen() {
   const e = (await pool.query("SELECT * FROM activities WHERE activity_id = $1", [EVENT])).rows[0];
@@ -158,12 +160,13 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
     const t = await loadText(), me = whoAmI(req);
     // who is already going, and with which activities (an older sign-up without choices is asked to pick)
     const going = me && me.g && me.a ? { acts: me.a, rental: !!me.r } : null;
+    const pre = ACTS.some((x) => x.key === req.query.join) ? req.query.join : ""; // "I'm attending" on an activity card
     const err = req.query.going === "check" ? "Please add your name and mobile." : req.query.going === "pick" ? "Please tick at least one activity." : "";
     const attendForm = (who, v) => `<form class="form rif-attend" method="post" action="/ride-it-forward/attend">
       ${err ? `<p class="flash err" role="alert" style="margin:0">${err}</p>` : ""}
       ${who ? "" : `<div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
         <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>`}
-      ${dayPicker(v.acts ? { day_act: ACTS.filter((x) => v.acts.includes(x.name)).map((x) => x.key), rental: v.rental ? "yes" : "no" } : {})}
+      ${dayPicker({ day_act: [...(v.acts ? ACTS.filter((x) => v.acts.includes(x.name)).map((x) => x.key) : []), ...(pre ? [pre] : [])], rental: v.rental ? "yes" : "no" })}
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary">${who ? "I'm attending" : "Confirm"}</button>
       <span class="rif-note">${who ? "As " + h(who.n) + ". " : ""}By confirming, you ride at your own risk and follow the ride leader.</span></form>`;
@@ -195,15 +198,18 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <p class="rif-collab">In collaboration with <b>${h(COLLAB)}</b></p>
           <ol class="rif-plan">${PLAN.map(([tm, what, more]) => `<li><time>${tm}<small>am</small></time><div><b>${h(what)}</b>${more ? `<span>${h(more)}</span>` : ""}</div></li>`).join("")}</ol></div>
         <div class="rif-panel"><h3>Activities to join</h3>
-          <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b><span class="rif-pill">${h(x.tag)}</span></div>
+          <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b>${x.tag ? `<span class="rif-pill">${h(x.tag)}</span>` : ""}</div>
             <span>${h(x.text)}</span>
-            ${x.key === "ride" ? `<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}</div>`).join("")}</div>
+            ${x.key === "ride" ? `${codeChip()}<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}
+            ${x.key === "yoga" && day ? (going && going.acts.includes(x.name) ? `<span class="rif-going" style="margin:4px 0 0 !important">✓ You're attending</span>`
+              : `<a class="btn primary rif-act-btn" href="/ride-it-forward?join=yoga#rif-attend">I'm attending</a>`) : ""}</div>`).join("")}</div>
         ${going ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}: ${h(going.acts.join(" and "))}${going.rental ? " · rental bike" : ""}. See you on the day!</p>
           ${nextSteps(going)}
-          ${day ? `<details class="rif-attend-new rif-change" ${err ? "open" : ""}><summary class="rif-link">Change my activities</summary>${attendForm(me, going)}</details>` : ""}`
-          : !day ? "" : me ? attendForm(me, {})
-          : `<details class="rif-attend-new" ${["check", "pick"].includes(req.query.going) ? "open" : ""}><summary class="btn primary">I'm attending</summary>${attendForm(null, {})}</details>`}
+          ${day ? `<details class="rif-attend-new rif-change" id="rif-attend" ${err || pre ? "open" : ""}><summary class="rif-link">Change my activities</summary>${attendForm(me, going)}</details>` : ""}`
+          : !day ? "" : me ? `<div id="rif-attend">${attendForm(me, {})}</div>`
+          : `<details class="rif-attend-new" id="rif-attend" ${["check", "pick"].includes(req.query.going) || pre ? "open" : ""}><summary class="btn primary">I'm attending</summary>${attendForm(null, {})}</details>`}
         </div></section>
+      <script>document.addEventListener('click',function(e){var b=e.target.closest('.rif-copy');if(!b)return;var done=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1500);};if(navigator.clipboard)navigator.clipboard.writeText(b.dataset.code).then(done,function(){});});</script>
       <section class="card"><h2>How it works</h2>
         <ol class="rif-steps">
           <li><b>Donate</b><span>${para(t.dropoff)}</span></li>
