@@ -13,7 +13,7 @@ const RACE_URL = "https://my.raceresult.com/423300/registration";
 const RENT_URL = "https://app.booking.bike.rent/book?store=wolfis";
 const ACTS = [
   { key: "ride", name: "Community Ride", tag: "50% off · food included", text: "The Ride It Forward Ride: choose 14 km or 29 km at a social pace. Register on RaceResult with this code for 50% off:" },
-  { key: "yoga", name: "Yoga", tag: "Free", text: "A relaxed yoga session for everyone. Nothing to pay, just tick Yoga so we know how many are coming." },
+  { key: "yoga", name: "Yoga", tag: "", text: "A relaxed yoga session for everyone. Just tick Yoga so we know how many are coming." },
 ];
 const CODE = "HWCS50ALL"; // 50% discount on RaceResult
 const PLAN = [["06:45", "Competitive races", ""], ["07:00", "Community rides", "Approximate start · Ride It Forward Ride · 14 km or 29 km"]];
@@ -30,7 +30,7 @@ const dayNote = (d) => d ? `${d.acts.join(", ")} · Rental bike: ${d.rental ? "Y
 function dayPicker(v = {}, legend = "Which activities will you join?") {
   const keys = [].concat(v.day_act || []);
   return `<fieldset class="rif-pick"><legend>${h(legend)}</legend>
-    ${ACTS.map((a) => `<label class="check"><input type="checkbox" name="day_act" value="${a.key}" ${keys.includes(a.key) ? "checked" : ""}> <span><b>${h(a.name)}</b> <span class="rif-pill">${h(a.tag)}</span></span></label>`).join("")}
+    ${ACTS.map((a) => `<label class="check"><input type="checkbox" name="day_act" value="${a.key}" ${keys.includes(a.key) ? "checked" : ""}> <span><b>${h(a.name)}</b>${a.tag ? ` <span class="rif-pill">${h(a.tag)}</span>` : ""}</span></label>`).join("")}
     <p class="rif-q">Do you need a rental bike? <span class="hint">(Community Ride)</span></p>
     <div class="rif-yn"><label class="check"><input type="radio" name="rental" value="no" ${v.rental !== "yes" ? "checked" : ""}> <span>No, I have a bike</span></label>
       <label class="check"><input type="radio" name="rental" value="yes" ${v.rental === "yes" ? "checked" : ""}> <span>Yes, I'll rent one</span></label></div></fieldset>`;
@@ -197,7 +197,7 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
           <p class="rif-collab">In collaboration with <b>${h(COLLAB)}</b></p>
           <ol class="rif-plan">${PLAN.map(([tm, what, more]) => `<li><time>${tm}<small>am</small></time><div><b>${h(what)}</b>${more ? `<span>${h(more)}</span>` : ""}</div></li>`).join("")}</ol></div>
         <div class="rif-panel"><h3>Activities to join</h3>
-          <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b><span class="rif-pill">${h(x.tag)}</span></div>
+          <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b>${x.tag ? `<span class="rif-pill">${h(x.tag)}</span>` : ""}</div>
             <span>${h(x.text)}</span>
             ${x.key === "ride" ? `${codeChip()}<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}</div>`).join("")}</div>
         ${going ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}: ${h(going.acts.join(" and "))}${going.rental ? " · rental bike" : ""}. See you on the day!</p>
