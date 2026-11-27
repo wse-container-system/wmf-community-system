@@ -1037,3 +1037,7 @@ td { font-size: 13.5px; }
 .rif-pick label.check > span { display: inline-flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
 .rif-story { display: grid; gap: 2px; }
 .rif-choice .rif-story b { font-size: 16px; color: var(--ink); }
+.rif-code { display: inline-flex; align-items: center; gap: 8px; justify-self: start; border: 1.5px dashed var(--accent, #4a4fb5); border-radius: 10px; padding: 5px 6px 5px 10px; background: var(--accent-wash, #eef0fd); }
+.rif-code > span { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-2); }
+.rif-code b { font-size: 16px; letter-spacing: 1px; color: var(--accent, #4a4fb5); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.rif-copy { font: inherit; font-size: 12px; font-weight: 600; border: 1px solid var(--brand-lavender); background: var(--surface); color: var(--accent, #4a4fb5); border-radius: 7px; padding: 3px 9px; cursor: pointer; }
