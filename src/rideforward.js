@@ -160,12 +160,13 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
     const t = await loadText(), me = whoAmI(req);
     // who is already going, and with which activities (an older sign-up without choices is asked to pick)
     const going = me && me.g && me.a ? { acts: me.a, rental: !!me.r } : null;
+    const pre = ACTS.some((x) => x.key === req.query.join) ? req.query.join : ""; // "I'm attending" on an activity card
     const err = req.query.going === "check" ? "Please add your name and mobile." : req.query.going === "pick" ? "Please tick at least one activity." : "";
     const attendForm = (who, v) => `<form class="form rif-attend" method="post" action="/ride-it-forward/attend">
       ${err ? `<p class="flash err" role="alert" style="margin:0">${err}</p>` : ""}
       ${who ? "" : `<div class="rif-attend-row"><input class="inp" name="full_name" required maxlength="120" placeholder="Your name" autocomplete="name" aria-label="Your name">
         <input class="inp" name="mobile" required maxlength="30" placeholder="Mobile" autocomplete="tel" inputmode="tel" aria-label="Mobile"></div>`}
-      ${dayPicker(v.acts ? { day_act: ACTS.filter((x) => v.acts.includes(x.name)).map((x) => x.key), rental: v.rental ? "yes" : "no" } : {})}
+      ${dayPicker({ day_act: [...(v.acts ? ACTS.filter((x) => v.acts.includes(x.name)).map((x) => x.key) : []), ...(pre ? [pre] : [])], rental: v.rental ? "yes" : "no" })}
       <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">
       <button class="btn primary">${who ? "I'm attending" : "Confirm"}</button>
       <span class="rif-note">${who ? "As " + h(who.n) + ". " : ""}By confirming, you ride at your own risk and follow the ride leader.</span></form>`;
@@ -199,12 +200,14 @@ module.exports = function rideForward(app, { need, page, actor, wrap, limit, qrP
         <div class="rif-panel"><h3>Activities to join</h3>
           <div class="rif-acts">${ACTS.map((x) => `<div class="rif-act"><div class="rif-act-top"><b>${h(x.name)}</b>${x.tag ? `<span class="rif-pill">${h(x.tag)}</span>` : ""}</div>
             <span>${h(x.text)}</span>
-            ${x.key === "ride" ? `${codeChip()}<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}</div>`).join("")}</div>
+            ${x.key === "ride" ? `${codeChip()}<div class="rif-links"><a href="${RACE_URL}" target="_blank" rel="noopener">Register on RaceResult ↗</a><a href="${RENT_URL}" target="_blank" rel="noopener">Need a bike? Rent one ↗</a></div>` : ""}
+            ${x.key === "yoga" && day ? (going && going.acts.includes(x.name) ? `<span class="rif-going" style="margin:4px 0 0 !important">✓ You're attending</span>`
+              : `<a class="btn primary rif-act-btn" href="/ride-it-forward?join=yoga#rif-attend">I'm attending</a>`) : ""}</div>`).join("")}</div>
         ${going ? `<p class="rif-going">✓ You're on the list${me ? ", " + h(me.n.split(" ")[0]) : ""}: ${h(going.acts.join(" and "))}${going.rental ? " · rental bike" : ""}. See you on the day!</p>
           ${nextSteps(going)}
-          ${day ? `<details class="rif-attend-new rif-change" ${err ? "open" : ""}><summary class="rif-link">Change my activities</summary>${attendForm(me, going)}</details>` : ""}`
-          : !day ? "" : me ? attendForm(me, {})
-          : `<details class="rif-attend-new" ${["check", "pick"].includes(req.query.going) ? "open" : ""}><summary class="btn primary">I'm attending</summary>${attendForm(null, {})}</details>`}
+          ${day ? `<details class="rif-attend-new rif-change" id="rif-attend" ${err || pre ? "open" : ""}><summary class="rif-link">Change my activities</summary>${attendForm(me, going)}</details>` : ""}`
+          : !day ? "" : me ? `<div id="rif-attend">${attendForm(me, {})}</div>`
+          : `<details class="rif-attend-new" id="rif-attend" ${["check", "pick"].includes(req.query.going) || pre ? "open" : ""}><summary class="btn primary">I'm attending</summary>${attendForm(null, {})}</details>`}
         </div></section>
       <script>document.addEventListener('click',function(e){var b=e.target.closest('.rif-copy');if(!b)return;var done=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1500);};if(navigator.clipboard)navigator.clipboard.writeText(b.dataset.code).then(done,function(){});});</script>
       <section class="card"><h2>How it works</h2>

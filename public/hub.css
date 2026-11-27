@@ -1041,3 +1041,4 @@ td { font-size: 13.5px; }
 .rif-code > span { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-2); }
 .rif-code b { font-size: 16px; letter-spacing: 1px; color: var(--accent, #4a4fb5); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .rif-copy { font: inherit; font-size: 12px; font-weight: 600; border: 1px solid var(--brand-lavender); background: var(--surface); color: var(--accent, #4a4fb5); border-radius: 7px; padding: 3px 9px; cursor: pointer; }
+.rif-act-btn { justify-self: start; margin-top: 4px; }
